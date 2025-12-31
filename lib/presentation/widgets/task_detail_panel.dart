@@ -282,6 +282,20 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
       initialDate: widget.task.dueDate ?? DateTime.now(),
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            datePickerTheme: const DatePickerThemeData(
+              headerHeadlineStyle: TextStyle(
+                fontSize: 16, // Smaller font size to prevent wrapping
+                fontWeight: FontWeight.bold,
+              ),
+              headerHelpStyle: TextStyle(fontSize: 14),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (date != null) {
       ref.read(taskProvider.notifier).updateTask(
@@ -506,13 +520,16 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
             child: const Text('取消'),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AmberColors.warning,
+            ),
+            child: const Text('删除'),
             onPressed: () {
+              ref.read(soundServiceProvider).playDelete(); // Play sound
               ref.read(taskProvider.notifier).deleteTask(widget.task.id);
               ref.read(appNavProvider.notifier).closeDetailPanel();
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AmberColors.warning),
-            child: const Text('删除'),
           ),
         ],
       ),

@@ -37,6 +37,26 @@ class SoundService {
     await _playSound('audio/success.mp3');
   }
 
+  /// 播放添加任务音效
+  Future<void> playAdd() async {
+    await _playSound('audio/add.mp3');
+  }
+
+  /// 播放错误音效
+  Future<void> playError() async {
+    await _playSound('audio/error.mp3');
+  }
+
+  /// 播放番茄时钟开始/暂停音效 (Tick)
+  Future<void> playPomodoroTick() async {
+    await _playSound('audio/tick.mp3');
+  }
+
+  /// 播放番茄时钟结束音效
+  Future<void> playPomodoroEnd() async {
+    await _playSound('audio/pomodoro_end.mp3');
+  }
+
   Future<void> _playSound(String assetPath) async {
     try {
       debugPrint('[SoundService] Playing: $assetPath');

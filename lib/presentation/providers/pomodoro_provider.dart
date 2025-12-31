@@ -62,6 +62,7 @@ class PomodoroController extends StateNotifier<AsyncValue<void>> {
 
       // 启动计时器
       _timer.start(taskId: taskId);
+      _soundService.playPomodoroTick();
 
       if (mounted) {
         state = const AsyncValue.data(null);
@@ -76,11 +77,13 @@ class PomodoroController extends StateNotifier<AsyncValue<void>> {
   /// 暂停
   void pause() {
     _timer.pause();
+    _soundService.playPomodoroTick();
   }
 
   /// 恢复
   void resume() {
     _timer.resume();
+    _soundService.playPomodoroTick();
   }
 
   /// 重置
@@ -142,8 +145,8 @@ class PomodoroController extends StateNotifier<AsyncValue<void>> {
       }
 
       // 3. 播放完成音效
-      // TODO: 用户后续添加音效,现在用completion占位
-      await _soundService.playCompletion();
+      // 3. 播放完成音效
+      await _soundService.playPomodoroEnd();
 
       // 4. 显示系统通知
       // TODO: 显示系统通知 "番茄钟已完成,休息一下吧!"

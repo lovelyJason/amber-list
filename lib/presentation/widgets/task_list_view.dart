@@ -385,6 +385,20 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
       confirmText: '确定',
       cancelText: '取消',
       helpText: '选择日期',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            datePickerTheme: const DatePickerThemeData(
+              headerHeadlineStyle: TextStyle(
+                fontSize: 16, // Smaller font size
+                fontWeight: FontWeight.bold,
+              ),
+              headerHelpStyle: TextStyle(fontSize: 14),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -398,6 +412,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   void _addTask(String title) {
     if (title.trim().isEmpty) return;
 
+    ref.read(soundServiceProvider).playAdd(); // Sound
     ref.read(taskProvider.notifier).createTask(
       title: title.trim(),
       listId: widget.listId,

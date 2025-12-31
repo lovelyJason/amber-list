@@ -751,6 +751,8 @@ class TaskItem extends ConsumerWidget {
       onTap: () {
         if (!task.isCompleted) {
           ref.read(soundServiceProvider).playCompletion();
+        } else {
+          ref.read(soundServiceProvider).playAdd(); // Uncomplete sound
         }
         ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
       },
