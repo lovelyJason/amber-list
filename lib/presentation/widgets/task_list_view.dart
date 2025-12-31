@@ -7,6 +7,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:window_manager/window_manager.dart'; // Add import
 import '../../core/utils/ui_utils.dart'; // Add import
 import 'task_item.dart';
+import 'package:intl/intl.dart';
 
 /// 排序选项
 enum SortOption {
@@ -29,10 +30,12 @@ class TaskListView extends ConsumerStatefulWidget {
     required this.tasks,
     this.listId,
     this.showInput = true,
+    this.showDatePicker = false, // Default to false
     this.groupCompleted = true,
   });
 
   final bool showInput;
+  final bool showDatePicker;
   final bool groupCompleted;
 
   @override
@@ -43,6 +46,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   final _inputController = TextEditingController();
   final _focusNode = FocusNode();
   bool _isAddingTask = false;
+  DateTime _selectedDate = DateTime.now();
 
   // 排序与筛选状态
   SortOption _sortOption = SortOption.smart;
@@ -334,7 +338,25 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               onSubmitted: _addTask,
             ),
           ),
-          if (_isAddingTask)
+          if (_isAddingTask) ...[
+            if (widget.showDatePicker) ...[
+              IconButton(
+                onPressed: _pickDate,
+                icon: Icon(
+                  Icons.calendar_today_outlined,
+                  size: 20,
+                  color: DateUtils.isSameDay(_selectedDate, DateTime.now())
+                      ? AmberColors.textSecondary
+                      : AmberColors.primary,
+                ),
+                tooltip: DateFormat('M月d日', 'zh_CN').format(_selectedDate),
+                style: IconButton.styleFrom(
+                  padding: const EdgeInsets.all(8),
+                  minimumSize: const Size(32, 32),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
             IconButton(
               onPressed: () {
                 _addTask(_inputController.text);
@@ -348,9 +370,29 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               ),
               color: Colors.white,
             ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      confirmText: '确定',
+      cancelText: '取消',
+      helpText: '选择日期',
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+      // Re-focus input
+      _focusNode.requestFocus();
+    }
   }
 
   void _addTask(String title) {
@@ -359,11 +401,14 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     ref.read(taskProvider.notifier).createTask(
       title: title.trim(),
       listId: widget.listId,
-      dueDate: DateTime.now(), // 默认今天
+          dueDate: _selectedDate,
     );
 
     _inputController.clear();
-    setState(() => _isAddingTask = false);
+    setState(() {
+      _isAddingTask = false;
+      _selectedDate = DateTime.now(); // Reset to today
+    });
   }
 
   Widget _buildCompletedSection(List<Task> completedTasks) {

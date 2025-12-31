@@ -306,6 +306,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         return TaskListView(
           title: '收集箱',
           tasks: allTasks,
+          showDatePicker: true,
         );
       case NavView.today:
         final todayTasks = ref.watch(todayTasksProvider);
