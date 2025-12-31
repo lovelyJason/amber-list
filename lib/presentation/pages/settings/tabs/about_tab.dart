@@ -3,6 +3,8 @@ import '../../../../core/constants/constants.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 
+import 'package:package_info_plus/package_info_plus.dart';
+
 /// 关于标签页
 class AboutTab extends StatelessWidget {
   const AboutTab({super.key});
@@ -15,10 +17,18 @@ class AboutTab extends StatelessWidget {
         SettingsSection(
           title: '应用信息',
           children: [
-            const SettingsTile(
-              icon: Icons.info_outline,
-              title: '版本',
-              subtitle: '1.0.0',
+            FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                final versionText = snapshot.hasData
+                    ? '${snapshot.data!.version} (${snapshot.data!.buildNumber})'
+                    : 'Loading...';
+                return SettingsTile(
+                  icon: Icons.info_outline,
+                  title: '版本',
+                  subtitle: versionText,
+                );
+              },
             ),
             // SettingsTile(
             //   icon: Icons.code,

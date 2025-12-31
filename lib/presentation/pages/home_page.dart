@@ -297,12 +297,12 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget _buildMainContent(WidgetRef ref, AppNavState navState, List<Task> tasks) {
     switch (navState.currentView) {
       case NavView.all:
-        // 显示所有任务（包括已完成）
-        final allTasks = tasks;
+        // 显示所有任务（包括已完成），但不包括已删除
+        final allTasks = tasks.where((t) => !t.isDeleted).toList();
         return TaskListView(title: '全部', tasks: allTasks);
       case NavView.inbox:
-        // Inbox now shows ALL tasks as per user request
-        final allTasks = tasks;
+        // Inbox now shows ALL tasks as per user request (excluding deleted)
+        final allTasks = tasks.where((t) => !t.isDeleted).toList();
         return TaskListView(
           title: '收集箱',
           tasks: allTasks,

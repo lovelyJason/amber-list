@@ -17,7 +17,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true  # 启用 Flutter SDK 缓存，加速后续构建
+          cache: true
 
       # 2. 获取依赖
       - name: Install Dependencies
@@ -27,9 +27,25 @@ jobs:
       - name: Build Windows Release
         run: flutter build windows --release
 
-      # 4. 上传构建产物
-      - name: Upload Artifact
+      # 4. 使用 Inno Setup 打包安装程序
+      - name: Build Installer with Inno Setup
+        run: |
+          # 创建输出目录
+          New-Item -ItemType Directory -Force -Path build/installer
+          # 使用 GitHub Actions runner 自带的 Inno Setup
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/windows_setup.iss
+        shell: pwsh
+
+      # 5. 上传安装包
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: amber-list-windows
+          name: amber-list-installer
+          path: build/installer/*.exe
+
+      # 6. 上传原始构建产物（便于调试）
+      - name: Upload Raw Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: amber-list-windows-raw
           path: build/windows/x64/runner/Release/

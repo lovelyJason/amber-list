@@ -291,39 +291,110 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
   }
 
   void _showListPicker(BuildContext context, List<TaskList> lists) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.inbox_rounded),
-            title: const Text('收集箱'),
-            onTap: () {
-              ref.read(taskProvider.notifier).updateTask(
-                widget.task.copyWith(listId: null, updatedAt: DateTime.now()),
-              );
-              Navigator.pop(context);
-            },
-          ),
-          ...lists.map((list) => ListTile(
-            leading: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: list.color,
-                shape: BoxShape.circle,
-              ),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.all(24),
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () {
+                    ref
+                        .read(taskProvider.notifier)
+                        .updateTask(
+                          widget.task.copyWith(
+                            listId: null,
+                            updatedAt: DateTime.now(),
+                          ),
+                        );
+                    Navigator.pop(context);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.inbox_rounded,
+                          size: 20,
+                          color: AmberColors.textSecondary,
+                        ),
+                        const SizedBox(width: 16),
+                        const Text(
+                          '收集箱',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: AmberColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ...lists.map(
+                  (list) => InkWell(
+                    onTap: () {
+                      ref
+                          .read(taskProvider.notifier)
+                          .updateTask(
+                            widget.task.copyWith(
+                              listId: list.id,
+                              updatedAt: DateTime.now(),
+                            ),
+                          );
+                      Navigator.pop(context);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: list.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(
+                            width: 20,
+                          ), // Align with icon center (20px icon / 2 = 10; 12px dot / 2 = 6; diff ~4, plus gap) -> roughly
+                          // Actually icon is 20, dot is 12. Center alignment:
+                          // Icon center at 10. Dot center at 6.
+                          // To align text start:
+                          // IconRow: Icon(20) + Gap(16) -> Text starts at 36
+                          // DotRow: Dot(12) + Gap(?) -> Text starts at 36?
+                          // Gap = 36 - 12 = 24.
+                          // Let's use SizedBox(width: 24) for dot.
+                          Text(
+                            list.name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: AmberColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            title: Text(list.name),
-            onTap: () {
-              ref.read(taskProvider.notifier).updateTask(
-                widget.task.copyWith(listId: list.id, updatedAt: DateTime.now()),
-              );
-              Navigator.pop(context);
-            },
-          )),
-        ],
+          ),
+        ),
       ),
     );
   }

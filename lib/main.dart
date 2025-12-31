@@ -1,20 +1,62 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:window_manager/window_manager.dart';
-import 'dart:io'; // Import dart:io
+
 import 'app.dart';
 import 'core/constants/dimensions.dart';
-
-import 'presentation/pages/settings/settings_page.dart';
+import 'core/services/logger_service.dart';
 import 'core/theme/amber_theme.dart';
-import 'package:intl/date_symbol_data_local.dart';
-
-import 'dart:convert';
+import 'core/utils/startup_logger.dart';
+import 'presentation/pages/settings/settings_page.dart';
 import 'presentation/pages/sticky_note/sticky_note_page.dart';
-import 'core/utils/startup_logger.dart'; // Add Logger import
 
 void main(List<String> args) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // ==================== 全局错误捕获 ====================
+  // 使用 runZonedGuarded 捕获所有未处理的异步异常
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+
+    // 初始化日志服务（应最先初始化）
+    await AppLogger.instance.init();
+
+    // 捕获 Flutter 框架层的错误（Widget build 异常等）
+    FlutterError.onError = (FlutterErrorDetails details) {
+      AppLogger.error(
+        'FlutterError',
+        details.exceptionAsString(),
+        details.exception,
+        details.stack,
+      );
+      // Debug 模式下仍然打印到控制台方便调试
+      if (kDebugMode) {
+        FlutterError.dumpErrorToConsole(details);
+      }
+    };
+
+    // 捕获 Platform Dispatcher 的错误（native 层回调异常）
+    PlatformDispatcher.instance.onError = (error, stack) {
+      AppLogger.error('PlatformError', '平台层未捕获异常', error, stack);
+      return true; // 返回 true 表示已处理，不再向上抛
+    };
+
+    // 启动应用
+    await _startApp(args);
+  }, (error, stackTrace) {
+    // 捕获 Zone 内所有未处理的异常（异步代码中的 throw）
+    AppLogger.error('UncaughtError', '未捕获的异步异常', error, stackTrace);
+  });
+}
+
+/// 应用启动逻辑（从原 main 中抽取）
+Future<void> _startApp(List<String> args) async {
+  // 初始化日志服务（应最先初始化）
+  // 注意：已在 runZonedGuarded 内初始化，这里不需要重复
 
   // 🔧 检查是否是子窗口 - desktop_multi_window 的 args 格式：
   // args[0] = "multi_window"
@@ -30,7 +72,7 @@ void main(List<String> args) async {
     final logArgs = Map<String, dynamic>.from(argument);
     logArgs.remove('active');
     logArgs.remove('completed');
-    debugPrint('[MultiWindow] 子窗口启动，ID=$windowId, Args=$logArgs');
+    AppLogger.info('MultiWindow', '子窗口启动，ID=$windowId, Args=$logArgs');
 
     // 初始化日期格式化
     await initializeDateFormatting(null, null);
@@ -71,7 +113,7 @@ void main(List<String> args) async {
   await initializeDateFormatting(null, null);
 
   // 主窗口模式
-  debugPrint('[MultiWindow] 主窗口启动');
+  AppLogger.info('MultiWindow', '主窗口启动');
 
   StartupLogger.printInfo();
 
