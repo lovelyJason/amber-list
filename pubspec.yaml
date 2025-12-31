@@ -1,0 +1,81 @@
+name: amber_list
+description: "琥珀清单 - 一款简约而不失质感的桌面端待办应用"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # 状态管理
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # 数据库
+  drift: ^2.22.1
+  sqlite3: ^2.4.6                  # 原始 SQLite 操作（用于同步合并）
+  sqlite3_flutter_libs: ^0.5.28
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # UI组件
+  flutter_slidable: ^3.1.2
+  table_calendar: ^3.1.3
+  circular_countdown_timer: ^0.2.3
+
+  # 工具
+  uuid: ^4.5.1
+  file_picker: ^8.1.6
+  intl: ^0.20.1
+  collection: ^1.19.1
+
+  # 云同步
+  webdav_client: ^1.2.2           # WebDAV 协议客户端
+  flutter_secure_storage: ^9.2.2  # 跨平台密码存储（macOS Keychain / Windows Credential Manager）
+  connectivity_plus: ^6.1.2       # 网络状态检测
+  crypto: ^3.0.6                  # 哈希计算（用于快照校验）
+  shared_preferences: ^2.5.4      # 非敏感配置存储
+
+  # 桌面窗口管理
+  window_manager: ^0.4.3
+  desktop_multi_window: ^0.2.0
+  fluentui_system_icons: ^1.1.273
+  audioplayers: ^6.5.1
+  flutter_localizations:
+    sdk: flutter
+  reorderable_grid_view: ^2.2.8
+  showcaseview: ^5.0.1
+  package_info_plus: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.14
+  riverpod_generator: ^2.6.3
+  drift_dev: ^2.22.1
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/audio/
+
+flutter_launcher_icons:
+  android: false
+  ios: false
+  image_path: "assets/images/logo_transparent.png"
+  macos:
+    generate: true
+    image_path: "assets/images/logo_transparent.png"
+  windows:
+    generate: true
+    image_path: "assets/images/logo_transparent.png"

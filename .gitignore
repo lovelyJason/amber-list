@@ -1,0 +1,89 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Android related
+**/android/.gradle
+**/android/local.properties
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+
+# iOS/macOS related
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/macos/Flutter/ephemeral/
+**/macos/Flutter/Generated.xcconfig
+**/macos/Flutter/flutter_export_environment.sh
+**/ios/Pods/
+**/macos/Pods/
+**/ios/.symlinks/
+**/macos/.symlinks/
+
+# Windows/Linux related
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+
+# Claude Code local settings (包含个人权限配置，不应提交)
+.claude/settings.local.json
+
+# Ruby LSP (IDE 工具生成的缓存目录)
+.ruby-lsp/
+
+# 日志文件
+*.log
+flutter_*.log
+
+# IntelliJ IDEA 项目文件 (已有 .idea/ 但再加个保险)
+*.iml
+
+# 临时/测试脚本 (如有)
+remove_bg.py
+
+# 备份文件
+*.bak
+*.bak2
+*.backup
