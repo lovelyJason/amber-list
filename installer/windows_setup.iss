@@ -52,7 +52,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 只用英文，GitHub Actions 的 Inno Setup 没有中文语言包
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
