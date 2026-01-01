@@ -2,12 +2,16 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../env/env.dart';
+
 /// ============================================================
 /// 同步配置模型和服务
 /// ============================================================
 /// 管理 WebDAV 云同步的配置信息：
 /// - 服务器地址、用户名（存储在 SharedPreferences）
-/// - 密码（加密存储在系统钥匙串 - macOS Keychain / Windows Credential Manager）
+/// - 密码存储方式由 .env 中的 SECRET_STORAGE_TYPE 决定：
+///   - keychain: 加密存储在系统钥匙串 (macOS Keychain / Windows Credential Manager)
+///   - shared_preferences: 存储在 SharedPreferences（不推荐，仅用于调试）
 /// - 同步设置（自动同步开关、同步间隔）
 /// ============================================================
 
@@ -142,22 +146,25 @@ class SyncConfig {
 /// 同步配置服务
 /// ============================================================
 /// 负责同步配置的持久化存储：
-/// - 密码使用 flutter_secure_storage 加密存储到系统钥匙串
+/// - 密码存储方式由 Env.secretStorageType 决定（编译时配置）
 /// - 其他配置使用 shared_preferences 存储
 /// ============================================================
 class SyncConfigService {
   // SharedPreferences key
   static const _configKey = 'sync_config';
 
-  // flutter_secure_storage 密码存储
+  // flutter_secure_storage 密码存储（钥匙串模式使用）
   // 注意：macOS/Windows 桌面端不需要特殊配置，直接使用系统钥匙串
-  static FlutterSecureStorage get _storage => const FlutterSecureStorage(
+  static FlutterSecureStorage get _secureStorage => const FlutterSecureStorage(
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
     mOptions: MacOsOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
   // 密码存储的 key 前缀
   static const _passwordKeyPrefix = 'amber_list_webdav_password_';
+
+  /// 是否使用钥匙串存储（由 .env 配置决定）
+  static bool get _useKeychain => Env.useKeychain;
 
   /// 加载同步配置
   static Future<SyncConfig> loadConfig() async {
@@ -184,65 +191,106 @@ class SyncConfigService {
     await prefs.setString(_configKey, jsonStr);
   }
 
-  /// 保存密码到系统钥匙串
+  /// 保存密码
+  /// 存储方式由 Env.secretStorageType 决定：
+  /// - keychain: 使用系统钥匙串（更安全）
+  /// - shared_preferences: 使用 SharedPreferences（调试用）
   /// [username] 用户名，用于生成唯一的存储 key
   /// [password] 密码
   static Future<void> savePassword(String username, String password) async {
     final key = '$_passwordKeyPrefix$username';
-    print('[SyncConfig] 开始保存密码到钥匙串: key=$key');
+    final storageType = _useKeychain ? 'keychain' : 'shared_preferences';
+    print('[SyncConfig] 开始保存密码: key=$key, 存储方式=$storageType');
 
-    // 1. 尝试使用默认选项删除（处理旧版本残留）
-    try {
-      const defaultStorage = FlutterSecureStorage();
-      await defaultStorage.delete(key: key);
-      print('[SyncConfig] 已清除默认选项下的旧密钥');
-    } catch (_) {
-      // 忽略删除失败（可能不存在）
-    }
+    if (_useKeychain) {
+      // 钥匙串模式
+      // 1. 尝试使用默认选项删除（处理旧版本残留）
+      try {
+        const defaultStorage = FlutterSecureStorage();
+        await defaultStorage.delete(key: key);
+        print('[SyncConfig] 已清除默认选项下的旧密钥');
+      } catch (_) {
+        // 忽略删除失败（可能不存在）
+      }
 
-    // 2. 尝试使用当前选项删除（处理重复项）
-    try {
-      await _storage.delete(key: key);
-      print('[SyncConfig] 已清除当前选项下的旧密钥');
-    } catch (_) {
-      // 忽略
-    }
+      // 2. 尝试使用当前选项删除（处理重复项）
+      try {
+        await _secureStorage.delete(key: key);
+        print('[SyncConfig] 已清除当前选项下的旧密钥');
+      } catch (_) {
+        // 忽略
+      }
 
-    // 3. 写入新密码
-    try {
-      await _storage.write(key: key, value: password);
-      print('[SyncConfig] ✅ 密码保存成功');
-    } catch (e) {
-      print('[SyncConfig] ❌ 密码保存失败: $e');
-      rethrow;
+      // 3. 写入新密码
+      try {
+        await _secureStorage.write(key: key, value: password);
+        print('[SyncConfig] ✅ 密码保存成功 (keychain)');
+      } catch (e) {
+        print('[SyncConfig] ❌ 密码保存失败: $e');
+        rethrow;
+      }
+    } else {
+      // SharedPreferences 模式（调试用，不推荐生产环境）
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(key, password);
+        print('[SyncConfig] ✅ 密码保存成功 (shared_preferences)');
+      } catch (e) {
+        print('[SyncConfig] ❌ 密码保存失败: $e');
+        rethrow;
+      }
     }
   }
 
-  /// 从系统钥匙串读取密码
+  /// 读取密码
+  /// 存储方式由 Env.secretStorageType 决定
   /// [username] 用户名
   /// 返回密码，如果不存在返回 null
   static Future<String?> getPassword(String username) async {
     final key = '$_passwordKeyPrefix$username';
-    return await _storage.read(key: key);
+    if (_useKeychain) {
+      return await _secureStorage.read(key: key);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(key);
+    }
   }
 
   /// 删除密码
+  /// 存储方式由 Env.secretStorageType 决定
   static Future<void> deletePassword(String username) async {
     final key = '$_passwordKeyPrefix$username';
-    await _storage.delete(key: key);
+    if (_useKeychain) {
+      await _secureStorage.delete(key: key);
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    }
   }
 
   /// 清除所有同步配置（包括密码）
+  /// 会同时清除钥匙串和 SharedPreferences 中的数据，确保彻底清除
   static Future<void> clearAll() async {
-    // 清除 SharedPreferences 中的配置
     final prefs = await SharedPreferences.getInstance();
+
+    // 清除 SharedPreferences 中的配置
     await prefs.remove(_configKey);
 
-    // 清除所有保存的密码（遍历删除所有以 prefix 开头的 key）
-    final allKeys = await _storage.readAll();
-    for (final key in allKeys.keys) {
-      if (key.startsWith(_passwordKeyPrefix)) {
-        await _storage.delete(key: key);
+    if (_useKeychain) {
+      // 钥匙串模式：清除钥匙串中的密码
+      final allKeys = await _secureStorage.readAll();
+      for (final key in allKeys.keys) {
+        if (key.startsWith(_passwordKeyPrefix)) {
+          await _secureStorage.delete(key: key);
+        }
+      }
+    } else {
+      // SharedPreferences 模式：清除所有密码 key
+      final allKeys = prefs.getKeys();
+      for (final key in allKeys) {
+        if (key.startsWith(_passwordKeyPrefix)) {
+          await prefs.remove(key);
+        }
       }
     }
   }

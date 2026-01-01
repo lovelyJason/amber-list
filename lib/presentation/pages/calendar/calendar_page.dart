@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../core/constants/constants.dart';
+import '../../../core/utils/responsive_helper.dart';
 import '../../../data/models/models.dart';
 import '../../providers/providers.dart';
+import '../../widgets/adaptive/bottom_nav_bar.dart';
 import 'widgets/calendar_left_sidebar.dart';
 import 'widgets/calendar_header.dart';
 import 'widgets/calendar_grid.dart';
@@ -95,68 +97,17 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           });
         }
 
-        return Scaffold(
-          backgroundColor: AmberColors.background,
-          body: Row(
-            children: [
-              // 左侧边栏
-              Container(
-                width: 260,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    right: BorderSide(color: AmberColors.divider),
-                  ),
-                ),
-                child: CalendarLeftSidebar(
-                  focusedDay: _focusedDay,
-                  selectedDay: _selectedDay,
-                  viewMode: _viewMode,
-                  tasks: tasks,
-                  addKey: _addKey,
-                  viewModeKey: _viewModeKey,
-                  onDaySelected: _onDaySelected,
-                  onPageChanged: _onPageChanged,
-                  onViewModeChanged: _onViewModeChanged,
-                  onAddPressed: () => _showSpotlightSearch(context),
-                ),
-              ),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final isMobile =
+                constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
 
-              // 中间日历主体
-              Expanded(
-                child: Column(
-                  children: [
-                    // 顶部导航栏
-                    CalendarHeader(
-                      focusedDay: _focusedDay,
-                      viewMode: _viewMode,
-                      searchQuery: _searchQuery,
-                      filterPriorities: _filterPriorities,
-                      filterIsCompleted: _filterIsCompleted,
-                      navKey: _navKey,
-                      todayKey: _todayKey,
-                      onSearchChanged: (val) =>
-                          setState(() => _searchQuery = val),
-                      onPreviousPage: _onPreviousPage,
-                      onNextPage: _onNextPage,
-                      onGoToToday: _onGoToToday,
-                      onFilterPressed: _showFilterMenu,
-                    ),
-
-                    // 日历网格或日视图
-                    Expanded(
-                      child: Showcase(
-                        key: _gridKey,
-                        title: '任务管理',
-                        description: '双击有任务的日期，快速查看和管理当天任务',
-                        child: _buildCalendarContent(tasks),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            if (isMobile) {
+              return _buildMobileLayout(context, tasks);
+            } else {
+              return _buildDesktopLayout(context, tasks);
+            }
+          },
         );
       },
     );
@@ -313,5 +264,176 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       selectedDay: _selectedDay,
       focusedDay: _focusedDay,
     );
+  }
+
+  // ===== 响应式布局 =====
+
+  /// 构建桌面端布局（原有布局）
+  Widget _buildDesktopLayout(BuildContext context, List<Task> tasks) {
+    return Scaffold(
+      backgroundColor: AmberColors.background,
+      body: Row(
+        children: [
+          // 左侧边栏
+          Container(
+            width: 260,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                right: BorderSide(color: AmberColors.divider),
+              ),
+            ),
+            child: CalendarLeftSidebar(
+              focusedDay: _focusedDay,
+              selectedDay: _selectedDay,
+              viewMode: _viewMode,
+              tasks: tasks,
+              addKey: _addKey,
+              viewModeKey: _viewModeKey,
+              onDaySelected: _onDaySelected,
+              onPageChanged: _onPageChanged,
+              onViewModeChanged: _onViewModeChanged,
+              onAddPressed: () => _showSpotlightSearch(context),
+            ),
+          ),
+
+          // 中间日历主体
+          Expanded(
+            child: Column(
+              children: [
+                // 顶部导航栏
+                CalendarHeader(
+                  focusedDay: _focusedDay,
+                  viewMode: _viewMode,
+                  searchQuery: _searchQuery,
+                  filterPriorities: _filterPriorities,
+                  filterIsCompleted: _filterIsCompleted,
+                  navKey: _navKey,
+                  todayKey: _todayKey,
+                  onSearchChanged: (val) => setState(() => _searchQuery = val),
+                  onPreviousPage: _onPreviousPage,
+                  onNextPage: _onNextPage,
+                  onGoToToday: _onGoToToday,
+                  onFilterPressed: _showFilterMenu,
+                ),
+
+                // 日历网格或日视图
+                Expanded(
+                  child: Showcase(
+                    key: _gridKey,
+                    title: '任务管理',
+                    description: '双击有任务的日期，快速查看和管理当天任务',
+                    child: _buildCalendarContent(tasks),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建移动端布局
+  /// 隐藏左侧边栏，只显示日历主体，底部添加导航栏
+  Widget _buildMobileLayout(BuildContext context, List<Task> tasks) {
+    return Scaffold(
+      backgroundColor: AmberColors.background,
+      appBar: AppBar(
+        backgroundColor: AmberColors.cardBackground,
+        elevation: 0,
+        title: Text(
+          _getMonthTitle(),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AmberColors.textPrimary,
+          ),
+        ),
+        actions: [
+          // 今天按钮
+          IconButton(
+            onPressed: _onGoToToday,
+            icon: const Icon(Icons.today, color: AmberColors.textSecondary),
+            tooltip: '今天',
+          ),
+          // 添加任务按钮
+          IconButton(
+            onPressed: () => _showSpotlightSearch(context),
+            icon: const Icon(Icons.add, color: AmberColors.primary),
+            tooltip: '添加任务',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 视图模式切换
+          Container(
+            color: AmberColors.cardBackground,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AmberDimens.spacingMd,
+              vertical: AmberDimens.spacingSm,
+            ),
+            child: Row(
+              children: [
+                // 上一页
+                IconButton(
+                  onPressed: _onPreviousPage,
+                  icon: const Icon(Icons.chevron_left),
+                  iconSize: 20,
+                ),
+                // 下一页
+                IconButton(
+                  onPressed: _onNextPage,
+                  icon: const Icon(Icons.chevron_right),
+                  iconSize: 20,
+                ),
+                const Spacer(),
+                // 视图模式切换
+                SegmentedButton<CalendarViewMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: CalendarViewMode.month,
+                      label: Text('月'),
+                    ),
+                    ButtonSegment(
+                      value: CalendarViewMode.week,
+                      label: Text('周'),
+                    ),
+                    ButtonSegment(
+                      value: CalendarViewMode.day,
+                      label: Text('日'),
+                    ),
+                  ],
+                  selected: {_viewMode},
+                  onSelectionChanged: (modes) {
+                    if (modes.isNotEmpty) {
+                      _onViewModeChanged(modes.first);
+                    }
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: WidgetStateProperty.all(
+                      const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // 日历内容
+          Expanded(
+            child: _buildCalendarContent(tasks),
+          ),
+        ],
+      ),
+      bottomNavigationBar: const MobileBottomNavBar(),
+    );
+  }
+
+  /// 获取月份标题（阿拉伯数字格式：2026年2月）
+  String _getMonthTitle() {
+    return '${_focusedDay.year}年${_focusedDay.month}月';
   }
 }

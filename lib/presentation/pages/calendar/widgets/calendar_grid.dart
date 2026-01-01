@@ -139,43 +139,52 @@ class CalendarGrid extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 日期数字
-            Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  alignment: Alignment.center,
-                  decoration: isToday
-                      ? const BoxDecoration(
-                          color: AmberColors.primary,
-                          shape: BoxShape.circle,
-                        )
-                      : null,
-                  child: Text(
-                    '${day.day}',
-                    style: TextStyle(
-                      color: isToday
-                          ? Colors.white
-                          : (isOutside
-                              ? AmberColors.textDisabled
-                              : AmberColors.textPrimary),
-                      fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                    ),
-                  ),
-                ),
-                if (isToday) ...[
-                  const SizedBox(width: 4),
-                  ClipOval(
-                    child: Image.asset(
-                      'assets/images/mosquito_amber.png',
+            // 日期数字 - 使用 LayoutBuilder 判断是否有足够宽度显示今日图标
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // 需要至少 56px 才能显示日期(24) + 间距(4) + 图标(24) + 余量(4)
+                final showTodayIcon = constraints.maxWidth >= 56;
+
+                return Row(
+                  children: [
+                    Container(
                       width: 24,
                       height: 24,
-                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      decoration: isToday
+                          ? const BoxDecoration(
+                              color: AmberColors.primary,
+                              shape: BoxShape.circle,
+                            )
+                          : null,
+                      child: Text(
+                        '${day.day}',
+                        style: TextStyle(
+                          color: isToday
+                              ? Colors.white
+                              : (isOutside
+                                  ? AmberColors.textDisabled
+                                  : AmberColors.textPrimary),
+                          fontWeight:
+                              isToday ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ],
+                    // 仅在宽度足够时显示今日图标（桌面端显示，移动端隐藏）
+                    if (isToday && showTodayIcon) ...[
+                      const SizedBox(width: 4),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/images/mosquito_amber.png',
+                          width: 24,
+                          height: 24,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 4),
             // 任务列表 (最多显示3个)

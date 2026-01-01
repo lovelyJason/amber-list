@@ -12,6 +12,8 @@ class SidebarSmartLists {
   static final GlobalKey trashIconKey = GlobalKey();
 
   /// 构建智能清单项
+  ///
+  /// [inDrawer] 为 true 时，点击后会自动关闭抽屉
   static Widget buildSmartListItem(
     BuildContext context,
     WidgetRef ref, {
@@ -21,6 +23,7 @@ class SidebarSmartLists {
     required NavView view,
     required bool isSelected,
     GlobalKey? itemKey,
+    bool inDrawer = false,
   }) {
     return Padding(
       key: itemKey,
@@ -54,6 +57,10 @@ class SidebarSmartLists {
           ),
           onTap: () {
             ref.read(appNavProvider.notifier).setView(view);
+            // 抽屉模式下点击后关闭抽屉
+            if (inDrawer) {
+              Navigator.of(context).pop();
+            }
           },
         ),
       ),

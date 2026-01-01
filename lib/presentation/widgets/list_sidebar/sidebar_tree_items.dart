@@ -11,6 +11,8 @@ import 'sidebar_models.dart';
 /// 负责渲染清单和文件夹的树形列表项
 class SidebarTreeItems {
   /// 构建树形项（可拖拽）
+  ///
+  /// [inDrawer] 为 true 时，点击后会自动关闭抽屉
   static Widget buildTreeItem(
     BuildContext context,
     WidgetRef ref,
@@ -18,9 +20,10 @@ class SidebarTreeItems {
     List<Task> allTasks,
     AppNavState navState, {
     required double indent,
+    bool inDrawer = false,
   }) {
     final child = node.data.isFolder
-        ? _buildFolderItem(context, ref, node, allTasks, navState, indent)
+        ? _buildFolderItem(context, ref, node, allTasks, navState, indent, inDrawer)
         : _buildListItem(
             context,
             ref,
@@ -31,6 +34,7 @@ class SidebarTreeItems {
             isSelected: navState.currentView == NavView.list &&
                 navState.selectedListId == node.data.id,
             indent: indent,
+            inDrawer: inDrawer,
           );
 
     return LongPressDraggable<TaskList>(
@@ -66,6 +70,7 @@ class SidebarTreeItems {
     List<Task> allTasks,
     AppNavState navState,
     double indent,
+    bool inDrawer,
   ) {
     return DragTarget<TaskList>(
       onWillAccept: (dragged) {
@@ -144,6 +149,7 @@ class SidebarTreeItems {
                       allTasks,
                       navState,
                       indent: indent + 16.0,
+                      inDrawer: inDrawer,
                     ),
                   )
                   .toList(),
@@ -162,6 +168,7 @@ class SidebarTreeItems {
     required int taskCount,
     required bool isSelected,
     double indent = 0,
+    bool inDrawer = false,
   }) {
     return Padding(
       padding: EdgeInsets.only(left: indent + 8, right: 8),
@@ -211,6 +218,10 @@ class SidebarTreeItems {
               ref
                   .read(appNavProvider.notifier)
                   .setView(NavView.list, listId: list.id);
+              // 抽屉模式下点击后关闭抽屉
+              if (inDrawer) {
+                Navigator.of(context).pop();
+              }
             },
           ),
         ),

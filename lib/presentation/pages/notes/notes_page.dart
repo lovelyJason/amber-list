@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:window_manager/window_manager.dart'; // Add import
+import 'package:window_manager/window_manager.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/utils/responsive_helper.dart';
 import '../../../data/models/models.dart';
+import '../../widgets/adaptive/bottom_nav_bar.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 
 /// 笔记状态Provider
@@ -132,6 +134,26 @@ class _NotesPageState extends ConsumerState<NotesPage> {
     final pinnedNotes = filteredNotes.where((n) => n.isPinned).toList();
     final regularNotes = filteredNotes.where((n) => !n.isPinned).toList();
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile =
+            constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+
+        if (isMobile) {
+          return _buildMobileLayout(pinnedNotes, regularNotes, notes);
+        } else {
+          return _buildDesktopLayout(pinnedNotes, regularNotes, notes);
+        }
+      },
+    );
+  }
+
+  /// 构建桌面端布局（原有布局）
+  Widget _buildDesktopLayout(
+    List<Note> pinnedNotes,
+    List<Note> regularNotes,
+    List<Note> notes,
+  ) {
     return Row(
       children: [
         // 主内容区
@@ -154,6 +176,127 @@ class _NotesPageState extends ConsumerState<NotesPage> {
         if (_selectedNoteId != null)
           _buildDetailPanel(notes.firstWhere((n) => n.id == _selectedNoteId)),
       ],
+    );
+  }
+
+  /// 构建移动端布局
+  /// 移动端隐藏详情面板，点击笔记时全屏编辑
+  Widget _buildMobileLayout(
+    List<Note> pinnedNotes,
+    List<Note> regularNotes,
+    List<Note> notes,
+  ) {
+    // 如果选中了笔记，显示全屏编辑页面
+    if (_selectedNoteId != null) {
+      final note = notes.firstWhere((n) => n.id == _selectedNoteId);
+      return Scaffold(
+        backgroundColor: AmberColors.cardBackground,
+        appBar: AppBar(
+          backgroundColor: AmberColors.cardBackground,
+          elevation: 0,
+          leading: IconButton(
+            onPressed: () => setState(() => _selectedNoteId = null),
+            icon: const Icon(Icons.arrow_back, color: AmberColors.textPrimary),
+          ),
+          title: const Text(
+            '编辑笔记',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AmberColors.textPrimary,
+            ),
+          ),
+          actions: [
+            IconButton(
+              onPressed: () => ref.read(notesProvider.notifier).togglePin(note.id),
+              icon: Icon(
+                note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                color: note.isPinned ? AmberColors.primary : AmberColors.textSecondary,
+              ),
+              tooltip: note.isPinned ? '取消置顶' : '置顶',
+            ),
+            IconButton(
+              onPressed: () {
+                ref.read(notesProvider.notifier).deleteNote(note.id);
+                setState(() => _selectedNoteId = null);
+              },
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: '删除',
+            ),
+          ],
+        ),
+        body: _NoteDetailPanel(
+          key: ValueKey(note.id),
+          note: note,
+          onClose: () => setState(() => _selectedNoteId = null),
+        ),
+      );
+    }
+
+    // 笔记列表页面
+    return Scaffold(
+      backgroundColor: AmberColors.background,
+      appBar: AppBar(
+        backgroundColor: AmberColors.cardBackground,
+        elevation: 0,
+        title: const Text(
+          '笔记',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: AmberColors.textPrimary,
+          ),
+        ),
+        actions: [
+          // 视图切换
+          IconButton(
+            onPressed: () => setState(() => _isGridView = !_isGridView),
+            icon: Icon(
+              _isGridView ? Icons.view_list : Icons.grid_view,
+              color: AmberColors.textSecondary,
+            ),
+            tooltip: _isGridView ? '列表视图' : '网格视图',
+          ),
+          // 新建笔记
+          IconButton(
+            onPressed: _createNewNote,
+            icon: const Icon(Icons.add, color: AmberColors.primary),
+            tooltip: '新建笔记',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // 搜索框
+          Container(
+            color: AmberColors.cardBackground,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AmberDimens.spacingMd,
+              vertical: AmberDimens.spacingSm,
+            ),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: '搜索笔记...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                ),
+              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
+            ),
+          ),
+          const Divider(height: 1),
+          // 笔记列表
+          Expanded(
+            child: _isGridView
+                ? _buildGridView(pinnedNotes, regularNotes)
+                : _buildListView(pinnedNotes, regularNotes),
+          ),
+        ],
+      ),
+      bottomNavigationBar: const MobileBottomNavBar(),
     );
   }
 

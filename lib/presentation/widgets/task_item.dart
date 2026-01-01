@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
+import 'adaptive/detail_bottom_sheet.dart';
 import 'common/toast/toast_manager.dart';
 import 'common/toast/toast_types.dart';
 import '../../core/constants/constants.dart';
@@ -59,11 +61,26 @@ class TaskItem extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap ?? () {
-            ref.read(appNavProvider.notifier).selectTask(task.id);
+            // 移动端：显示 BottomSheet 详情面板
+            // 桌面端：打开右侧详情面板
+            if (Platform.isAndroid || Platform.isIOS) {
+              DetailBottomSheet.show(context, task);
+            } else {
+              ref.read(appNavProvider.notifier).selectTask(task.id);
+            }
           },
+          // 桌面端：鼠标右键触发菜单
           onSecondaryTapDown: (details) {
             _showContextMenu(context, ref, details.globalPosition);
           },
+          // 移动端：长按触发菜单（桌面端不需要长按）
+          onLongPress: (Platform.isAndroid || Platform.isIOS) ? () {
+            // 获取当前组件的位置作为菜单弹出位置
+            final RenderBox box = context.findRenderObject() as RenderBox;
+            final Offset position = box.localToGlobal(Offset.zero);
+            // 菜单显示在任务项中间偏右的位置
+            _showContextMenu(context, ref, Offset(position.dx + box.size.width / 2, position.dy + box.size.height / 2));
+          } : null,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(
@@ -95,9 +112,11 @@ class TaskItem extends ConsumerWidget {
                       ),
                       if (task.dueDate != null || task.tags.isNotEmpty)
                         const SizedBox(height: 4),
+                      // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
                       if (task.dueDate != null || task.tags.isNotEmpty)
                         Row(
                           children: [
+                            // 日期部分（固定宽度，不会溢出）
                             if (task.dueDate != null) ...[
                               Icon(
                                 Icons.calendar_today_outlined,
@@ -113,46 +132,56 @@ class TaskItem extends ConsumerWidget {
                                 ),
                               ),
                             ],
+                            // 标签部分（用Flexible包裹，超出时截断）
                             if (task.tags.isNotEmpty) ...[
                               const SizedBox(width: AmberDimens.spacingSm),
-                              ...task.tags.take(3).map((tagName) {
-                                // 查找标签对应的颜色
-                                final allTags = ref.watch(tagsProvider);
-                                final tagObj = allTags.firstWhere(
-                                  (t) => t.name == tagName,
-                                  orElse: () => Tag(
-                                    id: '',
-                                    name: tagName,
-                                    color: AmberColors.primary,
-                                    createdAt: DateTime.now(),
-                                  ),
-                                );
-                                final tagColor = tagObj.color;
+                              Flexible(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: task.tags.take(3).map((tagName) {
+                                    // 查找标签对应的颜色
+                                    final allTags = ref.watch(tagsProvider);
+                                    final tagObj = allTags.firstWhere(
+                                      (t) => t.name == tagName,
+                                      orElse: () => Tag(
+                                        id: '',
+                                        name: tagName,
+                                        color: AmberColors.primary,
+                                        createdAt: DateTime.now(),
+                                      ),
+                                    );
+                                    final tagColor = tagObj.color;
 
-                                return Container(
-                                  margin: const EdgeInsets.only(right: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: tagColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: tagColor.withOpacity(0.2), // 微弱的边框
-                                      width: 0.5,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    tagName,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: tagColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                );
-                              }),
+                                    return Flexible(
+                                      child: Container(
+                                        margin: const EdgeInsets.only(right: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: tagColor.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: tagColor.withValues(alpha: 0.2),
+                                            width: 0.5,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          tagName,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: tagColor,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
                             ],
                           ],
                         ),
@@ -267,89 +296,85 @@ class TaskItem extends ConsumerWidget {
       return;
     }
 
-    showInstantMenu<String>(
-      context: context,
-      position: RelativeRect.fromRect(
-        position & const Size(40, 40),
-        Offset.zero & overlay.size,
+    // 判断是否为桌面端（支持便签功能）
+    final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+
+    // 动态构建菜单项列表
+    final menuItems = <PopupMenuEntry<String>>[
+      PopupMenuItem<String>(
+        value: 'edit',
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {
+          Future.delayed(Duration.zero, () {
+            _showEditDialog(context, ref);
+          });
+        },
+        child: const Row(
+          children: [
+            Icon(
+              Icons.edit_outlined,
+              size: 16,
+              color: AmberColors.textPrimary,
+            ),
+            SizedBox(width: 8),
+            Text(
+              '编辑',
+              style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
+            ),
+          ],
+        ),
       ),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      constraints: const BoxConstraints(minWidth: 160, maxWidth: 220),
-      items: <PopupMenuEntry<String>>[
-        PopupMenuItem<String>(
-          value: 'edit',
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onTap: () {
-            // 触发编辑可能需要通知父组件或弹窗，简单起见先弹窗
-            Future.delayed(Duration.zero, () {
-              _showEditDialog(context, ref);
-            });
-          },
-          child: const Row(
-            children: [
-              Icon(
-                Icons.edit_outlined,
-                size: 16,
-                color: AmberColors.textPrimary,
-              ),
-              SizedBox(width: 8),
-              Text(
-                '编辑',
-                style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
-              ),
-            ],
-          ),
+      PopupMenuItem<String>(
+        value: 'move_to',
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {
+          Future.delayed(Duration.zero, () {
+            _showMoveTaskDialog(context, ref);
+          });
+        },
+        child: const Row(
+          children: [
+            Icon(
+              Icons.drive_file_move_outline,
+              size: 16,
+              color: AmberColors.textPrimary,
+            ),
+            SizedBox(width: 8),
+            Text(
+              '移动到...',
+              style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
+            ),
+          ],
         ),
-        PopupMenuItem<String>(
-          value: 'move_to',
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onTap: () {
-            Future.delayed(Duration.zero, () {
-              _showMoveTaskDialog(context, ref);
-            });
-          },
-          child: const Row(
-            children: [
-              Icon(
-                Icons.drive_file_move_outline,
-                size: 16,
-                color: AmberColors.textPrimary,
-              ),
-              SizedBox(width: 8),
-              Text(
-                '移动到...',
-                style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
-              ),
-            ],
-          ),
+      ),
+      PopupMenuItem<String>(
+        value: 'tags',
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {
+          Future.delayed(Duration.zero, () {
+            _showTaskTagsDialog(context, ref);
+          });
+        },
+        child: const Row(
+          children: [
+            Icon(
+              Icons.label_outline,
+              size: 16,
+              color: AmberColors.textPrimary,
+            ),
+            SizedBox(width: 8),
+            Text(
+              '标签',
+              style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
+            ),
+          ],
         ),
-        PopupMenuItem<String>(
-          value: 'tags',
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onTap: () {
-            Future.delayed(Duration.zero, () {
-              _showTaskTagsDialog(context, ref);
-            });
-          },
-          child: const Row(
-            children: [
-              Icon(
-                Icons.label_outline,
-                size: 16,
-                color: AmberColors.textPrimary,
-              ),
-              SizedBox(width: 8),
-              Text(
-                '标签',
-                style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
-              ),
-            ],
-          ),
-        ),
+      ),
+      // 桌面端才显示"打开便签"选项
+      if (isDesktop)
         PopupMenuItem<String>(
           value: 'open_note',
           height: 32,
@@ -374,57 +399,66 @@ class TaskItem extends ConsumerWidget {
             ],
           ),
         ),
-        PopupMenuItem<String>(
-          value: 'priority',
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onTap: () {
-            Future.delayed(Duration.zero, () {
-              _showPriorityDialog(context, ref);
-            });
-          },
-          child: const Row(
-            children: [
-              Icon(
-                Icons.flag_outlined,
-                size: 16,
-                color: AmberColors.textPrimary,
-              ), // Flag often used for priority
-              SizedBox(width: 8),
-              Text(
-                '优先级',
-                style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
-              ),
-            ],
-          ),
+      PopupMenuItem<String>(
+        value: 'priority',
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {
+          Future.delayed(Duration.zero, () {
+            _showPriorityDialog(context, ref);
+          });
+        },
+        child: const Row(
+          children: [
+            Icon(
+              Icons.flag_outlined,
+              size: 16,
+              color: AmberColors.textPrimary,
+            ),
+            SizedBox(width: 8),
+            Text(
+              '优先级',
+              style: TextStyle(fontSize: 13, color: AmberColors.textPrimary),
+            ),
+          ],
         ),
-
-        const PopupMenuDivider(height: 1),
-
-        PopupMenuItem<String>(
-          value: 'delete',
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          onTap: () {
-            ref.read(soundServiceProvider).playDelete();
-            // 播放抛物线动画，动画完成后执行删除
-            TrashAnimationService.instance.playTrashAnimation(
-              context,
-              position,
-              onComplete: () {
-                ref.read(taskProvider.notifier).deleteTask(task.id);
-              },
-            );
-          },
-          child: const Row(
-            children: [
-              Icon(Icons.delete_outline, size: 16, color: Colors.red),
-              SizedBox(width: 8),
-              Text('删除', style: TextStyle(color: Colors.red, fontSize: 13)),
-            ],
-          ),
+      ),
+      const PopupMenuDivider(height: 1),
+      PopupMenuItem<String>(
+        value: 'delete',
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: () {
+          ref.read(soundServiceProvider).playDelete();
+          // 播放抛物线动画，动画完成后执行删除
+          TrashAnimationService.instance.playTrashAnimation(
+            context,
+            position,
+            onComplete: () {
+              ref.read(taskProvider.notifier).deleteTask(task.id);
+            },
+          );
+        },
+        child: const Row(
+          children: [
+            Icon(Icons.delete_outline, size: 16, color: Colors.red),
+            SizedBox(width: 8),
+            Text('删除', style: TextStyle(color: Colors.red, fontSize: 13)),
+          ],
         ),
-      ],
+      ),
+    ];
+
+    showInstantMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      constraints: const BoxConstraints(minWidth: 160, maxWidth: 220),
+      items: menuItems,
     );
   }
 

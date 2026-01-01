@@ -4,15 +4,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import '../../core/constants/constants.dart';
+import '../../core/utils/responsive_helper.dart';
 import '../widgets/common/toast/toast_manager.dart';
 import '../widgets/common/toast/toast_types.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import '../providers/native_sticky_note_provider.dart';
 import '../widgets/widgets.dart';
+import '../widgets/adaptive/bottom_nav_bar.dart';
+import '../widgets/adaptive/drawer_list_sidebar.dart';
 import 'calendar/calendar_page.dart';
 import 'notes/notes_page.dart';
 import 'pomodoro/pomodoro_page.dart';
+import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
@@ -75,12 +79,34 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     // 初始化原生便签服务（设置回调）
     // 使用 watch 确保服务在整个生命周期内保持活跃
-    ref.watch(nativeStickyNoteProvider);
+    // 仅在桌面端初始化（移动端不支持多窗口）
+    if (ResponsiveHelper.isDesktopOS()) {
+      ref.watch(nativeStickyNoteProvider);
+    }
 
     // ref is available in build
     final navState = ref.watch(appNavProvider);
     final tasks = ref.watch(taskProvider);
 
+    // 使用 LayoutBuilder 监听屏幕宽度变化，实现响应式布局
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+
+        if (isMobile) {
+          // 移动端布局：底部导航栏 + 抽屉
+          return _buildMobileLayout(context, navState, tasks);
+        } else {
+          // 桌面端布局：保持原有 Row 布局
+          return _buildDesktopLayout(context, navState, tasks);
+        }
+      },
+    );
+  }
+
+  /// 构建桌面端布局（原有布局，完全保持不变）
+  Widget _buildDesktopLayout(
+      BuildContext context, AppNavState navState, List<Task> tasks) {
     // 日历、笔记、番茄时钟页面使用全屏布局
     final isFullScreenView = navState.currentView == NavView.calendar ||
         navState.currentView == NavView.notes ||
@@ -103,7 +129,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               ],
               // 主内容区
               Expanded(
-                child: _buildMainContent(ref, navState, tasks),
+                child: _buildMainContent(ref, navState, tasks, isMobile: false),
               ),
               // 详情面板（日历和笔记页面自带详情面板）
               if (!isFullScreenView &&
@@ -140,6 +166,108 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 构建移动端布局（底部导航栏 + 抽屉）
+  ///
+  /// 设计说明：
+  /// - 日历、笔记、番茄钟页面有自己的完整 Scaffold（含 AppBar 和 BottomNavigationBar）
+  /// - 任务列表页面（清单、今天等）使用 HomePage 的 Scaffold 容器
+  /// - 这样避免嵌套 Scaffold 导致双重底部导航栏的问题
+  Widget _buildMobileLayout(BuildContext context, AppNavState navState, List<Task> tasks) {
+    // 日历、笔记、番茄钟页面有自己的完整布局（含 Scaffold 和 BottomNavigationBar）
+    // 直接返回它们，不再套 HomePage 的 Scaffold
+    final isFullScreenView = navState.currentView == NavView.calendar ||
+        navState.currentView == NavView.notes ||
+        navState.currentView == NavView.pomodoro;
+
+    if (isFullScreenView) {
+      return _buildMainContent(ref, navState, tasks, isMobile: true);
+    }
+
+    // 任务列表页面使用 HomePage 的 Scaffold 容器
+    return Scaffold(
+      // 移动端顶部 AppBar
+      appBar: AppBar(
+        title: Text(
+          _getViewTitle(navState.currentView),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AmberColors.textPrimary,
+          ),
+        ),
+        backgroundColor: AmberColors.cardBackground,
+        elevation: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: AmberColors.textPrimary),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            tooltip: '打开清单列表',
+          ),
+        ),
+        actions: [
+          // 筛选排序按钮
+          const FilterSortButtons(compact: true),
+          // 设置按钮
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: AmberColors.textSecondary),
+            onPressed: () => _openSettings(context),
+            tooltip: '设置',
+          ),
+        ],
+      ),
+      // 左侧抽屉（清单列表）
+      drawer: const DrawerListSidebar(),
+      // 主内容区
+      body: _buildMainContent(ref, navState, tasks, isMobile: true),
+      // 底部导航栏
+      bottomNavigationBar: const MobileBottomNavBar(),
+      // 移动端调试按钮（仅在调试模式显示）
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.small(
+              tooltip: 'Debug 调试器',
+              backgroundColor: AmberColors.primary,
+              child: const Icon(Icons.bug_report, color: Colors.white, size: 20),
+              onPressed: () => _showDebugToolbox(context),
+            )
+          : null,
+    );
+  }
+
+  /// 获取当前视图的标题（用于移动端 AppBar）
+  String _getViewTitle(NavView view) {
+    switch (view) {
+      case NavView.inbox:
+        return '收集箱';
+      case NavView.today:
+        return '今天';
+      case NavView.upcoming:
+        return '最近7天';
+      case NavView.calendar:
+        return '日历';
+      case NavView.notes:
+        return '笔记';
+      case NavView.pomodoro:
+        return '番茄钟';
+      case NavView.list:
+        return '清单';
+      case NavView.completed:
+        return '已完成';
+      case NavView.trash:
+        return '垃圾桶';
+      case NavView.all:
+        return '全部';
+    }
+  }
+
+  /// 打开设置页面（移动端）
+  void _openSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SettingsPage(windowId: null),
       ),
     );
   }
@@ -299,12 +427,23 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  Widget _buildMainContent(WidgetRef ref, AppNavState navState, List<Task> tasks) {
+  /// 构建主内容区
+  /// [isMobile] 是否为移动端，移动端会隐藏 TaskListView 的 header
+  Widget _buildMainContent(
+    WidgetRef ref,
+    AppNavState navState,
+    List<Task> tasks, {
+    bool isMobile = false,
+  }) {
     switch (navState.currentView) {
       case NavView.all:
         // 显示所有任务（包括已完成），但不包括已删除
         final allTasks = tasks.where((t) => !t.isDeleted).toList();
-        return TaskListView(title: '全部', tasks: allTasks);
+        return TaskListView(
+          title: '全部',
+          tasks: allTasks,
+          showHeader: !isMobile,
+        );
       case NavView.inbox:
         // Inbox now shows ALL tasks as per user request (excluding deleted)
         final allTasks = tasks.where((t) => !t.isDeleted).toList();
@@ -312,12 +451,14 @@ class _HomePageState extends ConsumerState<HomePage> {
           title: '收集箱',
           tasks: allTasks,
           showDatePicker: true,
+          showHeader: !isMobile,
         );
       case NavView.today:
         final todayTasks = ref.watch(todayTasksProvider);
         return TaskListView(
           title: '今天',
           tasks: todayTasks,
+          showHeader: !isMobile,
         );
       case NavView.upcoming:
         final upcomingTasks = ref.watch(upcomingTasksProvider);
@@ -325,6 +466,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           title: '最近7天',
           tasks: upcomingTasks,
           showInput: false,
+          showHeader: !isMobile,
         );
       case NavView.calendar:
         return const CalendarPage();
@@ -341,6 +483,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             title: currentList?.name ?? '清单',
             tasks: listTasks,
             listId: navState.selectedListId,
+            showHeader: !isMobile,
           );
         }
         return const Center(child: Text('请选择清单'));
@@ -351,6 +494,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           tasks: completedTasks,
           showInput: false,
           groupCompleted: false,
+          showHeader: !isMobile,
         );
       case NavView.trash:
         final trashTasks = ref.watch(trashTasksProvider);
@@ -359,6 +503,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           tasks: trashTasks,
           showInput: false,
           groupCompleted: false,
+          showHeader: !isMobile,
         );
     }
   }

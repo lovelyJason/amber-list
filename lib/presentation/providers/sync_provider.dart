@@ -73,7 +73,8 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
   Future<void> _initialize() async {
     try {
       final config = await SyncConfigService.loadConfig();
-      _ref.read(syncConfigProvider.notifier).state = config;
+      // 只有真正配置好（有服务器地址和用户名）才设置为非 null
+      _ref.read(syncConfigProvider.notifier).state = config.isConfigured ? config : null;
 
       // 更新上次同步状态
       state = state.copyWith(

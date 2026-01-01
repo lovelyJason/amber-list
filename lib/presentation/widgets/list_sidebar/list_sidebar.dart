@@ -19,8 +19,16 @@ export 'sidebar_models.dart';
 
 /// 清单侧边栏
 /// 主入口组件，组合所有子模块
+///
+/// 支持两种模式：
+/// - 桌面端：固定宽度220px，作为侧边栏
+/// - 移动端：自适应宽度，嵌入抽屉中
 class ListSidebar extends ConsumerStatefulWidget {
-  const ListSidebar({super.key});
+  /// 是否嵌入抽屉中（移动端模式）
+  /// 为true时宽度自适应，为false时使用固定宽度
+  final bool inDrawer;
+
+  const ListSidebar({super.key, this.inDrawer = false});
 
   @override
   ConsumerState<ListSidebar> createState() => _ListSidebarState();
@@ -44,14 +52,17 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
     final tree = SidebarTreeBuilder.buildTree(taskLists);
 
     return Container(
-      width: AmberDimens.listSidebarWidth,
+      // 抽屉模式下自适应宽度，桌面端固定宽度
+      width: widget.inDrawer ? null : AmberDimens.listSidebarWidth,
       color: AmberColors.sidebarBackground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 头部标题栏
-          _buildHeader(context, taskLists),
-          const Divider(height: 1),
+          // 头部标题栏（抽屉模式下隐藏，因为 DrawerListSidebar 已有头部）
+          if (!widget.inDrawer) ...[
+            _buildHeader(context, taskLists),
+            const Divider(height: 1),
+          ],
           // 清单列表
           Expanded(
             child: ScrollConfiguration(
@@ -171,6 +182,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
           title: '收集箱',
           view: NavView.inbox,
           isSelected: navState.currentView == NavView.inbox,
+          inDrawer: widget.inDrawer,
         ),
         SidebarSmartLists.buildSmartListItem(
           context,
@@ -180,6 +192,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
           title: '今天',
           view: NavView.today,
           isSelected: navState.currentView == NavView.today,
+          inDrawer: widget.inDrawer,
         ),
         SidebarSmartLists.buildSmartListItem(
           context,
@@ -189,6 +202,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
           title: '最近7天',
           view: NavView.upcoming,
           isSelected: navState.currentView == NavView.upcoming,
+          inDrawer: widget.inDrawer,
         ),
       ],
     );
@@ -251,6 +265,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
               tasks,
               navState,
               indent: 0,
+              inDrawer: widget.inDrawer,
             ),
           ),
         ],
@@ -349,6 +364,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
           title: '已完成',
           view: NavView.completed,
           isSelected: navState.currentView == NavView.completed,
+          inDrawer: widget.inDrawer,
         ),
         SidebarSmartLists.buildSmartListItem(
           context,
@@ -360,6 +376,7 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
           title: '垃圾桶',
           view: NavView.trash,
           isSelected: navState.currentView == NavView.trash,
+          inDrawer: widget.inDrawer,
         ),
       ],
     );

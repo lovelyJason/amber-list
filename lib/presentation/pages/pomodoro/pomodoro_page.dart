@@ -4,8 +4,10 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'dart:math' as math;
 import '../../../core/constants/constants.dart';
 import '../../../core/services/pomodoro_timer.dart';
+import '../../../core/utils/responsive_helper.dart';
 import '../../../data/models/models.dart';
 import '../../providers/providers.dart';
+import '../../widgets/adaptive/bottom_nav_bar.dart';
 import '../../widgets/common/toast/toast_manager.dart';
 
 /// 番茄时钟页面
@@ -22,6 +24,22 @@ class _PomodoroPageState extends ConsumerState<PomodoroPage> {
     final timer = ref.watch(pomodoroTimerProvider);
     final timerState = timer.state;
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile =
+            constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+
+        if (isMobile) {
+          return _buildMobileLayout(context, timerState);
+        } else {
+          return _buildDesktopLayout(context, timerState);
+        }
+      },
+    );
+  }
+
+  /// 构建桌面端布局（原有布局）
+  Widget _buildDesktopLayout(BuildContext context, PomodoroTimerState timerState) {
     return Row(
       children: [
         // 左侧: 专注模式面板
@@ -36,6 +54,236 @@ class _PomodoroPageState extends ConsumerState<PomodoroPage> {
           child: _buildSessionQueuePanel(context),
         ),
       ],
+    );
+  }
+
+  /// 构建移动端布局
+  /// 移动端使用垂直布局，上方是番茄钟，下方是简化的任务队列
+  Widget _buildMobileLayout(BuildContext context, PomodoroTimerState timerState) {
+    return Scaffold(
+      backgroundColor: AmberColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 专注模式面板（缩小版）
+            Expanded(
+              flex: 3,
+              child: _buildMobileFocusPanel(context, timerState),
+            ),
+            // 分隔线
+            const Divider(height: 1),
+            // 任务队列（简化版）
+            Expanded(
+              flex: 2,
+              child: _buildMobileQueuePanel(context),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: const MobileBottomNavBar(),
+    );
+  }
+
+  /// 移动端专注面板（简化版）
+  Widget _buildMobileFocusPanel(
+    BuildContext context,
+    PomodoroTimerState timerState,
+  ) {
+    return Container(
+      color: AmberColors.background,
+      padding: const EdgeInsets.all(AmberDimens.spacingMd),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 模式切换胶囊
+          Center(child: _buildCapsuleModeSwitcher(timerState)),
+          const SizedBox(height: AmberDimens.spacingLg),
+
+          // 圆形倒计时器（稍小）
+          SizedBox(
+            width: 200,
+            height: 200,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CustomPaint(
+                  size: const Size(200, 200),
+                  painter: _CircularProgressPainter(
+                    progress: timerState.currentType.defaultDuration > 0
+                        ? (timerState.currentType.defaultDuration -
+                                timerState.remainingSeconds) /
+                            timerState.currentType.defaultDuration
+                        : 0.0,
+                    fillColor: _getColorForType(timerState.currentType),
+                    backgroundColor: AmberColors.divider,
+                    strokeWidth: 10.0,
+                  ),
+                ),
+                Text(
+                  '${(timerState.remainingSeconds ~/ 60).toString().padLeft(2, '0')}:${(timerState.remainingSeconds % 60).toString().padLeft(2, '0')}',
+                  style: const TextStyle(
+                    fontSize: 40,
+                    color: AmberColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AmberDimens.spacingLg),
+
+          // 控制按钮
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 重置按钮
+              IconButton(
+                onPressed: () {
+                  ref.read(pomodoroControllerProvider.notifier).reset();
+                },
+                icon: const Icon(Icons.refresh),
+                tooltip: '重置',
+              ),
+              const SizedBox(width: AmberDimens.spacingMd),
+              // 开始/暂停按钮
+              ElevatedButton.icon(
+                onPressed: () {
+                  final controller = ref.read(pomodoroControllerProvider.notifier);
+                  if (timerState.status == TimerStatus.running) {
+                    controller.pause();
+                  } else if (timerState.status == TimerStatus.paused) {
+                    controller.resume();
+                  } else {
+                    controller.startPomodoro();
+                  }
+                },
+                icon: Icon(
+                  timerState.status == TimerStatus.running
+                      ? Icons.pause
+                      : Icons.play_arrow,
+                  size: 24,
+                ),
+                label: Text(
+                  timerState.status == TimerStatus.running
+                      ? '暂停'
+                      : (timerState.status == TimerStatus.paused ? '继续' : '开始'),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF59E0B),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 移动端任务队列面板（简化版）
+  Widget _buildMobileQueuePanel(BuildContext context) {
+    final queueAsync = ref.watch(pomodoroQueueProvider);
+
+    return Container(
+      color: AmberColors.sidebarBackground,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
+          Padding(
+            padding: const EdgeInsets.all(AmberDimens.spacingMd),
+            child: Row(
+              children: [
+                const Text(
+                  '任务队列',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AmberColors.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                // 添加按钮
+                TextButton.icon(
+                  onPressed: () => _showTaskSelectionDialog(context),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AmberColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // 队列列表
+          Expanded(
+            child: queueAsync.when(
+              data: (queue) {
+                if (queue.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      '点击添加按钮添加任务',
+                      style: TextStyle(
+                        color: AmberColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AmberDimens.spacingMd,
+                  ),
+                  itemCount: queue.length,
+                  itemBuilder: (context, index) {
+                    final item = queue[index];
+                    final task = item.task;
+                    final isActive = index == 0;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        isActive ? Icons.play_circle : Icons.circle_outlined,
+                        color: isActive
+                            ? AmberColors.primary
+                            : AmberColors.textDisabled,
+                      ),
+                      title: Text(
+                        task?.title ?? 'Unknown',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      trailing: IconButton(
+                        onPressed: () => removeTaskFromQueue(ref, item.id),
+                        icon: const Icon(Icons.close, size: 18),
+                        color: AmberColors.textSecondary,
+                      ),
+                    );
+                  },
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stack) => Center(child: Text('错误: $error')),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

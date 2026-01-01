@@ -4,3 +4,4 @@ export 'task_item.dart';
 export 'task_list_view.dart';
 export 'task_detail_panel.dart';
 export 'animated_logo.dart';
+export 'filter_sort_buttons.dart';
