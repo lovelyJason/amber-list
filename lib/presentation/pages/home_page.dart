@@ -8,6 +8,7 @@ import '../widgets/common/toast/toast_manager.dart';
 import '../widgets/common/toast/toast_types.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
+import '../providers/native_sticky_note_provider.dart';
 import '../widgets/widgets.dart';
 import 'calendar/calendar_page.dart';
 import 'notes/notes_page.dart';
@@ -72,6 +73,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 初始化原生便签服务（设置回调）
+    // 使用 watch 确保服务在整个生命周期内保持活跃
+    ref.watch(nativeStickyNoteProvider);
+
     // ref is available in build
     final navState = ref.watch(appNavProvider);
     final tasks = ref.watch(taskProvider);

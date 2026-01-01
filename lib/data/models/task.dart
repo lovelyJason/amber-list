@@ -97,13 +97,31 @@ class Task {
     );
   }
 
-  /// 切换完成状态
   Task toggleComplete() {
     final now = DateTime.now();
-    return copyWith(
-      isCompleted: !isCompleted,
-      completedAt: !isCompleted ? now : null,
-      updatedAt: now,
-    );
+    if (isCompleted) {
+      // Uncomplete: Must explicitly set completedAt to null
+      // copyWith(completedAt: null) would trigger '?? this.completedAt' keeping the old value
+      return Task(
+        id: id,
+        title: title,
+        description: description,
+        listId: listId,
+        dueDate: dueDate,
+        priority: priority,
+        isCompleted: false,
+        isDeleted: isDeleted,
+        completedAt: null,
+        tags: tags,
+        sortOrder: sortOrder,
+        parentId: parentId,
+        createdAt: createdAt,
+        updatedAt: now,
+      );
+    } else {
+      // Complete
+      return copyWith(
+        isCompleted: true, completedAt: now, updatedAt: now);
+    }
   }
 }

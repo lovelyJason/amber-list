@@ -49,8 +49,13 @@ app.*.map.json
 **/android/.gradle
 **/android/local.properties
 **/android/captures/
-**/android/gradlew
-**/android/gradlew.bat
+# **/android/gradlew
+# **/android/gradlew.bat
+
+# Keystore files
+*.jks
+*.keystore
+*.key
 
 # iOS/macOS related
 **/ios/Flutter/Generated.xcconfig
@@ -62,6 +67,8 @@ app.*.map.json
 **/macos/Pods/
 **/ios/.symlinks/
 **/macos/.symlinks/
+**/ios/**/xcuserdata/
+**/macos/**/xcuserdata/
 
 # Windows/Linux related
 **/windows/flutter/ephemeral/

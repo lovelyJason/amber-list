@@ -4,6 +4,7 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "sticky_note_manager.h"
 
 #include <desktop_multi_window/desktop_multi_window_plugin.h>
 #include <flutter/generated_plugin_registrant.h> // Add this include
@@ -46,6 +47,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }
+
+  // 清理便签窗口
+  StickyNoteManager::GetInstance().CloseAllWindows();
 
   ::CoUninitialize();
   return EXIT_SUCCESS;

@@ -7,6 +7,8 @@ import '../pages/sticky_note/sticky_note_registry.dart';
 import 'common/toast/toast_manager.dart';
 import 'common/toast/toast_types.dart';
 import '../../core/constants/constants.dart';
+import '../../core/services/native_sticky_note_service.dart';
+import '../../core/utils/trash_animation_service.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import '../../core/utils/sound_service.dart';
@@ -405,7 +407,14 @@ class TaskItem extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           onTap: () {
             ref.read(soundServiceProvider).playDelete();
-            ref.read(taskProvider.notifier).deleteTask(task.id);
+            // 播放抛物线动画，动画完成后执行删除
+            TrashAnimationService.instance.playTrashAnimation(
+              context,
+              position,
+              onComplete: () {
+                ref.read(taskProvider.notifier).deleteTask(task.id);
+              },
+            );
           },
           child: const Row(
             children: [
@@ -665,6 +674,50 @@ class TaskItem extends ConsumerWidget {
   }
 
   void _showStickyNoteWindow(BuildContext context, WidgetRef ref) async {
+    // 对于单个任务，构建只包含该任务的列表
+    final activeTasks = task.isCompleted
+        ? <Map<String, dynamic>>[]
+        : [{'id': task.id, 'title': task.title, 'isCompleted': false}];
+
+    final completedTasks = task.isCompleted
+        ? [{'id': task.id, 'title': task.title, 'isCompleted': true}]
+        : <Map<String, dynamic>>[];
+
+    // ========== 优先使用原生便签实现 ==========
+    final nativeService = NativeStickyNoteService.instance;
+
+    if (nativeService.isSupported) {
+      // 检查是否已打开
+      final isOpen = await nativeService.isWindowOpen(task.id);
+      if (isOpen) {
+        // 已打开，聚焦
+        await nativeService.focusStickyNote(task.id);
+        if (context.mounted) {
+          ToastManager().show(context, '便签已打开', type: ToastType.info);
+        }
+        return;
+      }
+
+      // 创建原生便签窗口
+      final success = await nativeService.createStickyNote(
+        id: task.id,
+        title: task.title,
+        activeTasks: activeTasks,
+        completedTasks: completedTasks,
+        themeColor: '0xFFE1F5FE', // 蓝色，区分列表便签
+      );
+
+      if (success) {
+        debugPrint('[TaskItem] 原生便签创建成功: ${task.id}');
+        return;
+      } else {
+        debugPrint('[TaskItem] 原生便签创建失败，尝试 Flutter 多窗口');
+      }
+    }
+
+    // ========== Fallback: Flutter 多窗口实现 ==========
+    // 用于不支持原生便签的平台或原生创建失败时
+
     // Check registry
     if (ref.read(stickyNoteRegistryProvider.notifier).isOpen(task.id)) {
       // 获取已注册的windowId

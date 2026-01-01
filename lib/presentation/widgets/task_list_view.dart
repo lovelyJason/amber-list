@@ -52,6 +52,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   SortOption _sortOption = SortOption.smart;
   bool _sortAscending = true;
   bool _hideCompleted = false;
+  bool _hideOverdue = false; // 隐藏已过期任务
 
   @override
   void dispose() {
@@ -65,6 +66,17 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     var tasks = widget.tasks;
     if (_hideCompleted || (widget.groupCompleted == false && _hideCompleted)) {
       tasks = tasks.where((t) => !t.isCompleted).toList();
+    }
+
+    // 过滤已过期任务（截止日期早于今天且未完成的任务）
+    if (_hideOverdue) {
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
+      tasks = tasks.where((t) {
+        if (t.isCompleted) return true; // 已完成的不过滤
+        if (t.dueDate == null) return true; // 没有截止日期的不过滤
+        return !t.dueDate!.isBefore(todayStart); // 过滤掉过期的
+      }).toList();
     }
 
     // 2. 排序
@@ -197,10 +209,10 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               tooltip: '筛选',
               offset: const Offset(0, 40), // 下拉位置修正
               icon: Icon(
-                _hideCompleted
+                (_hideCompleted || _hideOverdue)
                     ? Icons.filter_alt_rounded
                     : Icons.filter_list_rounded,
-                color: _hideCompleted ? AmberColors.primary : null,
+                color: (_hideCompleted || _hideOverdue) ? AmberColors.primary : null,
               ),
               itemBuilder: (context) => [
                 PopupMenuItem(
@@ -221,6 +233,27 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                       ),
                       const SizedBox(width: 8),
                       const Text('隐藏已完成任务'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: false,
+                  onTap: () {
+                    setState(() {
+                      _hideOverdue = !_hideOverdue;
+                    });
+                  },
+                  child: Row(
+                    children: [
+                      Icon(
+                        _hideOverdue
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 20,
+                        color: AmberColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('隐藏已过期任务'),
                     ],
                   ),
                 ),

@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' as drift;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/services/native_sticky_note_service.dart';
 import '../../data/models/models.dart';
 
 import '../../data/datasources/local/database.dart' as db;
@@ -281,7 +282,46 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       ),
     );
 
-    // Sync with Sticky Note Window if open
+    // ========== 同步到原生便签窗口 ==========
+    try {
+      final nativeService = NativeStickyNoteService.instance;
+      if (nativeService.isSupported && task.listId != null) {
+        // 检查该列表的便签是否打开
+        if (nativeService.openNotes.contains(task.listId)) {
+          // 获取该列表的所有任务，重新构建任务列表
+          final listTasks = state.where((t) => t.listId == task.listId).toList();
+
+          // 更新当前任务的状态（因为 state 还没更新，需要手动调整）
+          final activeTasks = <Map<String, dynamic>>[];
+          final completedTasks = <Map<String, dynamic>>[];
+
+          for (final t in listTasks) {
+            final taskCompleted = t.id == id ? isCompleted : t.isCompleted;
+            final taskData = {
+              'id': t.id,
+              'title': t.title,
+              'isCompleted': taskCompleted,
+            };
+            if (taskCompleted) {
+              completedTasks.add(taskData);
+            } else {
+              activeTasks.add(taskData);
+            }
+          }
+
+          await nativeService.updateStickyNote(
+            id: task.listId!,
+            activeTasks: activeTasks,
+            completedTasks: completedTasks,
+          );
+          debugPrint('[TaskProvider] 已同步到原生便签: ${task.listId}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[TaskProvider] 同步原生便签失败: $e');
+    }
+
+    // ========== Fallback: 同步到 Flutter 多窗口 ==========
     try {
       final registry = ref.read(stickyNoteRegistryProvider);
       if (task.listId != null && registry.containsKey(task.listId!)) {
