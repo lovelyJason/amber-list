@@ -83,11 +83,32 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     tasks = List<Task>.from(tasks); // Copy list
     tasks.sort((a, b) {
       if (filterSort.sortOption == SortOption.smart) {
-        // 智能排序: 未完成 > 优先级 > 创建时间
+        // 智能排序: 未完成 > 未过期 > 截止日期近 > 优先级 > 创建时间
+        // 1. 已完成的排最后
         if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
+
+        // 2. 已过期的排在未过期后面（仅对未完成任务生效）
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final aDue = a.dueDate != null ? DateTime(a.dueDate!.year, a.dueDate!.month, a.dueDate!.day) : null;
+        final bDue = b.dueDate != null ? DateTime(b.dueDate!.year, b.dueDate!.month, b.dueDate!.day) : null;
+        final aIsOverdue = aDue != null && aDue.isBefore(today);
+        final bIsOverdue = bDue != null && bDue.isBefore(today);
+        if (aIsOverdue != bIsOverdue) return aIsOverdue ? 1 : -1;
+
+        // 3. 按截止日期排序（日期近的在前，无日期的排最后）
+        if (aDue != null || bDue != null) {
+          if (aDue == null) return 1;  // 无日期的排后面
+          if (bDue == null) return -1;
+          final dueDateComparison = aDue.compareTo(bDue);
+          if (dueDateComparison != 0) return dueDateComparison;
+        }
+
+        // 4. 按优先级排序（高优先级在前）
         if (a.priority.value != b.priority.value) {
           return b.priority.value.compareTo(a.priority.value);
         }
+        // 5. 按创建时间排序（新创建的在前）
         return b.createdAt.compareTo(a.createdAt);
       }
 

@@ -79,31 +79,51 @@ class _InstantPopupMenu<T> extends StatelessWidget {
 
   final _InstantPopupMenuRoute<T> route;
 
+  /// 估算菜单高度（每个菜单项约 32-48px，加上 padding）
+  double _estimateMenuHeight() {
+    double height = 16.0; // 上下 padding
+    for (final item in route.items) {
+      if (item is PopupMenuDivider) {
+        height += 8.0;
+      } else {
+        height += 40.0; // 普通菜单项高度
+      }
+    }
+    return height;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Positioning logic (Simplified)
-    // We assume LTRB is provided correctly.
-    // For a robust implementation we might need SingleChildLayoutDelegate,
-    // but Stack + Positioned is easier for specific "below button" cases.
-    
     // Check Theme
     final PopupMenuThemeData popupTheme = PopupMenuTheme.of(context);
     final ShapeBorder? shape = route.shape ?? popupTheme.shape;
     final Color? color = route.color ?? popupTheme.color;
     final double elevation = route.elevation ?? popupTheme.elevation ?? 8.0;
 
+    // 获取屏幕尺寸
+    final screenSize = MediaQuery.of(context).size;
+    final safeArea = MediaQuery.of(context).padding;
+
+    // 估算菜单高度
+    final estimatedMenuHeight = _estimateMenuHeight();
+
+    // 计算点击位置到屏幕底部的距离
+    final spaceBelow = screenSize.height - route.position.top - safeArea.bottom;
+
+    // 判断是否需要向上弹出（底部空间不足以容纳菜单）
+    final shouldShowAbove = spaceBelow < estimatedMenuHeight + 20; // 20px 余量
+
     return SafeArea(
       child: Stack(
         children: [
           Positioned(
-            top: route.position.top,
+            // 动态决定垂直定位：空间不足时向上弹出
+            top: shouldShowAbove ? null : route.position.top,
+            bottom: shouldShowAbove ? route.position.bottom : null,
+            // 水平定位逻辑保持不变
             left: route.position.left > route.position.right ? null : route.position.left,
             right: route.position.left > route.position.right ? route.position.right : null,
-            // If right is supplied and logical (e.g. valid rect), use it?
-            // RelativeRect.fromLTRB(left, top, right, bottom)
-            // Left/Top are distance from Left/Top edge.
-            // Right/Bottom are distance from Right/Bottom edge.
-            
+
             child: Material(
               shape: shape,
               color: color,

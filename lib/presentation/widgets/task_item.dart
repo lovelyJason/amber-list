@@ -92,53 +92,77 @@ class TaskItem extends ConsumerWidget {
                 _buildCheckbox(ref),
                 const SizedBox(width: AmberDimens.spacingMd),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        task.title,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: task.isCompleted
-                              ? AmberColors.textCompleted
-                              : AmberColors.textPrimary,
-                          decoration: task.isCompleted
-                              ? TextDecoration.lineThrough
-                              : null,
-                          fontWeight: FontWeight.w400,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (task.dueDate != null || task.tags.isNotEmpty)
-                        const SizedBox(height: 4),
-                      // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
-                      if (task.dueDate != null || task.tags.isNotEmpty)
-                        Row(
-                          children: [
-                            // 日期部分（固定宽度，不会溢出）
-                            if (task.dueDate != null) ...[
-                              Icon(
-                                Icons.calendar_today_outlined,
-                                size: 12,
-                                color: _getDueDateColor(task.dueDate!),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _formatDueDate(task.dueDate!),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: _getDueDateColor(task.dueDate!),
-                                ),
-                              ),
-                            ],
-                            // 标签部分（用Flexible包裹，超出时截断）
-                            if (task.tags.isNotEmpty) ...[
-                              const SizedBox(width: AmberDimens.spacingSm),
-                              Flexible(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: task.tags.take(3).map((tagName) {
+                  child: Builder(
+                    builder: (context) {
+                      // 获取显示设置
+                      final displaySettings = ref.watch(displaySettingsProvider);
+
+                      // 判断是否需要显示日期
+                      // 条件：1. 全局设置开启 2. 有截止日期 3. 不是在「今天」视图下的今天任务
+                      final shouldShowDate = displaySettings.showDueDate &&
+                          task.dueDate != null &&
+                          !_shouldHideDateLabel(navState.currentView, task.dueDate!);
+
+                      // 判断是否需要显示标签
+                      final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
+
+                      // 判断任务是否已过期
+                      final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: TextStyle(
+                              fontSize: 15,
+                              // 标题颜色优先级：已完成 > 已过期 > 普通
+                              color: task.isCompleted
+                                  ? AmberColors.textCompleted
+                                  : isOverdue
+                                      ? Color(displaySettings.overdueTitleColorValue)
+                                      : AmberColors.textPrimary,
+                              decoration: task.isCompleted
+                                  ? TextDecoration.lineThrough
+                                  : null,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (shouldShowDate || shouldShowTags)
+                            const SizedBox(height: 4),
+                          // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
+                          if (shouldShowDate || shouldShowTags)
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // 日期部分（固定宽度，不会溢出）
+                                if (shouldShowDate) ...[
+                                  Icon(
+                                    Icons.calendar_today_outlined,
+                                    size: 12,
+                                    color: _getDueDateColor(
+                                      task.dueDate!,
+                                      overdueColor: Color(displaySettings.overdueLabelColorValue),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDueDate(task.dueDate!),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _getDueDateColor(
+                                        task.dueDate!,
+                                        overdueColor: Color(displaySettings.overdueLabelColorValue),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                // 标签部分（直接展开，避免嵌套导致对齐问题）
+                                if (shouldShowTags) ...[
+                                  if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
+                                  ...task.tags.take(3).map((tagName) {
                                     // 查找标签对应的颜色
                                     final allTags = ref.watch(tagsProvider);
                                     final tagObj = allTags.firstWhere(
@@ -152,40 +176,38 @@ class TaskItem extends ConsumerWidget {
                                     );
                                     final tagColor = tagObj.color;
 
-                                    return Flexible(
-                                      child: Container(
-                                        margin: const EdgeInsets.only(right: 4),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: tagColor.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(
-                                            color: tagColor.withValues(alpha: 0.2),
-                                            width: 0.5,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          tagName,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: tagColor,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                    return Container(
+                                      margin: const EdgeInsets.only(right: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: tagColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: tagColor.withValues(alpha: 0.2),
+                                          width: 0.5,
                                         ),
                                       ),
+                                      child: Text(
+                                        tagName,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: tagColor,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     );
-                                  }).toList(),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                    ],
+                                  }),
+                                ],
+                              ],
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 if (trailing != null) ...[
@@ -865,13 +887,24 @@ class TaskItem extends ConsumerWidget {
     );
   }
 
-  Color _getDueDateColor(DateTime dueDate) {
+  /// 判断任务是否已过期
+  bool _isOverdue(DateTime dueDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    return due.isBefore(today);
+  }
+
+  /// 获取截止日期的显示颜色
+  /// [dueDate] 截止日期
+  /// [overdueColor] 过期任务的自定义颜色，可选，默认使用 AmberColors.warning
+  Color _getDueDateColor(DateTime dueDate, {Color? overdueColor}) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
 
     if (due.isBefore(today)) {
-      return AmberColors.warning; // 过期
+      return overdueColor ?? AmberColors.warning; // 过期：使用自定义颜色或默认警告色
     } else if (due.isAtSameMomentAs(today)) {
       return AmberColors.primary; // 今天
     }
@@ -893,6 +926,21 @@ class TaskItem extends ConsumerWidget {
     } else {
       return DateFormat('M月d日').format(date);
     }
+  }
+
+  /// 判断是否应该隐藏日期标签
+  /// 在「今天」视图下，今天的任务不需要显示「今天」标签（冗余信息）
+  bool _shouldHideDateLabel(NavView currentView, DateTime dueDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
+
+    // 在「今天」视图下，如果任务截止日期是今天，则隐藏日期标签
+    if (currentView == NavView.today && due.isAtSameMomentAs(today)) {
+      return true;
+    }
+
+    return false;
   }
 }
 
