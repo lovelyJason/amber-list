@@ -37,9 +37,29 @@ class SoundService {
     await _playSound('audio/success.mp3');
   }
 
+  /// 播放添加任务音效
+  Future<void> playAdd() async {
+    await _playSound('audio/add.mp3');
+  }
+
+  /// 播放错误音效
+  Future<void> playError() async {
+    await _playSound('audio/error.mp3');
+  }
+
+  /// 播放番茄时钟开始/暂停音效 (Tick)
+  Future<void> playPomodoroTick() async {
+    await _playSound('audio/tick.mp3');
+  }
+
+  /// 播放番茄时钟结束音效
+  Future<void> playPomodoroEnd() async {
+    await _playSound('audio/pomodoro_end.mp3');
+  }
+
   Future<void> _playSound(String assetPath) async {
     try {
-      debugPrint('[SoundService] Playing: $assetPath');
+      // debugPrint('[SoundService] Playing: $assetPath');
       // 允许声音重叠，不调用 stop()
       // 创建新的临时播放器实例以支持并发播放效果更好，
       // 但为了性能先尝试复用 player。如果复用有问题，改为每次 new AudioPlayer()。

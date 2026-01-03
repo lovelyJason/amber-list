@@ -29,6 +29,9 @@
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		5B7C1318D18A6142B494965C /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5312EACD7EF8AFE6C908F705 /* Pods_RunnerTests.framework */; };
+		AABBCC001122334455660001 /* StickyNoteManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCC001122334455660002 /* StickyNoteManager.swift */; };
+		AABBCC001122334455660003 /* StickyNoteWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCC001122334455660004 /* StickyNoteWindowController.swift */; };
+		AABBCC001122334455660005 /* StickyNoteContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABBCC001122334455660006 /* StickyNoteContentView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +78,9 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
+		AABBCC001122334455660002 /* StickyNoteManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickyNoteManager.swift; sourceTree = "<group>"; };
+		AABBCC001122334455660004 /* StickyNoteWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickyNoteWindowController.swift; sourceTree = "<group>"; };
+		AABBCC001122334455660006 /* StickyNoteContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickyNoteContentView.swift; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -177,6 +183,9 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				AABBCC001122334455660002 /* StickyNoteManager.swift */,
+				AABBCC001122334455660004 /* StickyNoteWindowController.swift */,
+				AABBCC001122334455660006 /* StickyNoteContentView.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -440,6 +449,9 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
+				AABBCC001122334455660001 /* StickyNoteManager.swift in Sources */,
+				AABBCC001122334455660003 /* StickyNoteWindowController.swift in Sources */,
+				AABBCC001122334455660005 /* StickyNoteContentView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

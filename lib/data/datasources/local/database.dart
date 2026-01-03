@@ -4,7 +4,6 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:uuid/uuid.dart'; // Added for UUID
 import '../../../core/constants/colors.dart'; // Added for Colors
 
 part 'database.g.dart';
@@ -140,11 +139,11 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// 种子数据初始化
+  /// 注意：所有种子数据的 ID 都使用固定值，避免多设备同步时产生重复数据
   Future<void> _seedDatabase() async {
-    const uuid = Uuid();
     final now = DateTime.now();
 
-        // 1. 插入默认清单
+        // 1. 插入默认清单（固定ID）
         await batch((batch) {
           batch.insertAll(taskLists, [
             TaskListsCompanion.insert(
@@ -180,12 +179,36 @@ class AppDatabase extends _$AppDatabase {
           ]);
         });
         
-        // 2. 插入 Mock 任务 (不变)
+        // 2. 插入默认标签（固定ID，避免多设备同步重复）
+        // 注意：这些标签在种子任务中被引用，必须先插入
         await batch((batch) {
-          // ... tasks ...
+          batch.insertAll(tags, [
+            TagsCompanion.insert(
+              id: 'seed-tag-design',
+              name: '设计',
+              color: 0xFF2196F3, // 蓝色
+              createdAt: now,
+            ),
+            TagsCompanion.insert(
+              id: 'seed-tag-important',
+              name: '重要',
+              color: 0xFFF44336, // 红色
+              createdAt: now,
+            ),
+            TagsCompanion.insert(
+              id: 'seed-tag-reading',
+              name: '阅读',
+              color: 0xFF4CAF50, // 绿色
+              createdAt: now,
+            ),
+          ]);
+        });
+
+        // 3. 插入 Mock 任务（固定ID，避免多设备同步重复）
+        await batch((batch) {
           batch.insertAll(tasks, [
             TasksCompanion.insert(
-              id: uuid.v4(),
+              id: 'seed-task-amber-ui-design-001',
               title: '完成琥珀清单UI设计',
               description: const Value('包括配色方案、布局设计、交互逻辑等'),
               listId: const Value('work'),
@@ -196,7 +219,7 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: now,
             ),
             TasksCompanion.insert(
-              id: uuid.v4(),
+              id: 'seed-task-sidebar-nav-002',
               title: '实现侧边栏导航',
               listId: const Value('work'),
               dueDate: Value(now),
@@ -205,7 +228,7 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: now,
             ),
             TasksCompanion.insert(
-              id: uuid.v4(),
+              id: 'seed-task-buy-coffee-003',
               title: '购买咖啡豆',
               listId: const Value('shopping'),
               dueDate: Value(now.add(const Duration(days: 1))),
@@ -214,7 +237,7 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: now,
             ),
             TasksCompanion.insert(
-              id: uuid.v4(),
+              id: 'seed-task-read-flutter-004',
               title: '阅读《深入理解Flutter》',
               listId: const Value('personal'),
               dueDate: Value(now.add(const Duration(days: 3))),
@@ -224,7 +247,7 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: now,
             ),
             TasksCompanion.insert(
-              id: uuid.v4(),
+              id: 'seed-task-completed-demo-005',
               title: '已完成的任务示例',
               listId: const Value('work'),
               isCompleted: const Value(true),
@@ -293,8 +316,41 @@ class AppDatabase extends _$AppDatabase {
           .write(entry)
           .then((rows) => rows > 0);
 
+  /// 删除任务
+  /// 注意：如果任务有关联的番茄记录，会抛出外键约束异常
+  /// 调用方应先检查 hasTaskPomodoroRecords() 并提示用户
   Future<int> deleteTask(String id) =>
       (delete(tasks)..where((t) => t.id.equals(id))).go();
+
+  /// 检查任务是否有关联的番茄记录
+  Future<bool> hasTaskPomodoroRecords(String taskId) async {
+    // 检查番茄队列
+    final queueCount = await (selectOnly(pomodoroQueue)
+          ..addColumns([pomodoroQueue.id.count()])
+          ..where(pomodoroQueue.taskId.equals(taskId)))
+        .map((row) => row.read(pomodoroQueue.id.count()))
+        .getSingle();
+    if (queueCount != null && queueCount > 0) return true;
+
+    // 检查番茄会话
+    final sessionCount = await (selectOnly(pomodoroSessions)
+          ..addColumns([pomodoroSessions.id.count()])
+          ..where(pomodoroSessions.taskId.equals(taskId)))
+        .map((row) => row.read(pomodoroSessions.id.count()))
+        .getSingle();
+    return sessionCount != null && sessionCount > 0;
+  }
+
+  /// 强制删除任务及其所有番茄记录
+  /// 仅在用户确认后调用
+  Future<int> forceDeleteTaskWithPomodoros(String id) async {
+    // 先删除关联的番茄时钟队列项
+    await (delete(pomodoroQueue)..where((q) => q.taskId.equals(id))).go();
+    // 再删除关联的番茄时钟会话记录
+    await (delete(pomodoroSessions)..where((s) => s.taskId.equals(id))).go();
+    // 最后删除任务本身
+    return (delete(tasks)..where((t) => t.id.equals(id))).go();
+  }
 
   // ===== 笔记操作 =====
   Future<List<Note>> getAllNotes() => select(notes).get();

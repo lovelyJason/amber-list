@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/constants.dart';
@@ -5,8 +6,7 @@ import '../providers/providers.dart';
 import '../../data/services/sync/sync_config.dart';
 import 'common/toast/toast_manager.dart';
 import 'common/dialogs/data_conflict_dialog.dart';
-import 'dart:io';
-import '../../core/utils/sound_service.dart';
+import 'sync_conflict_dialog.dart';
 
 /// ============================================================
 /// WebDAV 配置组件
@@ -76,7 +76,12 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   @override
   Widget build(BuildContext context) {
     final syncState = ref.watch(syncStateProvider);
+    final syncType = ref.watch(syncTypeProvider);
     final isConfigured = ref.watch(syncConfigProvider) != null;
+
+    // 只有当前激活的是 WebDAV 时才显示同步状态
+    final isActive = syncType == SyncType.webdav;
+    final showSyncing = isActive && syncState.isSyncing;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,23 +93,54 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
             color: AmberColors.primary,
           ),
           title: const Text('WebDAV 同步'),
-          subtitle: _buildStatusSubtitle(syncState, isConfigured),
+          subtitle: _buildStatusSubtitle(syncState, isConfigured, isActive),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 手动同步按钮
-              if (isConfigured)
-                IconButton(
-                  icon: syncState.isSyncing
-                      ? const SizedBox(
+              // 同步菜单按钮（只在当前激活时显示）
+              if (isConfigured && isActive)
+                showSyncing
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.sync),
-                  tooltip: '手动同步',
-                  onPressed: syncState.isSyncing ? null : _manualSync,
-                ),
+                        ),
+                      )
+                    : PopupMenuButton<String>(
+                        icon: const Icon(Icons.sync),
+                        tooltip: '同步选项',
+                        onSelected: (value) {
+                          if (value == 'sync') {
+                            _manualSync();
+                          } else if (value == 'force_download') {
+                            _forceDownloadFromCloud();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'sync',
+                            child: ListTile(
+                              leading: Icon(Icons.sync),
+                              title: Text('同步'),
+                              subtitle: Text('双向同步本地和云端数据'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'force_download',
+                            child: ListTile(
+                              leading: Icon(Icons.cloud_download_outlined),
+                              title: Text('从云端恢复'),
+                              subtitle: Text('用云端数据覆盖本地'),
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ],
+                      ),
               // 展开/收起按钮
               GestureDetector(
                 onTap: () {
@@ -268,9 +304,15 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   }
 
   /// 构建状态副标题
-  Widget _buildStatusSubtitle(SyncState syncState, bool isConfigured) {
+  /// [isActive] 当前是否激活 WebDAV 同步，只有激活时才显示同步状态
+  Widget _buildStatusSubtitle(SyncState syncState, bool isConfigured, bool isActive) {
     if (!isConfigured) {
       return const Text('未配置 - 点击配置 WebDAV 云同步');
+    }
+
+    // 未激活时显示"已配置但未激活"
+    if (!isActive) {
+      return const Text('已配置（未激活）', style: TextStyle(color: AmberColors.textSecondary));
     }
 
     if (syncState.isSyncing) {
@@ -289,7 +331,7 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
       return Text('上次同步: $timeAgo');
     }
 
-    return const Text('已配置,等待同步');
+    return const Text('已配置，等待同步');
   }
 
   /// 格式化时间为 "xx分钟前"
@@ -402,13 +444,20 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
 
   /// 手动触发同步
   Future<void> _manualSync() async {
+    // 设置冲突决策回调（在同步过程中弹窗让用户选择）
+    ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+      if (!mounted) return null;
+      // 弹出冲突决策弹窗
+      return showSyncConflictDialog(context, conflicts: conflicts);
+    };
+
     final success = await ref.read(syncStateProvider.notifier).manualSync();
-    
-    // 检查冲突
+
+    // 检查标签冲突（标签冲突走老逻辑，因为标签没有 updatedAt）
     if (mounted) {
-      final conflicts = ref.read(syncStateProvider).tagConflicts;
-      if (conflicts.isNotEmpty) {
-        for (var conflict in conflicts) {
+      final tagConflicts = ref.read(syncStateProvider).tagConflicts;
+      if (tagConflicts.isNotEmpty) {
+        for (var conflict in tagConflicts) {
           if (!mounted) break;
 
           final useLocal = await showDialog<bool>(
@@ -445,13 +494,62 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
         // 重新刷新列表即可
         ref.invalidate(tagsProvider);
       }
-    
+
       if (success) {
         ref.read(soundServiceProvider).playSuccess();
       }
       ToastManager().show(
         context,
         success ? '同步完成' : '同步失败,请查看错误信息',
+        type: success ? ToastType.success : ToastType.error,
+      );
+    }
+  }
+
+  /// 强制从云端恢复数据
+  /// 会先弹窗确认，因为这会覆盖本地数据
+  Future<void> _forceDownloadFromCloud() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('从云端恢复'),
+        content: const Text(
+          '⚠️ 此操作会用云端数据完全覆盖本地数据！\n\n'
+          '适用场景：\n'
+          '• 本地数据被误删或损坏\n'
+          '• 换设备后想恢复数据\n'
+          '• 本地显示"已是最新"但数据不对\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AmberColors.warning,
+            ),
+            child: const Text('确认恢复'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final success = await ref.read(syncStateProvider.notifier).manualSync(
+      forceDownload: true,
+    );
+
+    if (mounted) {
+      if (success) {
+        ref.read(soundServiceProvider).playSuccess();
+      }
+      ToastManager().show(
+        context,
+        success ? '已从云端恢复数据' : '恢复失败，请查看错误信息',
         type: success ? ToastType.success : ToastType.error,
       );
     }

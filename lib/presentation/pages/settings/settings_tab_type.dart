@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 /// 设置页标签类型枚举
 enum SettingsTabType {
+  /// 显示设置（控制任务列表项的显示选项）
+  display,
+
   /// 数据管理（导入/导出）
   dataManagement,
 
@@ -14,6 +17,8 @@ enum SettingsTabType {
   /// 获取标签显示名称
   String get displayName {
     switch (this) {
+      case SettingsTabType.display:
+        return '显示';
       case SettingsTabType.dataManagement:
         return '数据管理';
       case SettingsTabType.cloudSync:
@@ -26,6 +31,8 @@ enum SettingsTabType {
   /// 获取标签图标
   IconData get icon {
     switch (this) {
+      case SettingsTabType.display:
+        return Icons.visibility_outlined;
       case SettingsTabType.dataManagement:
         return Icons.storage_outlined;
       case SettingsTabType.cloudSync:

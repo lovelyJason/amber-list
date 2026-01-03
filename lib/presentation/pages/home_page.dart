@@ -1,17 +1,24 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 
 import '../../core/constants/constants.dart';
+import '../../core/utils/responsive_helper.dart';
 import '../widgets/common/toast/toast_manager.dart';
 import '../widgets/common/toast/toast_types.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
+import '../providers/native_sticky_note_provider.dart';
 import '../widgets/widgets.dart';
+import '../widgets/adaptive/bottom_nav_bar.dart';
+import '../widgets/adaptive/drawer_list_sidebar.dart';
 import 'calendar/calendar_page.dart';
 import 'notes/notes_page.dart';
 import 'pomodoro/pomodoro_page.dart';
+import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
@@ -72,10 +79,36 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 初始化原生便签服务（设置回调）
+    // 使用 watch 确保服务在整个生命周期内保持活跃
+    // 仅在桌面端初始化（移动端不支持多窗口）
+    if (ResponsiveHelper.isDesktopOS()) {
+      ref.watch(nativeStickyNoteProvider);
+    }
+
     // ref is available in build
     final navState = ref.watch(appNavProvider);
     final tasks = ref.watch(taskProvider);
 
+    // 使用 LayoutBuilder 监听屏幕宽度变化，实现响应式布局
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+
+        if (isMobile) {
+          // 移动端布局：底部导航栏 + 抽屉
+          return _buildMobileLayout(context, navState, tasks);
+        } else {
+          // 桌面端布局：保持原有 Row 布局
+          return _buildDesktopLayout(context, navState, tasks);
+        }
+      },
+    );
+  }
+
+  /// 构建桌面端布局（原有布局，完全保持不变）
+  Widget _buildDesktopLayout(
+      BuildContext context, AppNavState navState, List<Task> tasks) {
     // 日历、笔记、番茄时钟页面使用全屏布局
     final isFullScreenView = navState.currentView == NavView.calendar ||
         navState.currentView == NavView.notes ||
@@ -98,7 +131,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               ],
               // 主内容区
               Expanded(
-                child: _buildMainContent(ref, navState, tasks),
+                child: _buildMainContent(ref, navState, tasks, isMobile: false),
               ),
               // 详情面板（日历和笔记页面自带详情面板）
               if (!isFullScreenView &&
@@ -125,7 +158,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   });
                 },
                 child: FloatingActionButton(
-                  tooltip: 'Debug 调试器（可拖拽）',
+                  tooltip: '调试工具箱（可拖拽）',
                   elevation: 4,
                   highlightElevation: 8,
                   backgroundColor: AmberColors.primary,
@@ -135,6 +168,165 @@ class _HomePageState extends ConsumerState<HomePage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 构建移动端布局（底部导航栏 + 抽屉）
+  ///
+  /// 设计说明：
+  /// - 日历、笔记、番茄钟页面有自己的完整 Scaffold（含 AppBar 和 BottomNavigationBar）
+  /// - 任务列表页面（清单、今天等）使用 HomePage 的 Scaffold 容器
+  /// - 这样避免嵌套 Scaffold 导致双重底部导航栏的问题
+  Widget _buildMobileLayout(BuildContext context, AppNavState navState, List<Task> tasks) {
+    // 日历、笔记、番茄钟页面有自己的完整布局（含 Scaffold 和 BottomNavigationBar）
+    // 直接返回它们，不再套 HomePage 的 Scaffold
+    final isFullScreenView = navState.currentView == NavView.calendar ||
+        navState.currentView == NavView.notes ||
+        navState.currentView == NavView.pomodoro;
+
+    if (isFullScreenView) {
+      return _buildMainContent(ref, navState, tasks, isMobile: true);
+    }
+
+    // 任务列表页面使用 HomePage 的 Scaffold 容器
+    return Scaffold(
+      // 移动端顶部 AppBar
+      appBar: AppBar(
+        title: Text(
+          _getViewTitle(navState.currentView),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AmberColors.textPrimary,
+          ),
+        ),
+        backgroundColor: AmberColors.cardBackground,
+        elevation: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: AmberColors.textPrimary),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            tooltip: '打开清单列表',
+          ),
+        ),
+        actions: [
+          // 移动端同步按钮
+          _buildMobileSyncButton(ref),
+          // 筛选排序按钮
+          const FilterSortButtons(compact: true),
+          // 设置按钮
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: AmberColors.textSecondary),
+            onPressed: () => _openSettings(context),
+            tooltip: '设置',
+          ),
+        ],
+      ),
+      // 左侧抽屉（清单列表）
+      drawer: const DrawerListSidebar(),
+      // 主内容区
+      body: _buildMainContent(ref, navState, tasks, isMobile: true),
+      // 底部导航栏
+      bottomNavigationBar: const MobileBottomNavBar(),
+      // 移动端调试按钮（仅在调试模式显示）
+      floatingActionButton: kDebugMode
+          ? FloatingActionButton.small(
+              tooltip: '调试工具箱',
+              backgroundColor: AmberColors.primary,
+              child: const Icon(Icons.bug_report, color: Colors.white, size: 20),
+              onPressed: () => _showDebugToolbox(context),
+            )
+          : null,
+    );
+  }
+
+  /// 构建移动端同步按钮
+  Widget _buildMobileSyncButton(WidgetRef ref) {
+    // 监听同步状态和配置
+    final syncState = ref.watch(syncStateProvider);
+    final isConfigured =
+        ref.watch(syncConfigProvider) != null ||
+        ref.watch(qiniuConfigProvider) != null;
+
+    // 未配置同步则隐藏
+    if (!isConfigured) {
+      return const SizedBox.shrink();
+    }
+
+    if (syncState.isSyncing) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        width: 24,
+        height: 24,
+        child: const Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                AmberColors.textSecondary,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: const Icon(
+        FluentIcons.arrow_sync_24_regular,
+        color: AmberColors.textSecondary,
+      ),
+      tooltip: '立即同步',
+      onPressed: () async {
+        // 设置冲突决策回调（在同步过程中弹窗让用户选择）
+        ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+          if (!mounted) return null;
+          // 弹出冲突决策弹窗
+          return showSyncConflictDialog(context, conflicts: conflicts);
+        };
+
+        final success = await ref.read(syncStateProvider.notifier).manualSync();
+        if (success) {
+          ref.read(soundServiceProvider).playSuccess();
+        }
+      },
+    );
+  }
+
+  /// 获取当前视图的标题（用于移动端 AppBar）
+  String _getViewTitle(NavView view) {
+    switch (view) {
+      case NavView.inbox:
+        return '收集箱';
+      case NavView.today:
+        return '今天';
+      case NavView.upcoming:
+        return '最近7天';
+      case NavView.calendar:
+        return '日历';
+      case NavView.notes:
+        return '笔记';
+      case NavView.pomodoro:
+        return '番茄钟';
+      case NavView.list:
+        return '清单';
+      case NavView.completed:
+        return '已完成';
+      case NavView.trash:
+        return '垃圾桶';
+      case NavView.all:
+        return '全部';
+    }
+  }
+
+  /// 打开设置页面（移动端）
+  void _openSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SettingsPage(windowId: null),
       ),
     );
   }
@@ -286,6 +478,18 @@ class _HomePageState extends ConsumerState<HomePage> {
                     }
                   },
                 ),
+                const SizedBox(height: 12),
+                _buildDebugOption(
+                  context,
+                  icon: Icons.vpn_key_rounded,
+                  label: '生成激活码',
+                  description: '生成应用激活码（仅生成）',
+                  color: Colors.purple,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showActivationCodeGenerator(context);
+                  },
+                ),
               ],
             ),
           ),
@@ -294,12 +498,198 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  Widget _buildMainContent(WidgetRef ref, AppNavState navState, List<Task> tasks) {
+  /// 生成激活码
+  /// 格式：AMBER-XXXXX-XXXXX-XXXXX（琥珀前缀 + 15位随机码）
+  String _generateActivationCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易混淆的字符 I/1, O/0
+    final random = DateTime.now().millisecondsSinceEpoch;
+    final buffer = StringBuffer('AMBER-');
+
+    for (var i = 0; i < 3; i++) {
+      if (i > 0) buffer.write('-');
+      for (var j = 0; j < 5; j++) {
+        final index = (random ~/ (i * 5 + j + 1) + DateTime.now().microsecondsSinceEpoch + i * j) % chars.length;
+        buffer.write(chars[index]);
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  /// 显示激活码生成器弹窗
+  void _showActivationCodeGenerator(BuildContext context) {
+    String code = _generateActivationCode();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(24),
+              child: Container(
+                width: 360,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 头部图标
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.purple.shade400,
+                            Colors.purple.shade600,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.vpn_key_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '激活码生成器',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AmberColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '点击刷新按钮生成新的激活码',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AmberColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // 激活码展示区
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 20,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.purple.withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: SelectableText(
+                        code,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.5,
+                          fontFamily: 'monospace',
+                          color: Colors.purple.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // 操作按钮
+                    Row(
+                      children: [
+                        // 刷新按钮
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                code = _generateActivationCode();
+                              });
+                            },
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('刷新'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.purple,
+                              side: BorderSide(color: Colors.purple.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // 复制按钮
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: code));
+                              ToastManager().show(
+                                context,
+                                '激活码已复制',
+                                type: ToastType.success,
+                              );
+                            },
+                            icon: const Icon(Icons.copy_rounded, size: 18),
+                            label: const Text('复制'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 关闭按钮
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('关闭'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 构建主内容区
+  /// [isMobile] 是否为移动端，移动端会隐藏 TaskListView 的 header
+  Widget _buildMainContent(
+    WidgetRef ref,
+    AppNavState navState,
+    List<Task> tasks, {
+    bool isMobile = false,
+  }) {
     switch (navState.currentView) {
       case NavView.all:
         // 显示所有任务（包括已完成），但不包括已删除
         final allTasks = tasks.where((t) => !t.isDeleted).toList();
-        return TaskListView(title: '全部', tasks: allTasks);
+        return TaskListView(
+          title: '全部',
+          tasks: allTasks,
+          showHeader: !isMobile,
+        );
       case NavView.inbox:
         // Inbox now shows ALL tasks as per user request (excluding deleted)
         final allTasks = tasks.where((t) => !t.isDeleted).toList();
@@ -307,12 +697,14 @@ class _HomePageState extends ConsumerState<HomePage> {
           title: '收集箱',
           tasks: allTasks,
           showDatePicker: true,
+          showHeader: !isMobile,
         );
       case NavView.today:
         final todayTasks = ref.watch(todayTasksProvider);
         return TaskListView(
           title: '今天',
           tasks: todayTasks,
+          showHeader: !isMobile,
         );
       case NavView.upcoming:
         final upcomingTasks = ref.watch(upcomingTasksProvider);
@@ -320,6 +712,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           title: '最近7天',
           tasks: upcomingTasks,
           showInput: false,
+          showHeader: !isMobile,
         );
       case NavView.calendar:
         return const CalendarPage();
@@ -336,6 +729,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             title: currentList?.name ?? '清单',
             tasks: listTasks,
             listId: navState.selectedListId,
+            showHeader: !isMobile,
           );
         }
         return const Center(child: Text('请选择清单'));
@@ -346,6 +740,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           tasks: completedTasks,
           showInput: false,
           groupCompleted: false,
+          showHeader: !isMobile,
+          showFilterSort: false, // 已完成页面不需要筛选排序
         );
       case NavView.trash:
         final trashTasks = ref.watch(trashTasksProvider);
@@ -354,6 +750,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           tasks: trashTasks,
           showInput: false,
           groupCompleted: false,
+          showHeader: !isMobile,
+          showFilterSort: false, // 垃圾桶页面不需要筛选排序
         );
     }
   }

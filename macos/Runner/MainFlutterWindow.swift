@@ -34,6 +34,9 @@ class MainFlutterWindow: NSWindow {
       RegisterPluginsForSecondaryWindow(registry: controller)
     }
 
+    // 注册原生便签窗口管理器的 Platform Channel
+    StickyNoteManager.shared.setup(with: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 }

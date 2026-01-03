@@ -117,25 +117,30 @@ Future<void> _startApp(List<String> args) async {
 
   StartupLogger.printInfo();
 
-  // 初始化窗口管理器（仅主窗口）
-  await windowManager.ensureInitialized();
+  // 初始化窗口管理器（仅桌面端）
+  if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+    await windowManager.ensureInitialized();
 
-  // 窗口配置
-  const windowOptions = WindowOptions(
-    size: Size(1080, 720),
-    minimumSize: Size(AmberDimens.minWindowWidth, AmberDimens.minWindowHeight),
-    center: true,
-    backgroundColor: Colors.transparent,
-    skipTaskbar: false,
-    titleBarStyle: TitleBarStyle.hidden,
-    title: '琥珀清单',
-  );
+    // 窗口配置
+    const windowOptions = WindowOptions(
+      size: Size(1080, 720),
+      minimumSize: Size(
+        AmberDimens.minWindowWidth,
+        AmberDimens.minWindowHeight,
+      ),
+      center: true,
+      backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.hidden,
+      title: '琥珀清单',
+    );
 
-  await windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.show();
-    await windowManager.focus();
-    if (Platform.isWindows) await windowManager.setHasShadow(false);
-  });
+    await windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+      if (Platform.isWindows) await windowManager.setHasShadow(false);
+    });
+  }
 
   runApp(
     const ProviderScope(

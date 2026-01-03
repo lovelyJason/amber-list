@@ -132,30 +132,36 @@ class AppLogger {
   Future<void> init() async {
     if (_initialized) return;
 
-    // Release 模式下才需要文件写入
+    // Release 模式下才需要文件写入，且仅桌面端支持
     if (!kDebugMode) {
       _logDir = _getLogDirectory();
 
-      // 创建日志目录
-      final dir = Directory(_logDir!);
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
+      // 移动端（Android/iOS）不使用文件日志
+      if (_logDir != null && _logDir!.isNotEmpty) {
+        // 创建日志目录
+        final dir = Directory(_logDir!);
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+        }
+
+        // 打开文件句柄（追加模式）
+        await _openLogFiles();
+
+        // 清理过期日志
+        await _cleanOldLogs();
+
+        // 启动异步写入监听
+        _startLogListener();
       }
-
-      // 打开文件句柄（追加模式）
-      await _openLogFiles();
-
-      // 清理过期日志
-      await _cleanOldLogs();
-
-      // 启动异步写入监听
-      _startLogListener();
     }
 
     _initialized = true;
 
     // 输出初始化成功日志
-    info('AppLogger', '日志服务初始化完成${kDebugMode ? "（Debug 模式）" : "，日志目录: $_logDir"}');
+    final modeInfo = kDebugMode
+        ? '（Debug 模式）'
+        : (_logDir?.isNotEmpty == true ? '，日志目录: $_logDir' : '（移动端，仅控制台日志）');
+    info('AppLogger', '日志服务初始化完成$modeInfo');
   }
 
   /// 销毁日志服务，关闭文件句柄
@@ -246,17 +252,20 @@ class AppLogger {
   // ==================== 文件操作 ====================
 
   /// 获取日志目录路径
-  /// 与 ConfigService 保持一致：~/amber-list/logs/
+  /// 桌面端：~/amber-list/logs/
+  /// 移动端：不使用文件日志（在 init() 中判断）
   String _getLogDirectory() {
     String home = '';
     if (Platform.isMacOS) {
       home = Platform.environment['HOME'] ?? '';
     } else if (Platform.isWindows) {
       home = Platform.environment['USERPROFILE'] ?? '';
+    } else if (Platform.isLinux) {
+      home = Platform.environment['HOME'] ?? '';
     }
 
     if (home.isEmpty) {
-      return 'logs';
+      return ''; // 移动端返回空，在 init() 中跳过文件日志
     }
 
     return '$home/amber-list/logs';

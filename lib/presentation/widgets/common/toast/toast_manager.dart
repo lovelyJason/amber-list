@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'amber_toast.dart';
 import 'toast_types.dart';
+import '../../../../core/utils/sound_service.dart';
 
 export 'toast_types.dart';
 
@@ -28,6 +29,7 @@ class ToastManager {
     ToastType type = ToastType.info,
     Duration duration = const Duration(seconds: 2),
     ToastPosition position = ToastPosition.top,
+    bool playSoundOnError = true, // Control sound playback on error
   }) {
     final request = _ToastRequest(
       context: context,
@@ -36,6 +38,12 @@ class ToastManager {
       duration: duration,
       position: position,
     );
+    
+    // 播放提示音
+    if (type == ToastType.error && playSoundOnError) {
+      SoundService().playError();
+    }
+
     _queue.add(request);
     _processQueue();
   }

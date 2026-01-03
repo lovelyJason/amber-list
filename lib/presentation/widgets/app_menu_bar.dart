@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
 
 import '../../core/constants/constants.dart';
 import '../pages/settings/settings_page.dart';
-import 'animated_logo.dart';
+
 
 class AmberMenuBar extends StatelessWidget {
   final Widget child;
@@ -26,18 +28,71 @@ class AmberMenuBar extends StatelessWidget {
           menus: [
             PlatformMenuItem(
               label: '关于 琥珀清单',
-              onSelected: () {
-                showAboutDialog(
+              onSelected: () async {
+                final packageInfo = await PackageInfo.fromPlatform();
+                if (!context.mounted) return;
+                showDialog(
                   context: context,
-                  applicationName: '琥珀清单',
-                  applicationVersion: '1.0.0',
-                  applicationIcon: const AnimatedLogo(
-                    width: 48,
-                    height: 48,
-                  ),
-                  children: [
-                    const Text('一款简约而不失质感的桌面端待办应用'),
-                  ],
+                  builder: (context) {
+                    return AlertDialog(
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Image.asset(
+                                'assets/images/logo_transparent.png',
+                                width: 48,
+                                height: 48,
+                              ),
+                              const SizedBox(width: 24),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '琥珀清单',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.headlineSmall,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${packageInfo.version} (${packageInfo.buildNumber})',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodyMedium,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                iconSize: 20,
+                                color: AmberColors.textSecondary,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          const Text('一款简约而不失质感的桌面端待办应用'),
+                          const SizedBox(height: 16),
+                          Text(
+                            '版权所有 © 2026 JasonHuang。\n保留一切权利。',
+                            textAlign: TextAlign.left,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: AmberColors.textSecondary,
+                                  height: 1.5,
+                                ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 );
               },
             ),

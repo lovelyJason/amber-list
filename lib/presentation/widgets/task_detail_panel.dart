@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants/constants.dart';
+import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 
@@ -19,27 +20,92 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
   late TextEditingController _titleController;
   late TextEditingController _descController;
 
+  /// FocusNode 用于监听标题输入框的失焦事件
+  late FocusNode _titleFocusNode;
+  /// FocusNode 用于监听描述输入框的失焦事件
+  late FocusNode _descFocusNode;
+
+  /// 记录原始标题值，用于判断是否有修改
+  late String _originalTitle;
+  /// 记录原始描述值，用于判断是否有修改
+  late String _originalDesc;
+
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.task.title);
     _descController = TextEditingController(text: widget.task.description ?? '');
+
+    _originalTitle = widget.task.title;
+    _originalDesc = widget.task.description ?? '';
+
+    _titleFocusNode = FocusNode();
+    _descFocusNode = FocusNode();
+
+    // 监听标题输入框失焦事件，失焦时保存
+    _titleFocusNode.addListener(_onTitleFocusChange);
+    // 监听描述输入框失焦事件，失焦时保存
+    _descFocusNode.addListener(_onDescFocusChange);
   }
 
   @override
   void didUpdateWidget(covariant TaskDetailPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 切换到不同任务时，重置输入框和原始值
     if (oldWidget.task.id != widget.task.id) {
       _titleController.text = widget.task.title;
       _descController.text = widget.task.description ?? '';
+      _originalTitle = widget.task.title;
+      _originalDesc = widget.task.description ?? '';
     }
   }
 
   @override
   void dispose() {
+    // 移除监听器
+    _titleFocusNode.removeListener(_onTitleFocusChange);
+    _descFocusNode.removeListener(_onDescFocusChange);
+    _titleFocusNode.dispose();
+    _descFocusNode.dispose();
     _titleController.dispose();
     _descController.dispose();
     super.dispose();
+  }
+
+  /// 标题输入框失焦回调：失焦时保存标题
+  void _onTitleFocusChange() {
+    if (!_titleFocusNode.hasFocus) {
+      _saveTitleIfChanged();
+    }
+  }
+
+  /// 描述输入框失焦回调：失焦时保存描述
+  void _onDescFocusChange() {
+    if (!_descFocusNode.hasFocus) {
+      _saveDescIfChanged();
+    }
+  }
+
+  /// 保存标题（仅当有变化时）
+  void _saveTitleIfChanged() {
+    final newTitle = _titleController.text.trim();
+    if (newTitle.isNotEmpty && newTitle != _originalTitle) {
+      ref.read(taskProvider.notifier).updateTask(
+        widget.task.copyWith(title: newTitle, updatedAt: DateTime.now()),
+      );
+      _originalTitle = newTitle; // 更新原始值，避免重复保存
+    }
+  }
+
+  /// 保存描述（仅当有变化时）
+  void _saveDescIfChanged() {
+    final newDesc = _descController.text;
+    if (newDesc != _originalDesc) {
+      ref.read(taskProvider.notifier).updateTask(
+        widget.task.copyWith(description: newDesc, updatedAt: DateTime.now()),
+      );
+      _originalDesc = newDesc; // 更新原始值，避免重复保存
+    }
   }
 
   @override
@@ -63,9 +129,10 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题
+                  // 标题输入框：失焦或回车时保存，关闭时丢弃修改
                   TextField(
                     controller: _titleController,
+                    focusNode: _titleFocusNode,
                     readOnly: widget.task.isDeleted,
                     style: TextStyle(
                       fontSize: 18,
@@ -76,9 +143,17 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     ),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                       hintText: '任务标题',
                     ),
-                    onSubmitted: widget.task.isDeleted ? null : _updateTitle,
+                    maxLines: null,
+                    keyboardType: TextInputType.multiline,
+                    // 回车键保存标题并移除焦点
+                    onSubmitted: widget.task.isDeleted ? null : (_) {
+                      _saveTitleIfChanged();
+                      _titleFocusNode.unfocus();
+                    },
                   ),
                   const SizedBox(height: AmberDimens.spacingMd),
                   // 属性列表
@@ -133,25 +208,22 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     ),
                   ),
                   const SizedBox(height: AmberDimens.spacingSm),
+                  // 描述输入框：失焦时保存，关闭时丢弃修改
                   TextField(
                     controller: _descController,
+                    focusNode: _descFocusNode,
                     readOnly: widget.task.isDeleted,
                     maxLines: null,
                     minLines: 4,
                     decoration: InputDecoration(
                       hintText: widget.task.isDeleted ? null : '添加描述...',
-                      filled: true,
-                      fillColor: AmberColors.sidebarBackground,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
-                        borderSide: BorderSide.none,
-                      ),
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                     ),
-                    onChanged: widget.task.isDeleted
-                        ? null
-                        : (value) {
-                            _updateDescription(value);
-                          },
+                    // 描述不需要 onSubmitted，因为多行文本回车是换行
+                    // 只在失焦时通过 FocusNode 监听器保存
                   ),
                 ],
               ),
@@ -183,9 +255,11 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
           const Spacer(),
           IconButton(
             onPressed: () {
+              // 关闭面板，失焦时会自动保存修改
               ref.read(appNavProvider.notifier).closeDetailPanel();
             },
             icon: const Icon(Icons.close, size: 20),
+            tooltip: '关闭',
             splashRadius: 18,
           ),
         ],
@@ -263,29 +337,32 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
     );
   }
 
-  void _updateTitle(String title) {
-    if (title.trim().isEmpty) return;
-    ref.read(taskProvider.notifier).updateTask(
-      widget.task.copyWith(title: title.trim(), updatedAt: DateTime.now()),
-    );
-  }
-
-  void _updateDescription(String desc) {
-    ref.read(taskProvider.notifier).updateTask(
-      widget.task.copyWith(description: desc, updatedAt: DateTime.now()),
-    );
-  }
-
   Future<void> _showDatePicker(BuildContext context) async {
     final date = await showDatePicker(
       context: context,
       initialDate: widget.task.dueDate ?? DateTime.now(),
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            datePickerTheme: const DatePickerThemeData(
+              headerHeadlineStyle: TextStyle(
+                fontSize: 16, // Smaller font size to prevent wrapping
+                fontWeight: FontWeight.bold,
+              ),
+              headerHelpStyle: TextStyle(fontSize: 14),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (date != null) {
+      // 规范化为 UTC 日期存储，确保跨设备同步时日期一致
+      final normalizedDate = AmberDateUtils.normalizeToUtcDate(date);
       ref.read(taskProvider.notifier).updateTask(
-        widget.task.copyWith(dueDate: date, updatedAt: DateTime.now()),
+        widget.task.copyWith(dueDate: normalizedDate, updatedAt: DateTime.now()),
       );
     }
   }
@@ -506,13 +583,59 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
             child: const Text('取消'),
           ),
           ElevatedButton(
-            onPressed: () {
-              ref.read(taskProvider.notifier).deleteTask(widget.task.id);
-              ref.read(appNavProvider.notifier).closeDetailPanel();
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AmberColors.warning),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AmberColors.warning,
+            ),
             child: const Text('删除'),
+            onPressed: () async {
+              final success = await ref
+                  .read(taskProvider.notifier)
+                  .deleteTask(widget.task.id);
+
+              if (!context.mounted) return;
+
+              if (success) {
+                ref.read(soundServiceProvider).playDelete();
+                ref.read(appNavProvider.notifier).closeDetailPanel();
+                Navigator.pop(context);
+              } else {
+                // 有番茄记录冲突
+                Navigator.pop(context); // 先关闭当前对话框
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('无法删除'),
+                    content: const Text(
+                      '该任务有关联的番茄时钟记录。\n\n'
+                      '请先前往番茄时钟页面删除相关记录，或选择"强制删除"移入垃圾桶。',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('取消'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          ref
+                              .read(taskProvider.notifier)
+                              .forceDeleteTask(widget.task.id);
+                          ref.read(soundServiceProvider).playDelete();
+                          ref.read(appNavProvider.notifier).closeDetailPanel();
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                        ),
+                        child: const Text(
+                          '强制删除',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),

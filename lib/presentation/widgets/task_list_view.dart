@@ -1,24 +1,25 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/constants.dart';
+import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:window_manager/window_manager.dart'; // Add import
-import '../../core/utils/ui_utils.dart'; // Add import
+import 'package:window_manager/window_manager.dart';
+import '../../core/utils/ui_utils.dart';
 import 'task_item.dart';
 import 'package:intl/intl.dart';
 
-/// 排序选项
-enum SortOption {
-  smart, // 智能排序 (默认)
-  dueDate, // 按截止日期
-  priority, // 按优先级
-  title, // 按标题
-  created, // 按创建时间
-}
+// 注意：SortOption 已移至 task_filter_sort_provider.dart，这里重新导出以保持兼容
+// 已在 providers.dart 中 export，这里不需要重复定义
 
 /// 任务列表视图
+///
+/// 设计哲学：
+/// - 桌面端：显示完整 header（标题+筛选排序按钮）
+/// - 移动端：header 可隐藏，筛选排序按钮由外层 AppBar 提供
+/// - 筛选排序状态由 taskFilterSortProvider 统一管理
 class TaskListView extends ConsumerStatefulWidget {
   final String title;
   final List<Task> tasks;
@@ -30,13 +31,23 @@ class TaskListView extends ConsumerStatefulWidget {
     required this.tasks,
     this.listId,
     this.showInput = true,
-    this.showDatePicker = false, // Default to false
+    this.showDatePicker = false,
     this.groupCompleted = true,
+    this.showHeader = true, // 是否显示头部（标题+筛选排序），移动端设为 false
+    this.showFilterSort = true, // 是否显示筛选排序按钮，已完成/垃圾桶页面设为 false
   });
 
   final bool showInput;
   final bool showDatePicker;
   final bool groupCompleted;
+
+  /// 是否显示头部区域（标题+筛选排序按钮）
+  /// 移动端设为 false，因为顶部 AppBar 已有标题
+  final bool showHeader;
+
+  /// 是否显示筛选排序按钮
+  /// 已完成/垃圾桶页面设为 false，因为这些页面不需要筛选排序
+  final bool showFilterSort;
 
   @override
   ConsumerState<TaskListView> createState() => _TaskListViewState();
@@ -48,11 +59,6 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   bool _isAddingTask = false;
   DateTime _selectedDate = DateTime.now();
 
-  // 排序与筛选状态
-  SortOption _sortOption = SortOption.smart;
-  bool _sortAscending = true;
-  bool _hideCompleted = false;
-
   @override
   void dispose() {
     _inputController.dispose();
@@ -60,27 +66,59 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     super.dispose();
   }
 
-  List<Task> _processTasks() {
+  /// 根据筛选排序状态处理任务列表
+  List<Task> _processTasks(TaskFilterSortState filterSort) {
     // 1. 过滤
     var tasks = widget.tasks;
-    if (_hideCompleted || (widget.groupCompleted == false && _hideCompleted)) {
+    if (filterSort.hideCompleted || (widget.groupCompleted == false && filterSort.hideCompleted)) {
       tasks = tasks.where((t) => !t.isCompleted).toList();
+    }
+
+    // 过滤已过期任务（截止日期早于今天且未完成的任务）
+    // 使用 AmberDateUtils 确保跨时区一致性
+    if (filterSort.hideOverdue) {
+      tasks = tasks.where((t) {
+        if (t.isCompleted) return true; // 已完成的不过滤
+        if (t.dueDate == null) return true; // 没有截止日期的不过滤
+        return !AmberDateUtils.isOverdue(t.dueDate!); // 过滤掉过期的
+      }).toList();
     }
 
     // 2. 排序
     tasks = List<Task>.from(tasks); // Copy list
     tasks.sort((a, b) {
-      if (_sortOption == SortOption.smart) {
-        // 智能排序: 未完成 > 优先级 > 创建时间
+      if (filterSort.sortOption == SortOption.smart) {
+        // 智能排序: 未完成 > 未过期 > 截止日期近 > 优先级 > 创建时间
+        // 1. 已完成的排最后
         if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
+
+        // 2. 已过期的排在未过期后面（仅对未完成任务生效）
+        // 使用 AmberDateUtils 确保跨时区一致性
+        final aIsOverdue = a.dueDate != null && AmberDateUtils.isOverdue(a.dueDate!);
+        final bIsOverdue = b.dueDate != null && AmberDateUtils.isOverdue(b.dueDate!);
+        if (aIsOverdue != bIsOverdue) return aIsOverdue ? 1 : -1;
+
+        // 3. 按截止日期排序（日期近的在前，无日期的排最后）
+        // 提取日期部分进行比较，忽略时间
+        final aDue = a.dueDate != null ? DateTime(a.dueDate!.year, a.dueDate!.month, a.dueDate!.day) : null;
+        final bDue = b.dueDate != null ? DateTime(b.dueDate!.year, b.dueDate!.month, b.dueDate!.day) : null;
+        if (aDue != null || bDue != null) {
+          if (aDue == null) return 1;  // 无日期的排后面
+          if (bDue == null) return -1;
+          final dueDateComparison = aDue.compareTo(bDue);
+          if (dueDateComparison != 0) return dueDateComparison;
+        }
+
+        // 4. 按优先级排序（高优先级在前）
         if (a.priority.value != b.priority.value) {
           return b.priority.value.compareTo(a.priority.value);
         }
+        // 5. 按创建时间排序（新创建的在前）
         return b.createdAt.compareTo(a.createdAt);
       }
 
       int comparison = 0;
-      switch (_sortOption) {
+      switch (filterSort.sortOption) {
         case SortOption.dueDate:
           // Nulls last
           if (a.dueDate == null && b.dueDate == null) {
@@ -105,40 +143,26 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         default:
           comparison = 0;
       }
-      return _sortAscending ? comparison : -comparison;
+      return filterSort.sortAscending ? comparison : -comparison;
     });
 
     return tasks;
   }
 
-
-
-  String _getSortOptionName(SortOption option) {
-    switch (option) {
-      case SortOption.smart:
-        return '智能排序';
-      case SortOption.dueDate:
-        return '按截止日期';
-      case SortOption.priority:
-        return '按优先级';
-      case SortOption.title:
-        return '按标题';
-      case SortOption.created:
-        return '按创建时间';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final allTasks = _processTasks();
+    // 从 Provider 获取筛选排序状态
+    final filterSort = ref.watch(taskFilterSortProvider);
+
+    final allTasks = _processTasks(filterSort);
     final incompleteTasks = allTasks.where((t) => !t.isCompleted).toList();
     final completedTasks = allTasks.where((t) => t.isCompleted).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 标题栏
-        _buildHeader(),
+        // 标题栏（移动端可隐藏）
+        if (widget.showHeader) _buildHeader(),
         // 快速添加任务
         if (widget.showInput) _buildQuickAdd(),
         // 任务列表
@@ -152,7 +176,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                 // 未完成任务
                 ...incompleteTasks.map((task) => TaskItem(task: task)),
                 // 已完成任务折叠
-                if (completedTasks.isNotEmpty && !_hideCompleted)
+                if (completedTasks.isNotEmpty && !filterSort.hideCompleted)
                   _buildCompletedSection(completedTasks),
               ],
             ],
@@ -165,25 +189,32 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   Widget _buildHeader() {
     final navState = ref.watch(appNavProvider);
     final isSidebarOpen = navState.isListSidebarOpen;
+    final filterSort = ref.watch(taskFilterSortProvider);
+    final filterSortNotifier = ref.read(taskFilterSortProvider.notifier);
+    // 判断是否为桌面端（只有桌面端才有侧边栏展开/收缩功能）
+    final isDesktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
     return DragToMoveArea(
       child: Container(
         padding: const EdgeInsets.all(AmberDimens.spacingMd),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () {
-              ref.read(appNavProvider.notifier).toggleListSidebar();
-            },
-            icon: Icon(
-              isSidebarOpen
-                  ? FluentIcons.panel_left_contract_20_regular
-                  : FluentIcons.panel_left_expand_20_regular,
-              color: AmberColors.textSecondary,
+          // 桌面端才显示侧边栏展开/收缩按钮
+          if (isDesktop) ...[
+            IconButton(
+              onPressed: () {
+                ref.read(appNavProvider.notifier).toggleListSidebar();
+              },
+              icon: Icon(
+                isSidebarOpen
+                    ? FluentIcons.panel_left_contract_20_regular
+                    : FluentIcons.panel_left_expand_20_regular,
+                color: AmberColors.textSecondary,
+              ),
+              tooltip: isSidebarOpen ? '收起侧边栏' : '展开侧边栏',
             ),
-            tooltip: isSidebarOpen ? '收起侧边栏' : '展开侧边栏',
-          ),
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
+          ],
           Text(
             widget.title,
             style: const TextStyle(
@@ -193,27 +224,27 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
             ),
           ),
           const Spacer(),
+          // 筛选排序按钮（已完成/垃圾桶页面不显示）
+          if (widget.showFilterSort) ...[
             InstantPopupMenuButton<bool>(
               tooltip: '筛选',
               offset: const Offset(0, 40), // 下拉位置修正
               icon: Icon(
-                _hideCompleted
+                filterSort.hasActiveFilter
                     ? Icons.filter_alt_rounded
                     : Icons.filter_list_rounded,
-                color: _hideCompleted ? AmberColors.primary : null,
+                color: filterSort.hasActiveFilter ? AmberColors.primary : null,
               ),
               itemBuilder: (context) => [
                 PopupMenuItem(
                   value: true,
                   onTap: () {
-                    setState(() {
-                      _hideCompleted = !_hideCompleted;
-                    });
+                    filterSortNotifier.toggleHideCompleted();
                   },
                   child: Row(
                     children: [
                       Icon(
-                        _hideCompleted
+                        filterSort.hideCompleted
                             ? Icons.check_box
                             : Icons.check_box_outline_blank,
                         size: 20,
@@ -224,32 +255,39 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                     ],
                   ),
                 ),
+                PopupMenuItem(
+                  value: false,
+                  onTap: () {
+                    filterSortNotifier.toggleHideOverdue();
+                  },
+                  child: Row(
+                    children: [
+                      Icon(
+                        filterSort.hideOverdue
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        size: 20,
+                        color: AmberColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('隐藏已过期任务'),
+                    ],
+                  ),
+                ),
               ],
             ),
             InstantPopupMenuButton<SortOption>(
               tooltip: '排序',
               offset: const Offset(0, 40), // 下拉位置修正
-              initialValue: _sortOption,
+              initialValue: filterSort.sortOption,
               icon: Icon(
                 Icons.sort_rounded,
-                color: _sortOption != SortOption.smart
+                color: filterSort.hasCustomSort
                     ? AmberColors.primary
                     : null,
               ),
               onSelected: (result) {
-                setState(() {
-                  if (_sortOption == result && result != SortOption.smart) {
-                    _sortAscending = !_sortAscending;
-                  } else {
-                    _sortOption = result;
-                    if (result == SortOption.priority ||
-                        result == SortOption.created) {
-                      _sortAscending = false;
-                    } else {
-                      _sortAscending = true;
-                    }
-                  }
-                });
+                filterSortNotifier.setSortOption(result);
               },
               itemBuilder: (context) => [
                 for (var option in SortOption.values)
@@ -257,7 +295,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                     value: option,
                     child: Row(
                       children: [
-                        if (_sortOption == option)
+                        if (filterSort.sortOption == option)
                           const Icon(
                             Icons.check,
                             size: 18,
@@ -266,12 +304,13 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                         else
                           const SizedBox(width: 18),
                         const SizedBox(width: 8),
-                        Text(_getSortOptionName(option)),
+                        Text(getSortOptionName(option)),
                       ],
                     ),
                   ),
               ],
-          ),
+            ),
+          ],
         ],
       ),
       ),
@@ -385,6 +424,20 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
       confirmText: '确定',
       cancelText: '取消',
       helpText: '选择日期',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            datePickerTheme: const DatePickerThemeData(
+              headerHeadlineStyle: TextStyle(
+                fontSize: 16, // Smaller font size
+                fontWeight: FontWeight.bold,
+              ),
+              headerHelpStyle: TextStyle(fontSize: 14),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -398,10 +451,14 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   void _addTask(String title) {
     if (title.trim().isEmpty) return;
 
+    // 规范化为 UTC 日期存储，确保跨设备同步时日期一致
+    final normalizedDate = AmberDateUtils.normalizeToUtcDate(_selectedDate);
+
+    ref.read(soundServiceProvider).playAdd(); // Sound
     ref.read(taskProvider.notifier).createTask(
       title: title.trim(),
       listId: widget.listId,
-          dueDate: _selectedDate,
+      dueDate: normalizedDate,
     );
 
     _inputController.clear();

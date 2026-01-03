@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' as drift;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/services/native_sticky_note_service.dart';
 import '../../data/models/models.dart';
 
 import '../../data/datasources/local/database.dart' as db;
@@ -281,7 +282,46 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       ),
     );
 
-    // Sync with Sticky Note Window if open
+    // ========== 同步到原生便签窗口 ==========
+    try {
+      final nativeService = NativeStickyNoteService.instance;
+      if (nativeService.isSupported && task.listId != null) {
+        // 检查该列表的便签是否打开
+        if (nativeService.openNotes.contains(task.listId)) {
+          // 获取该列表的所有任务，重新构建任务列表
+          final listTasks = state.where((t) => t.listId == task.listId).toList();
+
+          // 更新当前任务的状态（因为 state 还没更新，需要手动调整）
+          final activeTasks = <Map<String, dynamic>>[];
+          final completedTasks = <Map<String, dynamic>>[];
+
+          for (final t in listTasks) {
+            final taskCompleted = t.id == id ? isCompleted : t.isCompleted;
+            final taskData = {
+              'id': t.id,
+              'title': t.title,
+              'isCompleted': taskCompleted,
+            };
+            if (taskCompleted) {
+              completedTasks.add(taskData);
+            } else {
+              activeTasks.add(taskData);
+            }
+          }
+
+          await nativeService.updateStickyNote(
+            id: task.listId!,
+            activeTasks: activeTasks,
+            completedTasks: completedTasks,
+          );
+          debugPrint('[TaskProvider] 已同步到原生便签: ${task.listId}');
+        }
+      }
+    } catch (e) {
+      debugPrint('[TaskProvider] 同步原生便签失败: $e');
+    }
+
+    // ========== Fallback: 同步到 Flutter 多窗口 ==========
     try {
       final registry = ref.read(stickyNoteRegistryProvider);
       if (task.listId != null && registry.containsKey(task.listId!)) {
@@ -368,7 +408,26 @@ class TaskNotifier extends StateNotifier<List<Task>> {
   }
 
   /// 移入垃圾桶（软删除）
-  Future<void> deleteTask(String id) async {
+  /// 返回 true 表示成功，返回 false 表示有番茄记录冲突
+  Future<bool> deleteTask(String id) async {
+    // 先检查是否有番茄记录
+    final hasPomodoroRecords = await database.hasTaskPomodoroRecords(id);
+    if (hasPomodoroRecords) {
+      return false; // 有冲突，拒绝删除
+    }
+
+    await database.updateTask(
+      db.TasksCompanion(
+        id: drift.Value(id),
+        isDeleted: const drift.Value(true),
+        updatedAt: drift.Value(DateTime.now()),
+      ),
+    );
+    return true;
+  }
+
+  /// 强制移入垃圾桶（忽略番茄记录）
+  Future<void> forceDeleteTask(String id) async {
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(id),
@@ -389,9 +448,20 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     );
   }
 
-  /// 彻底删除
+  /// 检查任务是否有关联的番茄记录
+  Future<bool> hasTaskPomodoroRecords(String taskId) async {
+    return database.hasTaskPomodoroRecords(taskId);
+  }
+
+  /// 彻底删除任务
+  /// 如果任务有番茄记录，会抛出异常，需要调用 forceDeleteTaskWithPomodoros
   Future<void> permanentlyDeleteTask(String id) async {
     await database.deleteTask(id);
+  }
+
+  /// 强制删除任务及其番茄记录
+  Future<void> forceDeleteTaskWithPomodoros(String id) async {
+    await database.forceDeleteTaskWithPomodoros(id);
   }
 
   Future<void> _ensureTagExists(String tagName) async {
