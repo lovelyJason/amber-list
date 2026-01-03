@@ -6,11 +6,11 @@
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "comctl32.lib")
 
-// 静态成员初始化
+// Static member initialization
 const wchar_t* StickyNoteWindow::kWindowClassName = L"AMBER_STICKY_NOTE_WINDOW";
 bool StickyNoteWindow::class_registered_ = false;
 
-// 预定义主题色
+// Predefined theme colors
 static const COLORREF kThemeColors[] = {
     RGB(255, 247, 209),  // Yellow: 0xFFFFF7D1
     RGB(225, 245, 254),  // Blue: 0xFFE1F5FE
@@ -18,7 +18,7 @@ static const COLORREF kThemeColors[] = {
     RGB(232, 245, 233),  // Green: 0xFFE8F5E9
 };
 
-// 窗口尺寸常量
+// Window size constants
 static const int kWindowWidth = 320;
 static const int kWindowHeight = 400;
 static const int kHeaderHeight = 32;
@@ -33,7 +33,7 @@ StickyNoteWindow::StickyNoteWindow(const std::wstring& noteId,
       theme_color_(themeColor) {
     bg_brush_ = CreateSolidBrush(theme_color_);
 
-    // 头部稍微深一点
+    // Header slightly darker
     int r = GetRValue(theme_color_);
     int g = GetGValue(theme_color_);
     int b = GetBValue(theme_color_);
@@ -59,7 +59,7 @@ bool StickyNoteWindow::RegisterWindowClass() {
     wcex.lpfnWndProc = WindowProc;
     wcex.hInstance = GetModuleHandle(nullptr);
     wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground = nullptr;  // 自定义绘制
+    wcex.hbrBackground = nullptr;  // Custom paint
     wcex.lpszClassName = kWindowClassName;
 
     if (!RegisterClassExW(&wcex)) {
@@ -75,32 +75,29 @@ bool StickyNoteWindow::Create() {
         return false;
     }
 
-    // 计算居中位置
+    // Calculate center position
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
     int x = (screenWidth - kWindowWidth) / 2;
     int y = (screenHeight - kWindowHeight) / 2;
 
-    // 创建窗口
+    // Create window
     window_handle_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | (is_pinned_ ? WS_EX_TOPMOST : 0),
         kWindowClassName,
-        L"琥珀便签",
-        WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX,  // 不允许最大化
+        L"Amber Sticky Note",
+        WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX,  // No maximize
         x, y, kWindowWidth, kWindowHeight,
         nullptr, nullptr,
         GetModuleHandle(nullptr),
-        this  // 传递 this 指针
+        this  // Pass this pointer
     );
 
     if (!window_handle_) {
         return false;
     }
 
-    // 设置窗口大小限制
-    // 在 WM_GETMINMAXINFO 中处理
-
-    // 创建控件
+    // Create controls
     CreateControls();
 
     return true;
@@ -147,9 +144,9 @@ void StickyNoteWindow::SetPinned(bool pinned) {
             0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE
         );
-        // 更新按钮文字
+        // Update button text
         if (pin_button_) {
-            SetWindowTextW(pin_button_, is_pinned_ ? L"📌" : L"📍");
+            SetWindowTextW(pin_button_, is_pinned_ ? L"P" : L"p");
         }
     }
 }
@@ -157,7 +154,7 @@ void StickyNoteWindow::SetPinned(bool pinned) {
 void StickyNoteWindow::SetThemeColor(COLORREF color) {
     theme_color_ = color;
 
-    // 重建画刷
+    // Rebuild brushes
     if (bg_brush_) DeleteObject(bg_brush_);
     if (header_brush_) DeleteObject(header_brush_);
 
@@ -172,7 +169,7 @@ void StickyNoteWindow::SetThemeColor(COLORREF color) {
         std::max(0, b - 10)
     ));
 
-    // 强制重绘
+    // Force repaint
     if (window_handle_) {
         InvalidateRect(window_handle_, nullptr, TRUE);
     }
@@ -207,11 +204,11 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
             return 0;
 
         case WM_ERASEBKGND:
-            return 1;  // 自己处理背景绘制
+            return 1;  // Handle background painting ourselves
 
         case WM_CTLCOLORSTATIC:
         case WM_CTLCOLORBTN: {
-            // 设置控件背景透明
+            // Set control background transparent
             HDC hdc = reinterpret_cast<HDC>(wparam);
             SetBkMode(hdc, TRANSPARENT);
             return reinterpret_cast<LRESULT>(bg_brush_);
@@ -221,7 +218,7 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
             int controlId = LOWORD(wparam);
             int notifyCode = HIWORD(wparam);
 
-            // Checkbox 点击
+            // Checkbox click
             if (notifyCode == BN_CLICKED) {
                 if (controlId >= 100 && controlId < 1000) {
                     OnCheckboxClicked(controlId);
@@ -242,7 +239,7 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
         }
 
         case WM_CLOSE:
-            // 通知 Flutter 窗口关闭
+            // Notify Flutter window closed
             if (onWindowClosed) {
                 onWindowClosed(note_id_);
             }
@@ -254,12 +251,12 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
             return 0;
 
         case WM_SIZE:
-            // 窗口大小变化时重新布局
+            // Relayout on resize
             RebuildTaskList();
             return 0;
 
         case WM_NCHITTEST: {
-            // 允许拖动窗口（头部区域）
+            // Allow dragging window (header area)
             POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
             ScreenToClient(window_handle_, &pt);
             if (pt.y < kHeaderHeight && pt.x < (kWindowWidth - kButtonSize * 3 - kPadding)) {
@@ -275,50 +272,44 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
 void StickyNoteWindow::CreateControls() {
     if (!window_handle_) return;
 
-    HFONT hFont = CreateFontW(
-        14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei"
-    );
-
     HFONT hTitleFont = CreateFontW(
         18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei"
     );
 
-    // 头部按钮
+    // Header buttons
     int buttonX = kWindowWidth - kPadding - kButtonSize * 3 - 8;
     int buttonY = (kHeaderHeight - kButtonSize) / 2;
 
-    // 颜色按钮
+    // Color button
     color_button_ = CreateWindowW(
-        L"BUTTON", L"🎨",
+        L"BUTTON", L"*",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
         buttonX, buttonY, kButtonSize, kButtonSize,
-        window_handle_, reinterpret_cast<HMENU>(ID_BTN_COLOR),
+        window_handle_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(ID_BTN_COLOR)),
         GetModuleHandle(nullptr), nullptr
     );
 
-    // 置顶按钮
+    // Pin button
     pin_button_ = CreateWindowW(
-        L"BUTTON", is_pinned_ ? L"📌" : L"📍",
+        L"BUTTON", is_pinned_ ? L"P" : L"p",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
         buttonX + kButtonSize + 4, buttonY, kButtonSize, kButtonSize,
-        window_handle_, reinterpret_cast<HMENU>(ID_BTN_PIN),
+        window_handle_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(ID_BTN_PIN)),
         GetModuleHandle(nullptr), nullptr
     );
 
-    // 关闭按钮
+    // Close button
     close_button_ = CreateWindowW(
-        L"BUTTON", L"✕",
+        L"BUTTON", L"X",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT,
         buttonX + (kButtonSize + 4) * 2, buttonY, kButtonSize, kButtonSize,
-        window_handle_, reinterpret_cast<HMENU>(ID_BTN_CLOSE),
+        window_handle_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(ID_BTN_CLOSE)),
         GetModuleHandle(nullptr), nullptr
     );
 
-    // 标题标签
+    // Title label
     title_label_ = CreateWindowW(
         L"STATIC", note_title_.c_str(),
         WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -328,14 +319,14 @@ void StickyNoteWindow::CreateControls() {
     );
     SendMessage(title_label_, WM_SETFONT, reinterpret_cast<WPARAM>(hTitleFont), TRUE);
 
-    // 初始化任务列表
+    // Initialize task list
     RebuildTaskList();
 }
 
 void StickyNoteWindow::RebuildTaskList() {
     if (!window_handle_) return;
 
-    // 清除旧的 checkbox
+    // Clear old checkboxes
     for (auto& pair : checkbox_task_map_) {
         HWND checkbox = GetDlgItem(window_handle_, pair.first);
         if (checkbox) DestroyWindow(checkbox);
@@ -349,9 +340,9 @@ void StickyNoteWindow::RebuildTaskList() {
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei"
     );
 
-    int y = kHeaderHeight + 48;  // 标题下方
+    int y = kHeaderHeight + 48;  // Below title
 
-    // 活跃任务
+    // Active tasks
     for (const auto& task : active_tasks_) {
         int id = next_control_id_++;
         checkbox_task_map_[id] = task.id;
@@ -369,11 +360,11 @@ void StickyNoteWindow::RebuildTaskList() {
         y += 28;
     }
 
-    // 分隔线（如果两者都有）
+    // Separator (if both exist)
     if (!active_tasks_.empty() && !completed_tasks_.empty()) {
         y += 8;
-        // 分隔线用静态控件绘制
-        HWND separator = CreateWindowW(
+        // Draw separator with static control
+        CreateWindowW(
             L"STATIC", L"",
             WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
             kPadding, y, kWindowWidth - kPadding * 2, 2,
@@ -383,7 +374,7 @@ void StickyNoteWindow::RebuildTaskList() {
         y += 10;
     }
 
-    // 已完成任务
+    // Completed tasks
     for (const auto& task : completed_tasks_) {
         int id = next_control_id_++;
         checkbox_task_map_[id] = task.id;
@@ -397,15 +388,14 @@ void StickyNoteWindow::RebuildTaskList() {
         );
         SendMessage(checkbox, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
         SendMessage(checkbox, BM_SETCHECK, BST_CHECKED, 0);
-        // 可以考虑设置灰色文字表示已完成
 
         y += 28;
     }
 
-    // 无任务提示
+    // No tasks hint
     if (active_tasks_.empty() && completed_tasks_.empty()) {
         CreateWindowW(
-            L"STATIC", L"暂无任务",
+            L"STATIC", L"No tasks",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             kPadding, y, 200, 20,
             window_handle_, nullptr,
@@ -423,11 +413,11 @@ void StickyNoteWindow::OnPaint() {
     RECT rect;
     GetClientRect(window_handle_, &rect);
 
-    // 头部背景
+    // Header background
     RECT headerRect = { 0, 0, rect.right, kHeaderHeight };
     FillRect(hdc, &headerRect, header_brush_);
 
-    // 绘制头部文字 "琥珀便签"
+    // Draw header text
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(100, 100, 100));
 
@@ -438,12 +428,12 @@ void StickyNoteWindow::OnPaint() {
     );
     HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, hFont));
 
-    TextOutW(hdc, 12, 8, L"📝 琥珀便签", 6);
+    TextOutW(hdc, 12, 8, L"Amber Note", 10);
 
     SelectObject(hdc, oldFont);
     DeleteObject(hFont);
 
-    // 内容区背景
+    // Content area background
     RECT contentRect = { 0, kHeaderHeight, rect.right, rect.bottom };
     FillRect(hdc, &contentRect, bg_brush_);
 
@@ -456,14 +446,14 @@ void StickyNoteWindow::OnCheckboxClicked(int checkboxId) {
 
     const std::wstring& taskId = it->second;
 
-    // 获取新状态
+    // Get new state
     HWND checkbox = GetDlgItem(window_handle_, checkboxId);
     bool isChecked = (SendMessage(checkbox, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
-    // 更新本地数据
-    // 在 active 和 completed 之间移动
+    // Update local data
+    // Move between active and completed
     if (isChecked) {
-        // 移到 completed
+        // Move to completed
         for (auto taskIt = active_tasks_.begin(); taskIt != active_tasks_.end(); ++taskIt) {
             if (taskIt->id == taskId) {
                 TaskItem task = *taskIt;
@@ -474,7 +464,7 @@ void StickyNoteWindow::OnCheckboxClicked(int checkboxId) {
             }
         }
     } else {
-        // 移到 active
+        // Move to active
         for (auto taskIt = completed_tasks_.begin(); taskIt != completed_tasks_.end(); ++taskIt) {
             if (taskIt->id == taskId) {
                 TaskItem task = *taskIt;
@@ -486,10 +476,10 @@ void StickyNoteWindow::OnCheckboxClicked(int checkboxId) {
         }
     }
 
-    // 重建列表（重新排序）
+    // Rebuild list (reorder)
     RebuildTaskList();
 
-    // 通知 Flutter
+    // Notify Flutter
     if (onTaskToggled) {
         onTaskToggled(taskId, isChecked);
     }
@@ -537,7 +527,7 @@ void StickyNoteWindow::ShowColorPicker() {
     if (color_picker_visible_) return;
     color_picker_visible_ = true;
 
-    // 隐藏原有按钮
+    // Hide original buttons
     ShowWindow(pin_button_, SW_HIDE);
     ShowWindow(color_button_, SW_HIDE);
     ShowWindow(close_button_, SW_HIDE);
@@ -545,9 +535,9 @@ void StickyNoteWindow::ShowColorPicker() {
     int buttonY = (kHeaderHeight - 16) / 2;
     int x = kWindowWidth - kPadding - (20 * 4 + 12);
 
-    // 创建颜色选择按钮
+    // Create color selection buttons
     for (int i = 0; i < 4; i++) {
-        HWND colorBtn = CreateWindowW(
+        CreateWindowW(
             L"BUTTON", L"",
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             x + i * 20, buttonY, 16, 16,
@@ -561,13 +551,13 @@ void StickyNoteWindow::HideColorPicker() {
     if (!color_picker_visible_) return;
     color_picker_visible_ = false;
 
-    // 销毁颜色按钮
+    // Destroy color buttons
     for (int i = 0; i < 4; i++) {
         HWND btn = GetDlgItem(window_handle_, ID_BTN_COLOR_1 + i);
         if (btn) DestroyWindow(btn);
     }
 
-    // 显示原有按钮
+    // Show original buttons
     ShowWindow(pin_button_, SW_SHOW);
     ShowWindow(color_button_, SW_SHOW);
     ShowWindow(close_button_, SW_SHOW);

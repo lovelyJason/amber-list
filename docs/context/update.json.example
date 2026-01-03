@@ -1,0 +1,14 @@
+{
+  "latest_version": "1.2.0",
+  "latest_build_number": "10",
+  "minimum_version": "1.0.0",
+  "release_notes": "- 新增：应用内更新检查功能\n- 新增：强制更新机制\n- 优化：日历界面双击交互\n- 修复：同步冲突显示问题",
+  "download_urls": {
+    "macos": "https://github.com/YOUR_USERNAME/amber-list/releases/download/v1.2.0/AmberList-1.2.0.dmg",
+    "windows": "https://github.com/YOUR_USERNAME/amber-list/releases/download/v1.2.0/AmberList-1.2.0-Setup.exe",
+    "android": "https://github.com/YOUR_USERNAME/amber-list/releases/download/v1.2.0/AmberList-1.2.0.apk",
+    "ios": "https://apps.apple.com/app/amber-list/id123456789"
+  },
+  "release_date": "2025-01-15T00:00:00Z",
+  "update_enabled": true
+}

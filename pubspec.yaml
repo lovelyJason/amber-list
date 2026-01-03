@@ -42,6 +42,7 @@ dependencies:
   shared_preferences: ^2.5.4      # 非敏感配置存储
   qiniu_flutter_sdk: ^0.6.0       # 七牛云 OSS SDK（全平台支持）
   http: ^1.2.2                    # HTTP 客户端（用于 OSS 下载）
+  url_launcher: ^6.2.5            # 打开外部链接（用于应用更新下载）
 
   # 桌面窗口管理
   window_manager: ^0.4.3

@@ -8,142 +8,142 @@
 #include <map>
 #include <functional>
 
-/// 任务项数据结构
+// Task item data structure
 struct TaskItem {
     std::wstring id;
     std::wstring title;
     bool isCompleted;
 };
 
-/// 原生便签窗口类
-/// 使用 Win32 API 实现，绕过 Flutter 多窗口的各种 bug
+// Native sticky note window class
+// Uses Win32 API to bypass Flutter multi-window bugs
 class StickyNoteWindow {
 public:
-    /// 构造函数
-    /// @param noteId 便签唯一标识
-    /// @param title 便签标题
-    /// @param themeColor 主题色（COLORREF 格式）
+    // Constructor
+    // @param noteId Unique note identifier
+    // @param title Note title
+    // @param themeColor Theme color (COLORREF format)
     StickyNoteWindow(const std::wstring& noteId, const std::wstring& title, COLORREF themeColor);
 
     virtual ~StickyNoteWindow();
 
-    /// 创建并显示窗口
+    // Create and show window
     bool Create();
 
-    /// 显示窗口
+    // Show window
     void Show();
 
-    /// 关闭窗口
+    // Close window
     void Close();
 
-    /// 聚焦窗口
+    // Focus window
     void Focus();
 
-    /// 更新任务列表
+    // Update task list
     void UpdateTasks(const std::vector<TaskItem>& active, const std::vector<TaskItem>& completed);
 
-    /// 获取窗口句柄
+    // Get window handle
     HWND GetHandle() const { return window_handle_; }
 
-    /// 获取便签 ID
+    // Get note ID
     const std::wstring& GetNoteId() const { return note_id_; }
 
-    /// 是否置顶
+    // Is pinned (always on top)
     bool IsPinned() const { return is_pinned_; }
 
-    /// 设置置顶状态
+    // Set pinned state
     void SetPinned(bool pinned);
 
-    /// 切换主题色
+    // Set theme color
     void SetThemeColor(COLORREF color);
 
-    // ===== 回调函数 =====
+    // ===== Callbacks =====
 
-    /// 任务状态变化回调 (taskId, isCompleted)
+    // Task status changed callback (taskId, isCompleted)
     std::function<void(const std::wstring&, bool)> onTaskToggled;
 
-    /// 窗口关闭回调 (noteId)
+    // Window closed callback (noteId)
     std::function<void(const std::wstring&)> onWindowClosed;
 
 protected:
-    /// 窗口消息处理
+    // Window message handler
     LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
 private:
-    /// 窗口过程（静态）
+    // Window procedure (static)
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 
-    /// 注册窗口类
+    // Register window class
     static bool RegisterWindowClass();
 
-    /// 创建控件
+    // Create controls
     void CreateControls();
 
-    /// 重绘任务列表
+    // Rebuild task list
     void RebuildTaskList();
 
-    /// 绘制背景
+    // Paint background
     void OnPaint();
 
-    /// 处理 checkbox 点击
+    // Handle checkbox click
     void OnCheckboxClicked(int checkboxId);
 
-    /// 处理按钮点击
+    // Handle button click
     void OnButtonClicked(int buttonId);
 
-    /// 切换置顶状态
+    // Toggle pin state
     void TogglePin();
 
-    /// 显示颜色选择器
+    // Show color picker
     void ShowColorPicker();
 
-    /// 隐藏颜色选择器
+    // Hide color picker
     void HideColorPicker();
 
-    // ===== 成员变量 =====
+    // ===== Member variables =====
 
-    /// 便签 ID
+    // Note ID
     std::wstring note_id_;
 
-    /// 便签标题
+    // Note title
     std::wstring note_title_;
 
-    /// 主题色
+    // Theme color
     COLORREF theme_color_;
 
-    /// 是否置顶
+    // Is pinned (always on top)
     bool is_pinned_ = true;
 
-    /// 窗口句柄
+    // Window handle
     HWND window_handle_ = nullptr;
 
-    /// 头部背景画刷
+    // Header background brush
     HBRUSH header_brush_ = nullptr;
 
-    /// 背景画刷
+    // Background brush
     HBRUSH bg_brush_ = nullptr;
 
-    /// 任务列表
+    // Task lists
     std::vector<TaskItem> active_tasks_;
     std::vector<TaskItem> completed_tasks_;
 
-    /// Checkbox ID 到 TaskId 的映射
+    // Checkbox ID to TaskId mapping
     std::map<int, std::wstring> checkbox_task_map_;
 
-    /// 控件 ID 计数器
+    // Control ID counter
     int next_control_id_ = 100;
 
-    /// 颜色选择器是否显示
+    // Is color picker visible
     bool color_picker_visible_ = false;
 
-    /// 控件句柄
+    // Control handles
     HWND title_label_ = nullptr;
     HWND scroll_container_ = nullptr;
     HWND pin_button_ = nullptr;
     HWND color_button_ = nullptr;
     HWND close_button_ = nullptr;
 
-    /// 按钮 ID
+    // Button IDs
     static const int ID_BTN_PIN = 1001;
     static const int ID_BTN_COLOR = 1002;
     static const int ID_BTN_CLOSE = 1003;
@@ -152,7 +152,7 @@ private:
     static const int ID_BTN_COLOR_3 = 1013;
     static const int ID_BTN_COLOR_4 = 1014;
 
-    /// 窗口类名
+    // Window class name
     static const wchar_t* kWindowClassName;
     static bool class_registered_;
 };

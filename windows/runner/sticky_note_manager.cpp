@@ -27,7 +27,7 @@ void StickyNoteManager::Setup(flutter::FlutterEngine* engine) {
         }
     );
 
-    std::cout << "[StickyNoteManager] Platform Channel 已注册" << std::endl;
+    std::cout << "[StickyNoteManager] Platform Channel registered" << std::endl;
 }
 
 void StickyNoteManager::CloseAllWindows() {
@@ -45,7 +45,7 @@ void StickyNoteManager::HandleMethodCall(
 
     const std::string& method = call.method_name();
 
-    // 获取参数
+    // Get arguments
     const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
     if (!args && method != "ping") {
         result->Error("INVALID_ARGS", "Arguments must be a map");
@@ -71,7 +71,7 @@ void StickyNoteManager::HandleCreateStickyNote(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析参数
+    // Parse arguments
     auto idIt = args.find(flutter::EncodableValue("id"));
     auto titleIt = args.find(flutter::EncodableValue("title"));
 
@@ -85,7 +85,7 @@ void StickyNoteManager::HandleCreateStickyNote(
     std::wstring noteId = Utf8ToWString(noteIdStr);
     std::wstring title = Utf8ToWString(titleStr);
 
-    // 如果已存在，聚焦
+    // If exists, focus it
     auto existingIt = window_controllers_.find(noteId);
     if (existingIt != window_controllers_.end() && existingIt->second) {
         existingIt->second->Focus();
@@ -96,15 +96,15 @@ void StickyNoteManager::HandleCreateStickyNote(
         return;
     }
 
-    // 解析主题色
-    COLORREF themeColor = RGB(255, 247, 209);  // 默认黄色
+    // Parse theme color
+    COLORREF themeColor = RGB(255, 247, 209);  // Default yellow
     auto colorIt = args.find(flutter::EncodableValue("themeColor"));
     if (colorIt != args.end()) {
         std::string colorHex = std::get<std::string>(colorIt->second);
         themeColor = ParseColorHex(colorHex);
     }
 
-    // 解析任务列表
+    // Parse task lists
     std::vector<TaskItem> activeTasks;
     std::vector<TaskItem> completedTasks;
 
@@ -124,10 +124,10 @@ void StickyNoteManager::HandleCreateStickyNote(
         }
     }
 
-    // 创建窗口
+    // Create window
     auto window = std::make_unique<StickyNoteWindow>(noteId, title, themeColor);
 
-    // 设置回调
+    // Set callbacks
     window->onTaskToggled = [this](const std::wstring& taskId, bool isCompleted) {
         NotifyTaskToggled(taskId, isCompleted);
     };
@@ -137,10 +137,10 @@ void StickyNoteManager::HandleCreateStickyNote(
         NotifyWindowClosed(closedNoteId);
     };
 
-    // 更新任务
+    // Update tasks
     window->UpdateTasks(activeTasks, completedTasks);
 
-    // 创建并显示
+    // Create and show
     if (!window->Create()) {
         result->Error("CREATE_FAILED", "Failed to create window");
         return;
@@ -148,10 +148,10 @@ void StickyNoteManager::HandleCreateStickyNote(
 
     window->Show();
 
-    // 存储
+    // Store
     window_controllers_[noteId] = std::move(window);
 
-    std::cout << "[StickyNoteManager] 创建便签窗口: " << noteIdStr << std::endl;
+    std::cout << "[StickyNoteManager] Created sticky note window: " << noteIdStr << std::endl;
 
     flutter::EncodableMap response;
     response[flutter::EncodableValue("success")] = flutter::EncodableValue(true);
@@ -210,7 +210,7 @@ void StickyNoteManager::HandleUpdateStickyNote(
         return;
     }
 
-    // 解析任务列表
+    // Parse task lists
     std::vector<TaskItem> activeTasks;
     std::vector<TaskItem> completedTasks;
 
@@ -295,7 +295,7 @@ void StickyNoteManager::NotifyTaskToggled(const std::wstring& taskId, bool isCom
     method_channel_->InvokeMethod("onTaskToggled",
                                    std::make_unique<flutter::EncodableValue>(args));
 
-    std::cout << "[StickyNoteManager] 通知 Flutter 任务状态变化: " << WStringToUtf8(taskId)
+    std::cout << "[StickyNoteManager] Notify Flutter task toggled: " << WStringToUtf8(taskId)
               << " -> " << (isCompleted ? "completed" : "active") << std::endl;
 }
 
@@ -308,10 +308,10 @@ void StickyNoteManager::NotifyWindowClosed(const std::wstring& noteId) {
     method_channel_->InvokeMethod("onStickyNoteClosed",
                                    std::make_unique<flutter::EncodableValue>(args));
 
-    std::cout << "[StickyNoteManager] 通知 Flutter 窗口关闭: " << WStringToUtf8(noteId) << std::endl;
+    std::cout << "[StickyNoteManager] Notify Flutter window closed: " << WStringToUtf8(noteId) << std::endl;
 }
 
-// ===== 辅助函数实现 =====
+// ===== Helper functions =====
 
 std::string StickyNoteManager::WStringToUtf8(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
@@ -332,19 +332,19 @@ std::wstring StickyNoteManager::Utf8ToWString(const std::string& str) {
 }
 
 COLORREF StickyNoteManager::ParseColorHex(const std::string& hex) {
-    // 格式: "0xFFFFF7D1" (ARGB)
+    // Format: "0xFFFFF7D1" (ARGB)
     if (hex.length() < 8) {
-        return RGB(255, 247, 209);  // 默认黄色
+        return RGB(255, 247, 209);  // Default yellow
     }
 
     try {
-        // 跳过 "0x" 或 "0xFF" (alpha)
+        // Skip "0x" or "0xFF" (alpha)
         std::string colorPart = hex;
         if (colorPart.substr(0, 2) == "0x" || colorPart.substr(0, 2) == "0X") {
             colorPart = colorPart.substr(2);
         }
         if (colorPart.length() >= 8) {
-            colorPart = colorPart.substr(2);  // 跳过 alpha
+            colorPart = colorPart.substr(2);  // Skip alpha
         }
 
         unsigned long value = std::stoul(colorPart, nullptr, 16);

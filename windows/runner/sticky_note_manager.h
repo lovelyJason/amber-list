@@ -11,90 +11,90 @@
 
 #include "sticky_note_window.h"
 
-/// 便签窗口管理器（单例）
-/// 负责管理所有原生便签窗口的生命周期
-/// 处理 Platform Channel 的消息分发
+// Sticky note window manager (singleton)
+// Manages lifecycle of all native sticky note windows
+// Handles Platform Channel message dispatching
 class StickyNoteManager {
 public:
-    /// 获取单例实例
+    // Get singleton instance
     static StickyNoteManager& GetInstance();
 
-    /// 禁止拷贝和移动
+    // Disable copy and move
     StickyNoteManager(const StickyNoteManager&) = delete;
     StickyNoteManager& operator=(const StickyNoteManager&) = delete;
 
-    /// 初始化 Platform Channel
-    /// @param engine Flutter 引擎
+    // Initialize Platform Channel
+    // @param engine Flutter engine
     void Setup(flutter::FlutterEngine* engine);
 
-    /// 关闭所有便签窗口
+    // Close all sticky note windows
     void CloseAllWindows();
 
 private:
     StickyNoteManager() = default;
     ~StickyNoteManager();
 
-    // ===== Method Channel 处理 =====
+    // ===== Method Channel handlers =====
 
-    /// 处理来自 Flutter 的方法调用
+    // Handle method calls from Flutter
     void HandleMethodCall(
         const flutter::MethodCall<flutter::EncodableValue>& call,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 创建便签窗口
+    // Create sticky note window
     void HandleCreateStickyNote(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 关闭便签窗口
+    // Close sticky note window
     void HandleCloseStickyNote(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 更新便签内容
+    // Update sticky note content
     void HandleUpdateStickyNote(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 聚焦便签窗口
+    // Focus sticky note window
     void HandleFocusStickyNote(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 检查窗口是否打开
+    // Check if window is open
     void HandleIsWindowOpen(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    // ===== 通知 Flutter =====
+    // ===== Notify Flutter =====
 
-    /// 通知 Flutter 任务状态变化
+    // Notify Flutter of task status change
     void NotifyTaskToggled(const std::wstring& taskId, bool isCompleted);
 
-    /// 通知 Flutter 窗口关闭
+    // Notify Flutter of window close
     void NotifyWindowClosed(const std::wstring& noteId);
 
-    // ===== 辅助函数 =====
+    // ===== Helper functions =====
 
-    /// 宽字符串转 UTF-8
+    // Wide string to UTF-8
     static std::string WStringToUtf8(const std::wstring& wstr);
 
-    /// UTF-8 转宽字符串
+    // UTF-8 to wide string
     static std::wstring Utf8ToWString(const std::string& str);
 
-    /// 解析十六进制颜色字符串为 COLORREF
+    // Parse hex color string to COLORREF
     static COLORREF ParseColorHex(const std::string& hex);
 
-    /// 解析任务列表
+    // Parse task list
     static std::vector<TaskItem> ParseTaskList(const flutter::EncodableList& list);
 
-    // ===== 成员变量 =====
+    // ===== Member variables =====
 
-    /// Platform Channel
+    // Platform Channel
     std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
 
-    /// 存储所有活跃的便签窗口
-    /// Key: noteId (wstring), Value: StickyNoteWindow
+    // Store all active sticky note windows
+    // Key: noteId (wstring), Value: StickyNoteWindow
     std::map<std::wstring, std::unique_ptr<StickyNoteWindow>> window_controllers_;
 };
 
