@@ -23,6 +23,78 @@ import 'package:sqlite3/sqlite3.dart';
 /// 使用原始 SQLite 操作，避免 Drift 的复杂性
 /// ============================================================
 
+/// 冲突类型
+enum ConflictType {
+  /// 两边都修改了同一条记录
+  bothModified,
+  /// 本地修改，远程删除
+  localModifiedRemoteDeleted,
+  /// 本地删除，远程修改
+  localDeletedRemoteModified,
+}
+
+/// 通用记录冲突信息
+/// 用于收集需要用户手动决策的冲突
+class RecordConflict {
+  /// 表名：tasks / notes / task_lists
+  final String tableName;
+  /// 记录 ID
+  final String recordId;
+  /// 冲突类型
+  final ConflictType type;
+  /// 本地数据（删除时为 null）
+  final Map<String, dynamic>? local;
+  /// 远程数据（删除时为 null）
+  final Map<String, dynamic>? remote;
+  /// 基准数据（用于对比变化）
+  final Map<String, dynamic>? base;
+
+  const RecordConflict({
+    required this.tableName,
+    required this.recordId,
+    required this.type,
+    this.local,
+    this.remote,
+    this.base,
+  });
+
+  /// 获取记录标题/名称（用于 UI 显示）
+  String get displayName {
+    // 尝试从 local 或 remote 获取标题
+    final data = local ?? remote;
+    if (data == null) return recordId;
+
+    // 优先使用 title，其次 name
+    return (data['title'] as String?) ??
+           (data['name'] as String?) ??
+           recordId;
+  }
+
+  /// 获取本地更新时间
+  DateTime? get localUpdatedAt {
+    if (local == null) return null;
+    final ts = local!['updated_at'];
+    if (ts is int) return DateTime.fromMillisecondsSinceEpoch(ts);
+    return null;
+  }
+
+  /// 获取远程更新时间
+  DateTime? get remoteUpdatedAt {
+    if (remote == null) return null;
+    final ts = remote!['updated_at'];
+    if (ts is int) return DateTime.fromMillisecondsSinceEpoch(ts);
+    return null;
+  }
+}
+
+/// 用户对冲突的决策
+enum ConflictResolution {
+  /// 保留本地版本
+  keepLocal,
+  /// 保留远程版本
+  keepRemote,
+}
+
 /// 合并统计
 class MergeStats {
   int tasksAdded = 0;
@@ -38,6 +110,8 @@ class MergeStats {
   int tagsDeleted = 0;
   int conflicts = 0;
   List<TagConflict> tagConflicts = [];
+  /// 待决策的冲突列表（需要用户手动选择）
+  List<RecordConflict> pendingConflicts = [];
 
   /// 是否有任何变化
   bool get hasChanges =>
@@ -51,7 +125,11 @@ class MergeStats {
       notesUpdated > 0 ||
       notesDeleted > 0 ||
       tagsAdded > 0 ||
-      tagsDeleted > 0;
+      tagsDeleted > 0 ||
+      pendingConflicts.isNotEmpty;
+
+  /// 是否有需要用户决策的冲突
+  bool get hasPendingConflicts => pendingConflicts.isNotEmpty;
 
   @override
   String toString() {
@@ -65,7 +143,8 @@ class MergeStats {
     if (notesAdded > 0) parts.add('笔记+$notesAdded');
     if (notesUpdated > 0) parts.add('笔记↑$notesUpdated');
     if (notesDeleted > 0) parts.add('笔记-$notesDeleted');
-    if (conflicts > 0) parts.add('冲突$conflicts');
+    if (pendingConflicts.isNotEmpty) parts.add('待决策冲突${pendingConflicts.length}');
+    if (conflicts > 0) parts.add('已解决冲突$conflicts');
 
     return parts.isEmpty ? '无变化' : parts.join(', ');
   }
@@ -134,6 +213,10 @@ class ThreeWayMergeEngine {
       _mergeNotes(localDb, remoteDb, baseDb, stats);
       _mergeTags(localDb, remoteDb, baseDb, stats);
 
+      // 确保非冲突的合并结果刷到主数据库文件
+      // 这样即使后续处理冲突时出问题，已合并的数据也不会丢失
+      localDb.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+
       return MergeResult.successful(stats);
     } catch (e, stack) {
       debugPrint('[ThreeWayMerge] 合并失败: $e\n$stack');
@@ -144,6 +227,107 @@ class ThreeWayMergeEngine {
       remoteDb?.dispose();
       baseDb?.dispose();
     }
+  }
+
+  /// 应用用户的冲突决策
+  /// [localDbPath] 本地数据库路径
+  /// [conflicts] 冲突列表
+  /// [resolutions] 用户决策（与 conflicts 一一对应）
+  ///
+  /// 根据用户选择，将数据写入本地数据库
+  Future<bool> applyConflictResolutions({
+    required String localDbPath,
+    required List<RecordConflict> conflicts,
+    required List<ConflictResolution> resolutions,
+  }) async {
+    if (conflicts.length != resolutions.length) {
+      debugPrint('[ThreeWayMerge] 冲突数量与决策数量不匹配');
+      return false;
+    }
+
+    if (conflicts.isEmpty) return true;
+
+    Database? localDb;
+    try {
+      localDb = sqlite3.open(localDbPath);
+
+      for (var i = 0; i < conflicts.length; i++) {
+        final conflict = conflicts[i];
+        final resolution = resolutions[i];
+
+        debugPrint('[ThreeWayMerge] 处理冲突 ${i + 1}/${conflicts.length}: '
+            '表=${conflict.tableName}, ID=${conflict.recordId}, '
+            '类型=${conflict.type}, 决策=$resolution');
+
+        switch (conflict.type) {
+          case ConflictType.bothModified:
+            // 两边都修改了，根据用户选择更新
+            if (resolution == ConflictResolution.keepRemote) {
+              debugPrint('[ThreeWayMerge] 应用远程数据: ${conflict.remote}');
+              _updateRowFromMap(
+                localDb,
+                conflict.tableName,
+                conflict.recordId,
+                conflict.remote!,
+              );
+              // 验证更新结果
+              final result = localDb.select(
+                'SELECT * FROM ${conflict.tableName} WHERE id = ?',
+                [conflict.recordId],
+              );
+              debugPrint('[ThreeWayMerge] 更新后验证: ${result.isNotEmpty ? result.first : "未找到"}');
+            } else {
+              debugPrint('[ThreeWayMerge] 保留本地数据: ${conflict.local}');
+            }
+            // keepLocal 不需要操作，本地已经是最新的
+            break;
+
+          case ConflictType.localModifiedRemoteDeleted:
+            // 本地修改了，远程删除了
+            if (resolution == ConflictResolution.keepRemote) {
+              // 接受远程删除
+              localDb.execute(
+                'DELETE FROM ${conflict.tableName} WHERE id = ?',
+                [conflict.recordId],
+              );
+            }
+            // keepLocal 不需要操作，保留本地修改
+            break;
+
+          case ConflictType.localDeletedRemoteModified:
+            // 本地删除了，远程修改了
+            if (resolution == ConflictResolution.keepRemote) {
+              // 恢复远程版本
+              _insertRowFromMap(localDb, conflict.tableName, conflict.remote!);
+            }
+            // keepLocal 不需要操作，保持删除状态
+            break;
+        }
+      }
+
+      // 确保所有更改刷到主数据库文件（而不是只在 WAL 中）
+      // 这对于后续上传数据库文件至关重要
+      localDb.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+      debugPrint('[ThreeWayMerge] 已应用 ${conflicts.length} 个冲突决策，WAL 已刷新');
+      return true;
+    } catch (e, stack) {
+      debugPrint('[ThreeWayMerge] 应用冲突决策失败: $e\n$stack');
+      return false;
+    } finally {
+      localDb?.dispose();
+    }
+  }
+
+  /// 插入行（从 Map）
+  void _insertRowFromMap(Database db, String table, Map<String, dynamic> row) {
+    final columns = row.keys.toList();
+    final placeholders = List.filled(columns.length, '?').join(', ');
+    final values = columns.map((c) => row[c]).toList();
+
+    db.execute(
+      'INSERT OR REPLACE INTO $table (${columns.join(', ')}) VALUES ($placeholders)',
+      values,
+    );
   }
 
   // ============================================================
@@ -193,13 +377,35 @@ class ThreeWayMergeEngine {
           stats.taskListsDeleted++;
           break;
         case _MergeAction.conflict:
-          final localTime = local!['updated_at'] as int;
-          final remoteTime = remote!['updated_at'] as int;
-          if (remoteTime > localTime) {
-            _updateRow(localDb, 'task_lists', id, remote);
-            stats.taskListsUpdated++;
-          }
-          stats.conflicts++;
+          // 清单冲突：收集让用户决策
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'task_lists',
+            recordId: id,
+            type: ConflictType.bothModified,
+            local: Map<String, dynamic>.from(local!),
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localModifiedRemoteDeleted:
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'task_lists',
+            recordId: id,
+            type: ConflictType.localModifiedRemoteDeleted,
+            local: Map<String, dynamic>.from(local!),
+            remote: null,
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localDeletedRemoteModified:
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'task_lists',
+            recordId: id,
+            type: ConflictType.localDeletedRemoteModified,
+            local: null,
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
           break;
         case _MergeAction.keepLocal:
           break;
@@ -232,6 +438,57 @@ class ThreeWayMergeEngine {
       final remote = remoteMap[id];
       final base = baseMap[id];
 
+      // ========== 软删除特殊处理 ==========
+      // 任务使用软删除（is_deleted=1），需要特殊处理
+      final localDeleted = local != null && local['is_deleted'] == 1;
+      final remoteDeleted = remote != null && remote['is_deleted'] == 1;
+      final baseDeleted = base != null && base['is_deleted'] == 1;
+
+      // 场景：本地未删除，远程软删除，基准未删除 → 视为"远程删除了"
+      if (local != null && remote != null && !localDeleted && remoteDeleted && !baseDeleted) {
+        final localUpdatedAt = local['updated_at'] as int;
+        final baseUpdatedAt = base != null ? base['updated_at'] as int : 0;
+        if (localUpdatedAt > baseUpdatedAt) {
+          // 本地有修改 → 让用户决策：保留本地修改 or 接受远程删除
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'tasks',
+            recordId: id,
+            type: ConflictType.localModifiedRemoteDeleted,
+            local: Map<String, dynamic>.from(local),
+            remote: Map<String, dynamic>.from(remote), // 保留远程数据以便显示删除状态
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          continue;
+        } else {
+          // 本地无修改 → 直接接受远程删除
+          _updateRow(localDb, 'tasks', id, remote);
+          stats.tasksDeleted++;
+          continue;
+        }
+      }
+
+      // 场景：本地软删除，远程未删除，基准未删除 → 视为"本地删除了"
+      if (local != null && remote != null && localDeleted && !remoteDeleted && !baseDeleted) {
+        final remoteUpdatedAt = remote['updated_at'] as int;
+        final baseUpdatedAt = base != null ? base['updated_at'] as int : 0;
+        if (remoteUpdatedAt > baseUpdatedAt) {
+          // 远程有修改 → 让用户决策：保持本地删除 or 恢复远程版本
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'tasks',
+            recordId: id,
+            type: ConflictType.localDeletedRemoteModified,
+            local: Map<String, dynamic>.from(local), // 保留本地数据以便显示删除状态
+            remote: Map<String, dynamic>.from(remote),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          continue;
+        } else {
+          // 远程无修改 → 保持本地删除状态，但同步到远程
+          continue;
+        }
+      }
+      // ========== 软删除处理结束 ==========
+
       final action = _determineAction(
         local: local,
         remote: remote,
@@ -254,11 +511,37 @@ class ThreeWayMergeEngine {
           stats.tasksDeleted++;
           break;
         case _MergeAction.conflict:
-          // 智能合并
-          final merged = _smartMergeRow(local!, remote!, base);
-          _updateRowFromMap(localDb, 'tasks', id, merged);
-          stats.tasksUpdated++;
-          stats.conflicts++;
+          // 不自动合并，收集冲突让用户决策
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'tasks',
+            recordId: id,
+            type: ConflictType.bothModified,
+            local: Map<String, dynamic>.from(local!),
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localModifiedRemoteDeleted:
+          // 本地修改了，远程删除了 → 让用户决策
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'tasks',
+            recordId: id,
+            type: ConflictType.localModifiedRemoteDeleted,
+            local: Map<String, dynamic>.from(local!),
+            remote: null,
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localDeletedRemoteModified:
+          // 本地删除了，远程修改了 → 让用户决策
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'tasks',
+            recordId: id,
+            type: ConflictType.localDeletedRemoteModified,
+            local: null,
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
           break;
         case _MergeAction.keepLocal:
           break;
@@ -313,23 +596,41 @@ class ThreeWayMergeEngine {
           stats.notesDeleted++;
           break;
         case _MergeAction.conflict:
-          final localTime = local!['updated_at'] as int;
-          final remoteTime = remote!['updated_at'] as int;
-          if (remoteTime > localTime) {
-            _updateRow(localDb, 'notes', id, remote);
-            stats.notesUpdated++;
-          }
-          stats.conflicts++;
+          // 笔记冲突：收集让用户决策
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'notes',
+            recordId: id,
+            type: ConflictType.bothModified,
+            local: Map<String, dynamic>.from(local!),
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localModifiedRemoteDeleted:
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'notes',
+            recordId: id,
+            type: ConflictType.localModifiedRemoteDeleted,
+            local: Map<String, dynamic>.from(local!),
+            remote: null,
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
+          break;
+        case _MergeAction.localDeletedRemoteModified:
+          stats.pendingConflicts.add(RecordConflict(
+            tableName: 'notes',
+            recordId: id,
+            type: ConflictType.localDeletedRemoteModified,
+            local: null,
+            remote: Map<String, dynamic>.from(remote!),
+            base: base != null ? Map<String, dynamic>.from(base) : null,
+          ));
           break;
         case _MergeAction.keepLocal:
           break;
       }
     }
   }
-
-  // ============================================================
-  // 标签合并
-  // ============================================================
 
   // ============================================================
   // 标签合并
@@ -515,23 +816,28 @@ class ThreeWayMergeEngine {
       return _MergeAction.keepLocal;
     }
 
-    // 情况 5：本地删了，远程有
+    // 情况 5：本地删了，远程有（远程可能修改了）
+    // 需要让用户决策：是接受本地删除，还是恢复远程版本
     if (local == null && remote != null && base != null) {
       final remoteUpdatedAt = getUpdatedAt(remote);
       final baseUpdatedAt = getUpdatedAt(base);
       if (remoteUpdatedAt > baseUpdatedAt) {
-        return _MergeAction.addFromRemote;
+        // 远程有修改，需要用户决策
+        return _MergeAction.localDeletedRemoteModified;
       } else {
+        // 远程没改，静默删除
         return _MergeAction.keepLocal;
       }
     }
 
-    // 情况 6：远程删了，本地有
+    // 情况 6：远程删了，本地有（本地可能修改了）
+    // 需要让用户决策：是接受远程删除，还是保留本地版本
     if (local != null && remote == null && base != null) {
       final localUpdatedAt = getUpdatedAt(local);
       final baseUpdatedAt = getUpdatedAt(base);
       if (localUpdatedAt > baseUpdatedAt) {
-        return _MergeAction.keepLocal;
+        // 本地有修改，需要用户决策
+        return _MergeAction.localModifiedRemoteDeleted;
       } else {
         return _MergeAction.deleteLocal;
       }
@@ -568,6 +874,10 @@ enum _MergeAction {
   updateFromRemote,
   deleteLocal,
   conflict,
+  /// 本地修改了，远程删除了（需用户决策）
+  localModifiedRemoteDeleted,
+  /// 本地删除了，远程修改了（需用户决策）
+  localDeletedRemoteModified,
 }
 
 /// 标签冲突

@@ -5,3 +5,6 @@ export 'task_list_view.dart';
 export 'task_detail_panel.dart';
 export 'animated_logo.dart';
 export 'filter_sort_buttons.dart';
+export 'webdav_config_section.dart';
+export 'qiniu_oss_config_section.dart';
+export 'sync_conflict_dialog.dart';

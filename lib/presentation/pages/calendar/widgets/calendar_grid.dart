@@ -234,20 +234,21 @@ class CalendarGrid extends StatelessWidget {
       ),
     );
 
-    // 外部月份日期不可点击
+    // 外部月份日期（置灰的日期）不可点击和双击
     if (isOutside) {
       return content;
     }
 
-    if (dayTasks.isNotEmpty) {
-      return InkWell(
-        onDoubleTap: () => onDayDoubleTap(day, dayTasks),
-        onTap: () => onDaySelected(day, focusedDay),
-        borderRadius: BorderRadius.circular(4),
-        child: content,
-      );
-    }
-    return content;
+    // 所有当前月份的日期都支持单击选中和双击弹窗
+    // 双击弹窗可以查看/添加当天任务
+    return InkWell(
+      onDoubleTap: () => onDayDoubleTap(day, dayTasks),
+      // 修复：单元格点击时，focusedDay 应该更新为点击的日期
+      // 而不是沿用组件属性中的旧 focusedDay
+      onTap: () => onDaySelected(day, day),
+      borderRadius: BorderRadius.circular(4),
+      child: content,
+    );
   }
 
   Color _getPriorityColor(TaskPriority priority) {

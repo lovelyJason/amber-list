@@ -73,7 +73,9 @@ class StickyNoteUpdater {
 
     try {
       final tasks = _ref.read(taskProvider);
-      final listTasks = tasks.where((t) => t.listId == listId).toList();
+      final listTasks = tasks
+          .where((t) => t.listId == listId && !t.isDeleted)
+          .toList();
 
       final activeTasks = listTasks
           .where((t) => !t.isCompleted)

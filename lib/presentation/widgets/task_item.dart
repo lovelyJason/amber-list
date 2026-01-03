@@ -10,6 +10,7 @@ import 'common/toast/toast_manager.dart';
 import 'common/toast/toast_types.dart';
 import '../../core/constants/constants.dart';
 import '../../core/services/native_sticky_note_service.dart';
+import '../../core/utils/date_utils.dart';
 import '../../core/utils/trash_animation_service.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
@@ -266,39 +267,78 @@ class TaskItem extends ConsumerWidget {
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             onTap: () {
-              // Confirm dialog? User requested "Delete", typically implies permanent here.
-              // Let's do it directly or quick confirm.
-              // Given "instant" vibe, maybe direct? Or simple confirm.
-              // Let's add simple confirm for safety.
-              Future.delayed(Duration.zero, () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('彻底删除'),
-                    content: const Text('删除后无法恢复，确定要删除吗？'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('取消'),
+              Future.delayed(Duration.zero, () async {
+                // 先检查是否有关联的番茄记录
+                final hasPomodoroRecords = await ref
+                    .read(taskProvider.notifier)
+                    .hasTaskPomodoroRecords(task.id);
+
+                if (!context.mounted) return;
+
+                if (hasPomodoroRecords) {
+                  // 有番茄记录，需要特殊提示
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('无法删除'),
+                      content: const Text(
+                        '该任务有关联的番茄时钟记录。\n\n'
+                        '请先前往番茄时钟页面删除相关记录，或选择"强制删除"同时删除任务和番茄记录。',
                       ),
-                      ElevatedButton(
-                        onPressed: () {
-                          ref
-                              .read(taskProvider.notifier)
-                              .permanentlyDeleteTask(task.id);
-                          Navigator.pop(context);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
                         ),
-                        child: const Text(
-                          '删除',
-                          style: TextStyle(color: Colors.white),
+                        ElevatedButton(
+                          onPressed: () {
+                            ref
+                                .read(taskProvider.notifier)
+                                .forceDeleteTaskWithPomodoros(task.id);
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          child: const Text(
+                            '强制删除',
+                            style: TextStyle(color: Colors.white),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
+                      ],
+                    ),
+                  );
+                } else {
+                  // 无关联记录，普通确认
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('彻底删除'),
+                      content: const Text('删除后无法恢复，确定要删除吗？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('取消'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            ref
+                                .read(taskProvider.notifier)
+                                .permanentlyDeleteTask(task.id);
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          child: const Text(
+                            '删除',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
               });
             },
             child: const Row(
@@ -451,15 +491,61 @@ class TaskItem extends ConsumerWidget {
         height: 32,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         onTap: () {
-          ref.read(soundServiceProvider).playDelete();
-          // 播放抛物线动画，动画完成后执行删除
-          TrashAnimationService.instance.playTrashAnimation(
-            context,
-            position,
-            onComplete: () {
-              ref.read(taskProvider.notifier).deleteTask(task.id);
-            },
-          );
+          Future.delayed(Duration.zero, () async {
+            // 先尝试删除
+            final success =
+                await ref.read(taskProvider.notifier).deleteTask(task.id);
+
+            if (success) {
+              // 删除成功，播放动画和音效
+              ref.read(soundServiceProvider).playDelete();
+              if (context.mounted) {
+                TrashAnimationService.instance.playTrashAnimation(
+                  context,
+                  position,
+                  onComplete: () {
+                    // 任务已经删除了，这里不需要再操作
+                  },
+                );
+              }
+            } else {
+              // 有番茄记录冲突，弹窗提示
+              if (context.mounted) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('无法删除'),
+                    content: const Text(
+                      '该任务有关联的番茄时钟记录。\n\n'
+                      '请先前往番茄时钟页面删除相关记录，或选择"强制删除"移入垃圾桶。',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('取消'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          ref
+                              .read(taskProvider.notifier)
+                              .forceDeleteTask(task.id);
+                          ref.read(soundServiceProvider).playDelete();
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                        ),
+                        child: const Text(
+                          '强制删除',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            }
+          });
         },
         child: const Row(
           children: [
@@ -888,40 +974,31 @@ class TaskItem extends ConsumerWidget {
   }
 
   /// 判断任务是否已过期
+  /// 使用 AmberDateUtils 确保跨时区一致性
   bool _isOverdue(DateTime dueDate) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
-    return due.isBefore(today);
+    return AmberDateUtils.isOverdue(dueDate);
   }
 
   /// 获取截止日期的显示颜色
   /// [dueDate] 截止日期
   /// [overdueColor] 过期任务的自定义颜色，可选，默认使用 AmberColors.warning
   Color _getDueDateColor(DateTime dueDate, {Color? overdueColor}) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
-
-    if (due.isBefore(today)) {
+    if (AmberDateUtils.isOverdue(dueDate)) {
       return overdueColor ?? AmberColors.warning; // 过期：使用自定义颜色或默认警告色
-    } else if (due.isAtSameMomentAs(today)) {
+    } else if (AmberDateUtils.isToday(dueDate)) {
       return AmberColors.primary; // 今天
     }
     return AmberColors.textSecondary; // 未来
   }
 
+  /// 格式化截止日期为友好文本
+  /// 使用 AmberDateUtils 确保跨时区一致性
   String _formatDueDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    final due = DateTime(date.year, date.month, date.day);
-
-    if (due.isBefore(today)) {
+    if (AmberDateUtils.isOverdue(date)) {
       return '已过期';
-    } else if (due.isAtSameMomentAs(today)) {
+    } else if (AmberDateUtils.isToday(date)) {
       return '今天';
-    } else if (due.isAtSameMomentAs(tomorrow)) {
+    } else if (AmberDateUtils.isTomorrow(date)) {
       return '明天';
     } else {
       return DateFormat('M月d日').format(date);
@@ -931,15 +1008,10 @@ class TaskItem extends ConsumerWidget {
   /// 判断是否应该隐藏日期标签
   /// 在「今天」视图下，今天的任务不需要显示「今天」标签（冗余信息）
   bool _shouldHideDateLabel(NavView currentView, DateTime dueDate) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
-
     // 在「今天」视图下，如果任务截止日期是今天，则隐藏日期标签
-    if (currentView == NavView.today && due.isAtSameMomentAs(today)) {
+    if (currentView == NavView.today && AmberDateUtils.isToday(dueDate)) {
       return true;
     }
-
     return false;
   }
 }

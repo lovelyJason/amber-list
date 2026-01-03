@@ -25,7 +25,9 @@ class SidebarStickyNote {
   ) async {
     // 获取当前列表的任务快照
     final allTasks = ref.read(taskProvider);
-    final listTasks = allTasks.where((t) => t.listId == list.id).toList();
+    final listTasks = allTasks
+        .where((t) => t.listId == list.id && !t.isDeleted)
+        .toList();
 
     final activeTasks = listTasks
         .where((t) => !t.isCompleted)

@@ -408,7 +408,26 @@ class TaskNotifier extends StateNotifier<List<Task>> {
   }
 
   /// 移入垃圾桶（软删除）
-  Future<void> deleteTask(String id) async {
+  /// 返回 true 表示成功，返回 false 表示有番茄记录冲突
+  Future<bool> deleteTask(String id) async {
+    // 先检查是否有番茄记录
+    final hasPomodoroRecords = await database.hasTaskPomodoroRecords(id);
+    if (hasPomodoroRecords) {
+      return false; // 有冲突，拒绝删除
+    }
+
+    await database.updateTask(
+      db.TasksCompanion(
+        id: drift.Value(id),
+        isDeleted: const drift.Value(true),
+        updatedAt: drift.Value(DateTime.now()),
+      ),
+    );
+    return true;
+  }
+
+  /// 强制移入垃圾桶（忽略番茄记录）
+  Future<void> forceDeleteTask(String id) async {
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(id),
@@ -429,9 +448,20 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     );
   }
 
-  /// 彻底删除
+  /// 检查任务是否有关联的番茄记录
+  Future<bool> hasTaskPomodoroRecords(String taskId) async {
+    return database.hasTaskPomodoroRecords(taskId);
+  }
+
+  /// 彻底删除任务
+  /// 如果任务有番茄记录，会抛出异常，需要调用 forceDeleteTaskWithPomodoros
   Future<void> permanentlyDeleteTask(String id) async {
     await database.deleteTask(id);
+  }
+
+  /// 强制删除任务及其番茄记录
+  Future<void> forceDeleteTaskWithPomodoros(String id) async {
+    await database.forceDeleteTaskWithPomodoros(id);
   }
 
   Future<void> _ensureTagExists(String tagName) async {

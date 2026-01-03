@@ -7,12 +7,17 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import '../../datasources/local/database.dart';
 import 'sync_config.dart';
 import 'sync_metadata.dart';
 import 'three_way_merge.dart';
 import 'webdav_client.dart';
+import 'providers/sync_storage_provider.dart';
+import 'providers/webdav_sync_provider.dart';
+import 'providers/oss/oss_sync_provider.dart';
+import 'providers/oss/qiniu_oss_client.dart';
 
 /// ============================================================
 /// 同步管理器
@@ -61,11 +66,22 @@ typedef SyncProgressCallback = void Function(
   String message,
 );
 
+/// 冲突决策回调
+/// 当检测到需要用户决策的冲突时调用
+/// 返回用户对每个冲突的决策列表
+typedef ConflictResolutionCallback = Future<List<ConflictResolution>?> Function(
+  List<RecordConflict> conflicts,
+);
+
 /// 同步管理器
 class SyncManager {
   /// 当前同步状态
   SyncStatus _status = SyncStatus.idle;
   SyncStatus get status => _status;
+
+  /// 最后一次同步的错误信息（用于 UI 显示）
+  String? _lastError;
+  String? get lastError => _lastError;
 
   /// 最后同步结果
   MergeResult? _lastMergeResult;
@@ -79,6 +95,11 @@ class SyncManager {
 
   /// 同步完成回调 (bool success)
   void Function(bool success)? onSyncComplete;
+
+  /// 冲突决策回调
+  /// 当检测到冲突时，通过此回调让 UI 层弹窗让用户选择
+  /// 如果未设置或返回 null，则跳过冲突处理（冲突记录保持原样）
+  ConflictResolutionCallback? onConflictDetected;
 
   /// 设备 ID
   String? _deviceId;
@@ -109,7 +130,7 @@ class SyncManager {
         .onConnectivityChanged
         .listen(_onConnectivityChanged);
 
-    debugPrint('[SyncManager] 初始化完成，设备ID: $_deviceId');
+    debugPrint('[Sync] 设备: $_deviceId');
   }
 
   /// 生成设备 ID
@@ -126,7 +147,13 @@ class SyncManager {
   }
 
   /// 获取设备 ID
-  String get deviceId => _deviceId ?? 'unknown';
+  /// 注意：必须在 initialize() 完成后调用，否则抛出异常
+  String get deviceId {
+    if (_deviceId == null) {
+      throw StateError('[SyncManager] deviceId 尚未初始化，请先调用 initialize()');
+    }
+    return _deviceId!;
+  }
 
   /// 释放资源
   void dispose() {
@@ -136,10 +163,7 @@ class SyncManager {
 
   /// 网络状态变化
   void _onConnectivityChanged(List<ConnectivityResult> results) {
-    final hasNetwork = results.any((r) => r != ConnectivityResult.none);
-    if (hasNetwork) {
-      debugPrint('[SyncManager] 网络已恢复');
-    }
+    // 网络恢复时可触发自动同步（暂时只记录状态）
   }
 
   /// 启动自动同步
@@ -154,8 +178,6 @@ class SyncManager {
       config.syncInterval,
       (_) => sync(),
     );
-
-    debugPrint('[SyncManager] 自动同步已启动，间隔: ${config.syncIntervalMinutes} 分钟');
   }
 
   /// 停止自动同步
@@ -168,11 +190,59 @@ class SyncManager {
   // 核心同步流程
   // ============================================================
 
+  /// 创建同步存储提供者
+  /// 根据当前配置的同步类型创建对应的 Provider
+  Future<ISyncStorageProvider?> _createProvider() async {
+    final syncType = await SyncConfigService.getSyncType();
+    if (syncType == null) return null;
+
+    switch (syncType) {
+      case SyncType.webdav:
+        final config = await SyncConfigService.loadConfig();
+        if (!config.isConfigured) return null;
+
+        final password = await SyncConfigService.getPassword(config.username);
+        if (password == null || password.isEmpty) return null;
+
+        final client = AmberWebDavClient.fromConfig(config, password);
+        return WebDavSyncProvider(client);
+
+      case SyncType.qiniuOss:
+        final config = await SyncConfigService.loadQiniuConfig();
+        if (!config.isConfigured) return null;
+
+        final secretKey = await SyncConfigService.getQiniuSecretKey(config.accessKey);
+        if (secretKey == null || secretKey.isEmpty) return null;
+
+        final ossClient = QiniuOssClient(
+          accessKey: config.accessKey,
+          secretKey: secretKey,
+          bucket: config.bucket,
+          region: config.region,
+          customDomain: config.customDomain,
+        );
+        return OssSyncProvider.qiniu(ossClient);
+
+      case SyncType.aliOss:
+      case SyncType.tencentCos:
+      case SyncType.amberCloud:
+        // 预留：暂未实现
+        debugPrint('[SyncManager] 同步类型 $syncType 暂未实现');
+        return null;
+    }
+  }
+
   /// 执行同步
-  Future<bool> sync() async {
+  /// [forceDownload] 强制从云端下载（忽略本地状态，用于数据恢复场景）
+  Future<bool> sync({bool forceDownload = false}) async {
     if (_isSyncing) {
-      debugPrint('[SyncManager] 同步已在进行中');
       return false;
+    }
+
+    // 强制下载模式：清除本地同步状态，让系统认为"远程有变化"
+    if (forceDownload) {
+      debugPrint('[Sync] 强制下载模式：清除本地同步状态');
+      await SyncStateService.clearState();
     }
 
     _isSyncing = true;
@@ -184,22 +254,27 @@ class SyncManager {
         await onBeforeSync!();
       }
 
-      // 1. 加载配置
-      final config = await SyncConfigService.loadConfig();
-      if (!config.isConfigured) {
+      // 0.1 额外保险：用原生 sqlite3 再做一次 checkpoint
+      // 确保 Drift 的 checkpoint 真的生效了
+      try {
+        final dbPath = await AppDatabase.getDatabasePath();
+        final db = sqlite3.open(dbPath);
+        db.execute('PRAGMA wal_checkpoint(TRUNCATE);');
+        db.dispose();
+        debugPrint('[Sync] 原生 sqlite3 checkpoint 完成');
+      } catch (e) {
+        debugPrint('[Sync] 原生 sqlite3 checkpoint 失败: $e');
+      }
+
+      // 1. 创建同步提供者
+      final provider = await _createProvider();
+      if (provider == null) {
         _updateStatus(SyncStatus.failed, '未配置同步服务');
         return false;
       }
 
-      final password = await SyncConfigService.getPassword(config.username);
-      if (password == null || password.isEmpty) {
-        _updateStatus(SyncStatus.failed, '未保存密码');
-        return false;
-      }
-
-      // 2. 创建客户端并测试连接
-      final client = AmberWebDavClient.fromConfig(config, password);
-      final testResult = await client.testConnection();
+      // 2. 测试连接
+      final testResult = await provider.testConnection();
       if (!testResult.success) {
         _updateStatus(SyncStatus.failed, testResult.error ?? '连接失败');
         await _updateSyncState(success: false, error: testResult.error);
@@ -207,7 +282,7 @@ class SyncManager {
       }
 
       // 3. 确保目录存在
-      final dirResult = await client.ensureAppDirectory();
+      final dirResult = await provider.ensureAppDirectory();
       if (!dirResult.success) {
         _updateStatus(SyncStatus.failed, dirResult.error ?? '创建目录失败');
         return false;
@@ -219,19 +294,43 @@ class SyncManager {
       try {
         _updateStatus(SyncStatus.downloading, '检查远程状态...');
 
-        final metaResult = await client.readMetadata();
+        final metaResult = await provider.readMetadata();
         if (metaResult.success && metaResult.data != null) {
           final remoteMeta = RemoteSyncMetadata.fromJson(metaResult.data!);
 
           // 计算本地校验和
           final paths = await _getSyncPaths();
+          final localDbFile = File(paths['local']!);
+
+          // 调试：输出数据库文件信息（包括 WAL）
+          if (localDbFile.existsSync()) {
+            final stat = await localDbFile.stat();
+            debugPrint('[Sync] 本地DB文件: ${paths['local']}');
+            debugPrint('[Sync] 本地DB大小: ${stat.size} bytes, 修改时间: ${stat.modified}');
+
+            // 检查 WAL 文件
+            final walFile = File('${paths['local']}-wal');
+            if (walFile.existsSync()) {
+              final walStat = await walFile.stat();
+              debugPrint('[Sync] WAL文件大小: ${walStat.size} bytes');
+              if (walStat.size > 0) {
+                debugPrint('[Sync] ⚠️ WAL文件不为空！checkpoint 可能没有完全生效');
+              }
+            } else {
+              debugPrint('[Sync] WAL文件不存在（正常，checkpoint 后会被清空）');
+            }
+          }
+
           final localChecksum = await ChecksumUtils.computeFileChecksum(
             paths['local']!,
           );
 
+          debugPrint('[Sync] 预检查: 本地checksum=$localChecksum, 远程checksum=${remoteMeta.checksum}');
+
           if (remoteMeta.checksum.isNotEmpty &&
               localChecksum == remoteMeta.checksum) {
-            debugPrint('[SyncManager] 预检查：本地与远程校验和一致，跳过同步');
+            // 快速路径：checksum 一致，无需获取锁
+            debugPrint('[Sync] 双端无变化 (远程v${remoteMeta.version}, 本地checksum一致)');
 
             // 更新本地状态
             await _updateSyncState(
@@ -243,16 +342,18 @@ class SyncManager {
             _updateStatus(SyncStatus.success, '已是最新');
             _isSyncing = false; // 必须手动重置状态，因为直接返回了
             return true;
+          } else {
+            debugPrint('[Sync] 预检查发现变化，继续完整同步流程');
           }
         }
       } catch (e) {
+        debugPrint('[Sync] 预检查异常: $e');
         // 预检查失败不阻断流程，继续走标准同步
-        debugPrint('[SyncManager] 预检查失败: $e');
       }
 
       // 4. 获取同步锁
       _updateStatus(SyncStatus.connecting, '获取同步锁...');
-      final lockResult = await client.acquireLock(deviceId: deviceId);
+      final lockResult = await provider.acquireLock(deviceId: deviceId);
       if (!lockResult.success) {
         _updateStatus(SyncStatus.failed, lockResult.error ?? '获取锁失败');
         return false;
@@ -260,14 +361,14 @@ class SyncManager {
 
       try {
         // 5. 执行同步逻辑
-        final result = await _doSync(client);
+        final result = await _doSyncWithProvider(provider);
         return result;
       } finally {
         // 释放锁
-        await client.releaseLock(deviceId);
+        await provider.releaseLock(deviceId);
       }
     } catch (e, stack) {
-      debugPrint('[SyncManager] 同步异常: $e\n$stack');
+      debugPrint('[Sync] 异常: $e\n$stack');
       _updateStatus(SyncStatus.failed, '同步异常: $e');
       await _updateSyncState(success: false, error: e.toString());
       return false;
@@ -279,8 +380,8 @@ class SyncManager {
     }
   }
 
-  /// 执行实际的同步逻辑
-  Future<bool> _doSync(AmberWebDavClient client) async {
+  /// 执行实际的同步逻辑（使用统一接口）
+  Future<bool> _doSyncWithProvider(ISyncStorageProvider provider) async {
     // 获取路径
     final paths = await _getSyncPaths();
     final localDbPath = paths['local']!;
@@ -290,7 +391,7 @@ class SyncManager {
     // ========== 步骤 1：下载远程元数据 ==========
     _updateStatus(SyncStatus.downloading, '检查远程状态...');
 
-    final metaResult = await client.readMetadata();
+    final metaResult = await provider.readMetadata();
     if (!metaResult.success) {
       _updateStatus(SyncStatus.failed, metaResult.error ?? '读取元数据失败');
       return false;
@@ -311,8 +412,21 @@ class SyncManager {
         remoteMeta.version > localState.lastSyncedVersion;
     final localHasChanges = localChecksum != localState.lastSyncedChecksum;
 
-    debugPrint('[SyncManager] 远程变化: $remoteHasChanges, 本地变化: $localHasChanges');
-    debugPrint('[SyncManager] 远程版本: ${remoteMeta?.version ?? 0}, 本地已同步版本: ${localState.lastSyncedVersion}');
+    // 输出详细的同步状态摘要（帮助排查冲突检测问题）
+    final remoteVer = remoteMeta?.version ?? 0;
+    final localVer = localState.lastSyncedVersion;
+    final statusDesc = !remoteHasChanges && !localHasChanges
+        ? '双端无变化'
+        : !remoteHasChanges && localHasChanges
+            ? '本地领先 → 上传'
+            : remoteHasChanges && !localHasChanges
+                ? '远程领先 → 下载'
+                : '双端都有变化 → 合并';
+    debugPrint('[Sync] $statusDesc');
+    debugPrint('[Sync] 远程: version=$remoteVer, checksum=${remoteMeta?.checksum ?? "无"}');
+    debugPrint('[Sync] 本地: lastSyncedVersion=$localVer, lastSyncedChecksum=${localState.lastSyncedChecksum}');
+    debugPrint('[Sync] 当前本地checksum=$localChecksum');
+    debugPrint('[Sync] remoteHasChanges=$remoteHasChanges, localHasChanges=$localHasChanges');
 
     // ========== 情况 A：都没变化 ==========
     if (!remoteHasChanges && !localHasChanges) {
@@ -322,13 +436,13 @@ class SyncManager {
 
     // ========== 情况 B：只有本地变化，直接上传 ==========
     if (!remoteHasChanges && localHasChanges) {
-      return await _uploadOnly(client, localDbPath, remoteMeta, localChecksum);
+      return await _uploadOnlyWithProvider(provider, localDbPath, remoteMeta, localChecksum);
     }
 
     // ========== 情况 C：只有远程变化，直接下载覆盖 ==========
     // remoteHasChanges 为 true 意味着 remoteMeta 一定不为 null（Dart 类型推断）
     if (remoteHasChanges && !localHasChanges) {
-      return await _downloadOnly(client, localDbPath, remoteMeta);
+      return await _downloadOnlyWithProvider(provider, localDbPath, remoteMeta);
     }
 
     // ========== 情况 D：两边都有变化，三向合并 ==========
@@ -339,8 +453,8 @@ class SyncManager {
       return false;
     }
 
-    return await _threeWayMerge(
-      client,
+    return await _threeWayMergeWithProvider(
+      provider,
       localDbPath,
       remoteDbPath,
       baseDbPath,
@@ -349,9 +463,9 @@ class SyncManager {
     );
   }
 
-  /// 只上传（本地有改，远程没改）
-  Future<bool> _uploadOnly(
-    AmberWebDavClient client,
+  /// 只上传（本地有改，远程没改）- 统一接口版本
+  Future<bool> _uploadOnlyWithProvider(
+    ISyncStorageProvider provider,
     String localDbPath,
     RemoteSyncMetadata? remoteMeta,
     String localChecksum,
@@ -359,7 +473,7 @@ class SyncManager {
     _updateStatus(SyncStatus.uploading, '上传本地数据...');
 
     // 上传 DB 文件
-    final uploadResult = await client.uploadDatabase(localDbPath);
+    final uploadResult = await provider.uploadDatabase(localDbPath);
     if (!uploadResult.success) {
       _updateStatus(SyncStatus.failed, uploadResult.error ?? '上传失败');
       return false;
@@ -369,7 +483,7 @@ class SyncManager {
     final newMeta = (remoteMeta ?? RemoteSyncMetadata.initial(deviceId: deviceId))
         .nextVersion(deviceId: deviceId, checksum: localChecksum);
 
-    final metaResult = await client.writeMetadata(newMeta.toJson());
+    final metaResult = await provider.writeMetadata(newMeta.toJson());
     if (!metaResult.success) {
       _updateStatus(SyncStatus.failed, metaResult.error ?? '更新元数据失败');
       return false;
@@ -387,16 +501,16 @@ class SyncManager {
 
     // 上传远程快照
     final snapshotName = 'amber_list_${DateTime.now().millisecondsSinceEpoch}.db';
-    await client.uploadSnapshot(localDbPath, snapshotName);
-    await client.cleanOldSnapshots(keepCount: 10);
+    await provider.uploadSnapshot(localDbPath, snapshotName);
+    await provider.cleanOldSnapshots(keepCount: 10);
 
     _updateStatus(SyncStatus.success, '上传成功！');
     return true;
   }
 
-  /// 只下载（远程有改，本地没改）
-  Future<bool> _downloadOnly(
-    AmberWebDavClient client,
+  /// 只下载（远程有改，本地没改）- 统一接口版本
+  Future<bool> _downloadOnlyWithProvider(
+    ISyncStorageProvider provider,
     String localDbPath,
     RemoteSyncMetadata remoteMeta,
   ) async {
@@ -406,7 +520,7 @@ class SyncManager {
     final remoteDbPath = paths['remote']!;
 
     // 下载远程 DB
-    final downloadResult = await client.downloadDatabase(remoteDbPath);
+    final downloadResult = await provider.downloadDatabase(remoteDbPath);
     if (!downloadResult.success) {
       _updateStatus(SyncStatus.failed, downloadResult.error ?? '下载失败');
       return false;
@@ -440,9 +554,9 @@ class SyncManager {
     return true;
   }
 
-  /// 三向合并（两边都有改）
-  Future<bool> _threeWayMerge(
-    AmberWebDavClient client,
+  /// 三向合并（两边都有改）- 统一接口版本
+  Future<bool> _threeWayMergeWithProvider(
+    ISyncStorageProvider provider,
     String localDbPath,
     String remoteDbPath,
     String baseDbPath,
@@ -452,7 +566,7 @@ class SyncManager {
     _updateStatus(SyncStatus.downloading, '下载远程数据...');
 
     // 下载远程 DB
-    final downloadResult = await client.downloadDatabase(remoteDbPath);
+    final downloadResult = await provider.downloadDatabase(remoteDbPath);
     if (!downloadResult.success) {
       _updateStatus(SyncStatus.failed, downloadResult.error ?? '下载失败');
       return false;
@@ -460,7 +574,7 @@ class SyncManager {
 
     if (downloadResult.data == false) {
       // 远程没有 DB，直接上传本地
-      return await _uploadOnly(client, localDbPath, null, localChecksum);
+      return await _uploadOnlyWithProvider(provider, localDbPath, null, localChecksum);
     }
 
     // 执行三向合并
@@ -482,12 +596,67 @@ class SyncManager {
 
     debugPrint('[SyncManager] 合并完成: ${mergeResult.stats}');
 
+    // ========== 处理冲突 ==========
+    // 如果有需要用户决策的冲突，通过回调让 UI 弹窗
+    if (mergeResult.stats.hasPendingConflicts) {
+      final conflicts = mergeResult.stats.pendingConflicts;
+      debugPrint('[SyncManager] 检测到 ${conflicts.length} 个冲突，等待用户决策...');
+
+      if (onConflictDetected != null) {
+        _updateStatus(SyncStatus.merging, '发现 ${conflicts.length} 个冲突，请选择...');
+
+        // 调用回调，让 UI 层弹窗
+        final resolutions = await onConflictDetected!(conflicts);
+
+        if (resolutions == null || resolutions.length != conflicts.length) {
+          // 用户取消或决策不完整，中止同步
+          _updateStatus(SyncStatus.failed, '用户取消了冲突处理');
+          return false;
+        }
+
+        // 应用用户决策
+        final applied = await mergeEngine.applyConflictResolutions(
+          localDbPath: localDbPath,
+          conflicts: conflicts,
+          resolutions: resolutions,
+        );
+
+        if (!applied) {
+          _updateStatus(SyncStatus.failed, '应用冲突决策失败');
+          return false;
+        }
+
+        debugPrint('[SyncManager] 已应用 ${conflicts.length} 个冲突决策');
+      } else {
+        // 没有设置回调，跳过冲突处理（保持本地版本）
+        debugPrint('[SyncManager] 未设置冲突回调，跳过冲突处理');
+      }
+    }
+
     // 上传合并后的 DB
     _updateStatus(SyncStatus.uploading, '上传合并结果...');
 
+    // 验证冲突解决后的数据（调试用）
+    if (mergeResult.stats.hasPendingConflicts) {
+      try {
+        final verifyDb = sqlite3.open(localDbPath);
+        for (final conflict in mergeResult.stats.pendingConflicts) {
+          final rows = verifyDb.select(
+            'SELECT * FROM ${conflict.tableName} WHERE id = ?',
+            [conflict.recordId],
+          );
+          debugPrint('[SyncManager] 上传前验证 ${conflict.tableName}/${conflict.recordId}: '
+              '${rows.isNotEmpty ? rows.first : "已删除"}');
+        }
+        verifyDb.dispose();
+      } catch (e) {
+        debugPrint('[SyncManager] 上传前验证失败: $e');
+      }
+    }
+
     final newChecksum = await ChecksumUtils.computeFileChecksum(localDbPath);
 
-    final uploadResult = await client.uploadDatabase(localDbPath);
+    final uploadResult = await provider.uploadDatabase(localDbPath);
     if (!uploadResult.success) {
       _updateStatus(SyncStatus.failed, uploadResult.error ?? '上传失败');
       return false;
@@ -499,7 +668,7 @@ class SyncManager {
       checksum: newChecksum,
     );
 
-    final metaResult = await client.writeMetadata(newMeta.toJson());
+    final metaResult = await provider.writeMetadata(newMeta.toJson());
     if (!metaResult.success) {
       _updateStatus(SyncStatus.failed, metaResult.error ?? '更新元数据失败');
       return false;
@@ -517,8 +686,8 @@ class SyncManager {
 
     // 上传远程快照
     final snapshotName = 'amber_list_${DateTime.now().millisecondsSinceEpoch}.db';
-    await client.uploadSnapshot(localDbPath, snapshotName);
-    await client.cleanOldSnapshots(keepCount: 10);
+    await provider.uploadSnapshot(localDbPath, snapshotName);
+    await provider.cleanOldSnapshots(keepCount: 10);
 
     // 清理临时文件
     await File(remoteDbPath).delete();
@@ -560,6 +729,12 @@ class SyncManager {
   /// 更新状态
   void _updateStatus(SyncStatus status, String message) {
     _status = status;
+    // 失败时保存错误信息，成功时清空
+    if (status == SyncStatus.failed) {
+      _lastError = message;
+    } else if (status == SyncStatus.success) {
+      _lastError = null;
+    }
     onProgress?.call(status, message);
     debugPrint('[SyncManager] $status: $message');
   }
@@ -608,6 +783,24 @@ class SyncManager {
       serverUrl: serverUrl,
       username: username,
       password: password,
+    );
+    return client.testConnection();
+  }
+
+  /// 测试七牛云 OSS 连接
+  Future<SyncResult<void>> testQiniuConnection({
+    required String accessKey,
+    required String secretKey,
+    required String bucket,
+    required QiniuRegion region,
+    String? customDomain,
+  }) async {
+    final client = QiniuOssClient(
+      accessKey: accessKey,
+      secretKey: secretKey,
+      bucket: bucket,
+      region: region,
+      customDomain: customDomain,
     );
     return client.testConnection();
   }

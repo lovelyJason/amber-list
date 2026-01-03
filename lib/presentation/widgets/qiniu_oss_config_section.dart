@@ -4,35 +4,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/constants.dart';
 import '../providers/providers.dart';
 import '../../data/services/sync/sync_config.dart';
+import '../../data/services/sync/providers/oss/qiniu_oss_client.dart';
 import 'common/toast/toast_manager.dart';
-import 'common/dialogs/data_conflict_dialog.dart';
 import 'sync_conflict_dialog.dart';
 
 /// ============================================================
-/// WebDAV 配置组件
+/// 七牛云 OSS 配置组件
 /// ============================================================
-/// 内嵌在设置页面的 WebDAV 配置区域,支持:
-/// - 服务器地址/用户名/密码配置
+/// 内嵌在设置页面的七牛云配置区域，支持：
+/// - AK/SK/Bucket/Region 配置
 /// - 连接测试
 /// - 手动同步触发
 /// - 同步状态显示
+/// ============================================================
 
-class WebDavConfigSection extends ConsumerStatefulWidget {
-  const WebDavConfigSection({super.key});
+class QiniuOssConfigSection extends ConsumerStatefulWidget {
+  const QiniuOssConfigSection({super.key});
 
   @override
-  ConsumerState<WebDavConfigSection> createState() => _WebDavConfigSectionState();
+  ConsumerState<QiniuOssConfigSection> createState() => _QiniuOssConfigSectionState();
 }
 
-class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
+class _QiniuOssConfigSectionState extends ConsumerState<QiniuOssConfigSection> {
   final _formKey = GlobalKey<FormState>();
-  final _serverController = TextEditingController();
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _accessKeyController = TextEditingController();
+  final _secretKeyController = TextEditingController();
+  final _bucketController = TextEditingController();
+  final _customDomainController = TextEditingController();
+
   bool _isExpanded = false;
   bool _isTesting = false;
-  bool _hasPasswordInKeychain = false; // 标记钥匙串里是否有密码
-  String? _originalPasswordPlaceholder; // 原始密码占位符
+  bool _hasSecretKeyInKeychain = false;
+  String? _originalSecretKeyPlaceholder;
+  QiniuRegion _selectedRegion = QiniuRegion.z0;
 
   @override
   void initState() {
@@ -42,21 +46,25 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
 
   /// 加载现有配置
   void _loadConfig() async {
-    final config = ref.read(syncConfigProvider);
+    final config = ref.read(qiniuConfigProvider);
     if (config != null && config.isConfigured) {
-      _serverController.text = config.serverUrl;
-      _usernameController.text = config.username;
-      // 密码从系统钥匙串加载(如果有则显示占位符)
-      final password = await SyncConfigService.getPassword(config.username);
-      if (password != null) {
-        print('[WebDavConfig] ✅ 从钥匙串读取到密码，长度=${password.length}');
-        _hasPasswordInKeychain = true;
-        _originalPasswordPlaceholder = '••••••••'; // 显示8个圆点表示已保存密码
-        _passwordController.text = _originalPasswordPlaceholder!;
+      _accessKeyController.text = config.accessKey;
+      _bucketController.text = config.bucket;
+      _selectedRegion = config.region;
+      _customDomainController.text = config.customDomain ?? '';
+
+      // SecretKey 从系统钥匙串加载（如果有则显示占位符）
+      final secretKey = await SyncConfigService.getQiniuSecretKey(config.accessKey);
+      if (secretKey != null) {
+        print('[QiniuConfig] ✅ 从钥匙串读取到 SecretKey');
+        _hasSecretKeyInKeychain = true;
+        _originalSecretKeyPlaceholder = '••••••••••••••••';
+        _secretKeyController.text = _originalSecretKeyPlaceholder!;
       } else {
-        print('[WebDavConfig] ⚠️ 钥匙串中没有找到密码');
-        _hasPasswordInKeychain = false;
+        print('[QiniuConfig] ⚠️ 钥匙串中没有找到 SecretKey');
+        _hasSecretKeyInKeychain = false;
       }
+
       if (mounted) {
         setState(() {
           _isExpanded = true;
@@ -67,9 +75,10 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
 
   @override
   void dispose() {
-    _serverController.dispose();
-    _usernameController.dispose();
-    _passwordController.dispose();
+    _accessKeyController.dispose();
+    _secretKeyController.dispose();
+    _bucketController.dispose();
+    _customDomainController.dispose();
     super.dispose();
   }
 
@@ -77,10 +86,12 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   Widget build(BuildContext context) {
     final syncState = ref.watch(syncStateProvider);
     final syncType = ref.watch(syncTypeProvider);
-    final isConfigured = ref.watch(syncConfigProvider) != null;
+    final qiniuConfig = ref.watch(qiniuConfigProvider);
 
-    // 只有当前激活的是 WebDAV 时才显示同步状态
-    final isActive = syncType == SyncType.webdav;
+    // isConfigured: 是否已配置（有账密信息）
+    final isConfigured = qiniuConfig != null && qiniuConfig.isConfigured;
+    // isActive: 当前是否激活七牛云同步
+    final isActive = syncType == SyncType.qiniuOss;
     final showSyncing = isActive && syncState.isSyncing;
 
     return Column(
@@ -92,7 +103,7 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
             isConfigured ? Icons.cloud_done_outlined : Icons.cloud_outlined,
             color: AmberColors.primary,
           ),
-          title: const Text('WebDAV 同步'),
+          title: const Text('七牛云 OSS 同步'),
           subtitle: _buildStatusSubtitle(syncState, isConfigured, isActive),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -167,25 +178,121 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 服务器地址
+                  // Access Key
                   TextFormField(
-                    controller: _serverController,
+                    controller: _accessKeyController,
                     decoration: const InputDecoration(
-                      labelText: '服务器地址',
-                      hintText: 'https://dav.jianguoyun.com/dav/',
+                      labelText: 'Access Key',
+                      hintText: '七牛云 AK',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.dns_outlined),
+                      prefixIcon: Icon(Icons.key_outlined),
                     ),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return '请输入服务器地址';
-                      }
-                      if (!value.startsWith('http://') && !value.startsWith('https://')) {
-                        return '服务器地址必须以 http:// 或 https:// 开头';
+                        return '请输入 Access Key';
                       }
                       return null;
                     },
                   ),
+                  const SizedBox(height: AmberDimens.spacingMd),
+
+                  // Secret Key
+                  TextFormField(
+                    controller: _secretKeyController,
+                    decoration: const InputDecoration(
+                      labelText: 'Secret Key',
+                      hintText: '七牛云 SK（敏感信息，加密存储）',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                    obscureText: true,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '请输入 Secret Key';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AmberDimens.spacingMd),
+
+                  // Bucket
+                  TextFormField(
+                    controller: _bucketController,
+                    decoration: const InputDecoration(
+                      labelText: 'Bucket 名称',
+                      hintText: '存储空间名称',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.storage_outlined),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '请输入 Bucket 名称';
+                      }
+                      return null;
+                    },
+                  ),
+                  // 私有空间安全提示
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      top: AmberDimens.spacingXs,
+                      left: AmberDimens.spacingXs,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.security_outlined,
+                          size: 14,
+                          color: AmberColors.warning,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '请确保 Bucket 为私有空间，公共空间会导致数据泄露',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AmberColors.warning,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AmberDimens.spacingMd),
+
+                  // 区域选择
+                  DropdownButtonFormField<QiniuRegion>(
+                    value: _selectedRegion,
+                    decoration: const InputDecoration(
+                      labelText: '存储区域',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                    ),
+                    items: QiniuRegion.allRegions.map((region) {
+                      return DropdownMenuItem(
+                        value: region,
+                        child: Text('${region.displayName} (${region.code})'),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedRegion = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: AmberDimens.spacingMd),
+
+                  // 自定义域名（可选）
+                  TextFormField(
+                    controller: _customDomainController,
+                    decoration: const InputDecoration(
+                      labelText: '自定义域名（可选）',
+                      hintText: 'https://cdn.example.com',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.language_outlined),
+                    ),
+                  ),
+
+                  // 七牛云注册链接
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
@@ -195,7 +302,7 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
                         visualDensity: VisualDensity.compact,
                       ),
                       onPressed: () async {
-                        const url = 'https://www.jianguoyun.com/';
+                        const url = 'https://portal.qiniu.com/';
                         try {
                           if (Platform.isWindows) {
                             await Process.run('start', [url], runInShell: true);
@@ -203,50 +310,15 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
                             await Process.run('open', [url]);
                           }
                         } catch (e) {
-                          debugPrint('Could not launch \$url: \$e');
+                          debugPrint('Could not launch $url: $e');
                         }
                       },
                       icon: const Icon(Icons.open_in_new, size: 14),
                       label: const Text(
-                        '注册/登录坚果云',
+                        '打开七牛云控制台',
                         style: TextStyle(fontSize: 12),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AmberDimens.spacingMd),
-
-                  // 用户名
-                  TextFormField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: '用户名',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person_outline),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return '请输入用户名';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: AmberDimens.spacingMd),
-
-                  // 密码
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(
-                      labelText: '密码',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.lock_outline),
-                    ),
-                    obscureText: true,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return '请输入密码';
-                      }
-                      return null;
-                    },
                   ),
                   const SizedBox(height: AmberDimens.spacingLg),
 
@@ -283,7 +355,7 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
                     ],
                   ),
 
-                  // 删除配置按钮(仅在已配置时显示)
+                  // 删除配置按钮（仅在已配置时显示）
                   if (isConfigured) ...[
                     const SizedBox(height: AmberDimens.spacingMd),
                     TextButton.icon(
@@ -304,17 +376,21 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   }
 
   /// 构建状态副标题
-  /// [isActive] 当前是否激活 WebDAV 同步，只有激活时才显示同步状态
+  /// [isActive] 当前是否激活七牛云同步（用于判断是否显示同步状态）
   Widget _buildStatusSubtitle(SyncState syncState, bool isConfigured, bool isActive) {
     if (!isConfigured) {
-      return const Text('未配置 - 点击配置 WebDAV 云同步');
+      return const Text('未配置 - 点击配置七牛云 OSS 同步');
     }
 
-    // 未激活时显示"已配置但未激活"
+    // 未激活时，只显示"已配置（未激活）"
     if (!isActive) {
-      return const Text('已配置（未激活）', style: TextStyle(color: AmberColors.textSecondary));
+      return const Text(
+        '已配置（未激活）',
+        style: TextStyle(color: AmberColors.textSecondary),
+      );
     }
 
+    // 激活状态下，显示同步进度
     if (syncState.isSyncing) {
       return const Text('同步中...', style: TextStyle(color: AmberColors.info));
     }
@@ -343,49 +419,54 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
     return '${diff.inDays}天前';
   }
 
-  /// 测试 WebDAV 连接
+  /// 测试七牛云连接
   Future<void> _testConnection() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isTesting = true);
 
     try {
-      final testConfig = SyncConfig(
-        serverUrl: _serverController.text.trim(),
-        username: _usernameController.text.trim(),
-        syncIntervalMinutes: 30,
-        autoSync: true,
+      final testConfig = QiniuOssConfig(
+        accessKey: _accessKeyController.text.trim(),
+        bucket: _bucketController.text.trim(),
+        regionCode: _selectedRegion.code,
+        customDomain: _customDomainController.text.trim().isNotEmpty
+            ? _customDomainController.text.trim()
+            : null,
       );
 
-      // 判断使用哪个密码测试
-      final currentPassword = _passwordController.text.trim();
-      String? passwordToTest;
+      // 判断使用哪个 SecretKey 测试
+      final currentSecretKey = _secretKeyController.text.trim();
+      String? secretKeyToTest;
 
-      if (_hasPasswordInKeychain && currentPassword == _originalPasswordPlaceholder) {
-        // 使用钥匙串里的密码
-        passwordToTest = await SyncConfigService.getPassword(testConfig.username);
+      if (_hasSecretKeyInKeychain && currentSecretKey == _originalSecretKeyPlaceholder) {
+        // 使用钥匙串里的 SecretKey
+        secretKeyToTest = await SyncConfigService.getQiniuSecretKey(testConfig.accessKey);
       } else {
-        // 使用用户输入的密码
-        passwordToTest = currentPassword;
+        // 使用用户输入的 SecretKey
+        secretKeyToTest = currentSecretKey;
       }
 
-      if (passwordToTest == null || passwordToTest.isEmpty) {
+      if (secretKeyToTest == null || secretKeyToTest.isEmpty) {
         if (mounted) {
           ToastManager().show(
             context,
-            '请输入密码',
+            '请输入 Secret Key',
             type: ToastType.error,
           );
         }
         return;
       }
 
-      final success = await ref.read(syncStateProvider.notifier).testConnection(testConfig, passwordToTest);
+      final success = await ref.read(syncStateProvider.notifier).testQiniuConnection(
+        testConfig,
+        secretKeyToTest,
+      );
 
       if (mounted) {
         ToastManager().show(
           context,
-          success ? '连接成功!' : '连接失败,请检查配置',
+          success ? '连接成功!' : '连接失败，请检查配置',
           type: success ? ToastType.success : ToastType.error,
         );
       }
@@ -398,45 +479,48 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   Future<void> _saveConfig() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final config = SyncConfig(
-      serverUrl: _serverController.text.trim(),
-      username: _usernameController.text.trim(),
-      syncIntervalMinutes: 30, // 每30分钟自动同步
+    final config = QiniuOssConfig(
+      accessKey: _accessKeyController.text.trim(),
+      bucket: _bucketController.text.trim(),
+      regionCode: _selectedRegion.code,
+      customDomain: _customDomainController.text.trim().isNotEmpty
+          ? _customDomainController.text.trim()
+          : null,
+      syncIntervalMinutes: 30,
       autoSync: true,
     );
 
-    // 判断密码是否被修改
-    final currentPassword = _passwordController.text.trim();
-    String? passwordToSave;
+    // 判断 SecretKey 是否被修改
+    final currentSecretKey = _secretKeyController.text.trim();
+    String? secretKeyToSave;
 
-    if (_hasPasswordInKeychain && currentPassword == _originalPasswordPlaceholder) {
-      // 密码框没被修改（还是占位符），使用钥匙串里的旧密码
-      passwordToSave = await SyncConfigService.getPassword(config.username);
-      print('[WebDavConfig] 使用钥匙串中的现有密码');
+    if (_hasSecretKeyInKeychain && currentSecretKey == _originalSecretKeyPlaceholder) {
+      // SecretKey 框没被修改（还是占位符），使用钥匙串里的旧 SecretKey
+      secretKeyToSave = await SyncConfigService.getQiniuSecretKey(config.accessKey);
+      print('[QiniuConfig] 使用钥匙串中的现有 SecretKey');
     } else {
-      // 密码框被修改了，使用新密码
-      passwordToSave = currentPassword;
-      print('[WebDavConfig] 使用用户输入的新密码');
+      // SecretKey 框被修改了，使用新 SecretKey
+      secretKeyToSave = currentSecretKey;
+      print('[QiniuConfig] 使用用户输入的新 SecretKey');
     }
 
-    if (passwordToSave == null || passwordToSave.isEmpty) {
-      // 密码为空，提示错误
+    if (secretKeyToSave == null || secretKeyToSave.isEmpty) {
       if (mounted) {
         ToastManager().show(
           context,
-          '请输入密码',
+          '请输入 Secret Key',
           type: ToastType.error,
         );
       }
       return;
     }
 
-    await ref.read(syncStateProvider.notifier).saveConfig(config, passwordToSave);
+    await ref.read(syncStateProvider.notifier).saveQiniuConfig(config, secretKeyToSave);
 
     if (mounted) {
       ToastManager().show(
         context,
-        '配置已保存,自动同步已启用(每30分钟)',
+        '配置已保存，自动同步已启用（每30分钟）',
         type: ToastType.success,
       );
     }
@@ -453,54 +537,13 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
 
     final success = await ref.read(syncStateProvider.notifier).manualSync();
 
-    // 检查标签冲突（标签冲突走老逻辑，因为标签没有 updatedAt）
     if (mounted) {
-      final tagConflicts = ref.read(syncStateProvider).tagConflicts;
-      if (tagConflicts.isNotEmpty) {
-        for (var conflict in tagConflicts) {
-          if (!mounted) break;
-
-          final useLocal = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => DataConflictDialog(
-              title: '标签冲突检测',
-              description:
-                  '检测到同名标签 "${conflict.local['name']}"，但ID不同。\n'
-                  '这通常发生在多端创建了同名标签时。\n'
-                  '请选择保留哪一份数据？',
-              localData: conflict.local,
-              remoteData: conflict.remote,
-              localLabel:
-                  '保留本地 (ID: ...${(conflict.local['id'] as String).substring(0, 4)})',
-              remoteLabel:
-                  '使用远程 (ID: ...${(conflict.remote['id'] as String).substring(0, 4)})',
-            ),
-          );
-
-          // 如果用户点击背景关闭，默认为 null，视为保留本地（不处理）
-          final choice = useLocal ?? true;
-
-          await ref
-              .read(tagsProvider.notifier)
-              .resolveConflict(
-                conflict.local,
-                conflict.remote,
-                useRemote: !choice,
-              );
-        }
-
-        // 解决完冲突后，可能需要强制刷新一下 UI 或重新 sync
-        // 重新刷新列表即可
-        ref.invalidate(tagsProvider);
-      }
-
       if (success) {
         ref.read(soundServiceProvider).playSuccess();
       }
       ToastManager().show(
         context,
-        success ? '同步完成' : '同步失败,请查看错误信息',
+        success ? '同步完成' : '同步失败，请查看错误信息',
         type: success ? ToastType.success : ToastType.error,
       );
     }
@@ -561,7 +604,7 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除同步配置'),
-        content: const Text('确定要删除 WebDAV 同步配置吗?\n删除后将停止自动同步,但本地数据不会丢失。'),
+        content: const Text('确定要删除七牛云 OSS 同步配置吗？\n删除后将停止自动同步，但本地数据不会丢失。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -580,10 +623,12 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
     );
 
     if (confirm == true) {
-      await ref.read(syncStateProvider.notifier).deleteConfig();
-      _serverController.clear();
-      _usernameController.clear();
-      _passwordController.clear();
+      await ref.read(syncStateProvider.notifier).deleteQiniuConfig();
+      _accessKeyController.clear();
+      _secretKeyController.clear();
+      _bucketController.clear();
+      _customDomainController.clear();
+      _hasSecretKeyInKeychain = false;
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

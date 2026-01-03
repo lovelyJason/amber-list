@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/constants.dart';
+import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -33,6 +34,7 @@ class TaskListView extends ConsumerStatefulWidget {
     this.showDatePicker = false,
     this.groupCompleted = true,
     this.showHeader = true, // 是否显示头部（标题+筛选排序），移动端设为 false
+    this.showFilterSort = true, // 是否显示筛选排序按钮，已完成/垃圾桶页面设为 false
   });
 
   final bool showInput;
@@ -42,6 +44,10 @@ class TaskListView extends ConsumerStatefulWidget {
   /// 是否显示头部区域（标题+筛选排序按钮）
   /// 移动端设为 false，因为顶部 AppBar 已有标题
   final bool showHeader;
+
+  /// 是否显示筛选排序按钮
+  /// 已完成/垃圾桶页面设为 false，因为这些页面不需要筛选排序
+  final bool showFilterSort;
 
   @override
   ConsumerState<TaskListView> createState() => _TaskListViewState();
@@ -69,13 +75,12 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     }
 
     // 过滤已过期任务（截止日期早于今天且未完成的任务）
+    // 使用 AmberDateUtils 确保跨时区一致性
     if (filterSort.hideOverdue) {
-      final today = DateTime.now();
-      final todayStart = DateTime(today.year, today.month, today.day);
       tasks = tasks.where((t) {
         if (t.isCompleted) return true; // 已完成的不过滤
         if (t.dueDate == null) return true; // 没有截止日期的不过滤
-        return !t.dueDate!.isBefore(todayStart); // 过滤掉过期的
+        return !AmberDateUtils.isOverdue(t.dueDate!); // 过滤掉过期的
       }).toList();
     }
 
@@ -88,15 +93,15 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         if (a.isCompleted != b.isCompleted) return a.isCompleted ? 1 : -1;
 
         // 2. 已过期的排在未过期后面（仅对未完成任务生效）
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final aDue = a.dueDate != null ? DateTime(a.dueDate!.year, a.dueDate!.month, a.dueDate!.day) : null;
-        final bDue = b.dueDate != null ? DateTime(b.dueDate!.year, b.dueDate!.month, b.dueDate!.day) : null;
-        final aIsOverdue = aDue != null && aDue.isBefore(today);
-        final bIsOverdue = bDue != null && bDue.isBefore(today);
+        // 使用 AmberDateUtils 确保跨时区一致性
+        final aIsOverdue = a.dueDate != null && AmberDateUtils.isOverdue(a.dueDate!);
+        final bIsOverdue = b.dueDate != null && AmberDateUtils.isOverdue(b.dueDate!);
         if (aIsOverdue != bIsOverdue) return aIsOverdue ? 1 : -1;
 
         // 3. 按截止日期排序（日期近的在前，无日期的排最后）
+        // 提取日期部分进行比较，忽略时间
+        final aDue = a.dueDate != null ? DateTime(a.dueDate!.year, a.dueDate!.month, a.dueDate!.day) : null;
+        final bDue = b.dueDate != null ? DateTime(b.dueDate!.year, b.dueDate!.month, b.dueDate!.day) : null;
         if (aDue != null || bDue != null) {
           if (aDue == null) return 1;  // 无日期的排后面
           if (bDue == null) return -1;
@@ -219,6 +224,8 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
             ),
           ),
           const Spacer(),
+          // 筛选排序按钮（已完成/垃圾桶页面不显示）
+          if (widget.showFilterSort) ...[
             InstantPopupMenuButton<bool>(
               tooltip: '筛选',
               offset: const Offset(0, 40), // 下拉位置修正
@@ -302,7 +309,8 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                     ),
                   ),
               ],
-          ),
+            ),
+          ],
         ],
       ),
       ),
@@ -443,11 +451,14 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   void _addTask(String title) {
     if (title.trim().isEmpty) return;
 
+    // 规范化为 UTC 日期存储，确保跨设备同步时日期一致
+    final normalizedDate = AmberDateUtils.normalizeToUtcDate(_selectedDate);
+
     ref.read(soundServiceProvider).playAdd(); // Sound
     ref.read(taskProvider.notifier).createTask(
       title: title.trim(),
       listId: widget.listId,
-          dueDate: _selectedDate,
+      dueDate: normalizedDate,
     );
 
     _inputController.clear();

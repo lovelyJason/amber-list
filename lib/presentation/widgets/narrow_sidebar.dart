@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart'; // Import window_manager
@@ -9,13 +11,48 @@ import '../providers/providers.dart';
 import '../pages/settings/settings_page.dart';
 import 'animated_logo.dart';
 import 'mac_traffic_lights.dart';
+import 'sync_conflict_dialog.dart';
 
 /// 窄侧边栏（最左侧图标栏）
-class NarrowSidebar extends ConsumerWidget {
+class NarrowSidebar extends ConsumerStatefulWidget {
   const NarrowSidebar({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NarrowSidebar> createState() => _NarrowSidebarState();
+}
+
+class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
+  Timer? _hoverTimer;
+  bool _showRefresh = false;
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handleHoverEnter(PointerEnterEvent event) {
+    _hoverTimer?.cancel();
+    _hoverTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showRefresh = true;
+        });
+      }
+    });
+  }
+
+  void _handleHoverExit(PointerExitEvent event) {
+    _hoverTimer?.cancel();
+    if (_showRefresh) {
+      setState(() {
+        _showRefresh = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final navState = ref.watch(appNavProvider);
     final isWindows = Platform.isWindows;
 
@@ -165,7 +202,9 @@ class NarrowSidebar extends ConsumerWidget {
   /// 同步状态指示器 - 显示在侧边栏底部
   Widget _buildSyncIndicator(WidgetRef ref) {
     final syncState = ref.watch(syncStateProvider);
-    final isConfigured = ref.watch(syncConfigProvider) != null;
+    final isConfigured =
+        ref.watch(syncConfigProvider) != null ||
+        ref.watch(qiniuConfigProvider) != null;
 
     // 未配置同步 - 不显示
     if (!isConfigured) {
@@ -176,11 +215,36 @@ class NarrowSidebar extends ConsumerWidget {
     IconData icon;
     Color color;
     String tooltip;
+    VoidCallback? onTap;
 
     if (syncState.isSyncing) {
+      // 正在同步：显示加载圈
       icon = FluentIcons.arrow_sync_circle_24_regular;
       color = AmberColors.info;
       tooltip = '正在同步...';
+    } else if (_showRefresh) {
+      // 悬停显示刷新：显示刷新图标
+      icon = FluentIcons.arrow_sync_24_regular; // 使用普通的刷新箭头
+      color = AmberColors.textPrimary; // 颜色稍微深一点表示可点击
+      tooltip = '点击立即同步';
+      onTap = () async {
+        // 点击后立即重置刷新图标状态（因为马上会变成 isSyncing）
+        setState(() => _showRefresh = false);
+
+        // 设置冲突决策回调（在同步过程中弹窗让用户选择）
+        ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+          if (!mounted) return null;
+          // 弹出冲突决策弹窗
+          return showSyncConflictDialog(context, conflicts: conflicts);
+        };
+
+        final success = await ref.read(syncStateProvider.notifier).manualSync();
+
+        // 同步成功播放音效
+        if (success && mounted) {
+          ref.read(soundServiceProvider).playSuccess();
+        }
+      };
     } else if (syncState.lastError != null) {
       icon = FluentIcons.warning_24_regular;
       color = AmberColors.warning;
@@ -196,28 +260,43 @@ class NarrowSidebar extends ConsumerWidget {
       tooltip = '等待同步';
     }
 
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
-      child: Container(
-        width: 40,
-        height: 40,
-        margin: const EdgeInsets.symmetric(vertical: AmberDimens.spacingXs),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+    return MouseRegion(
+      onEnter: _handleHoverEnter,
+      onExit: _handleHoverExit,
+      cursor: _showRefresh
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      child: Tooltip(
+        message: tooltip,
+        preferBelow: false,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 40,
+            height: 40,
+            margin: const EdgeInsets.symmetric(vertical: AmberDimens.spacingXs),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+              color: _showRefresh && !syncState.isSyncing
+                  ? Colors.black.withOpacity(0.05) // 悬停刷新时加个淡背景
+                  : Colors.transparent,
+            ),
+            child: syncState.isSyncing
+                ? const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AmberColors.info,
+                        ),
+                      ),
+                    ),
+                  )
+                : Icon(icon, size: AmberDimens.iconSizeLg, color: color),
+          ),
         ),
-        child: syncState.isSyncing
-            ? const Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(AmberColors.info),
-                  ),
-                ),
-              )
-            : Icon(icon, size: AmberDimens.iconSizeLg, color: color),
       ),
     );
   }

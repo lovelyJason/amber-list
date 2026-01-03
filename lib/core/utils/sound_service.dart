@@ -59,7 +59,7 @@ class SoundService {
 
   Future<void> _playSound(String assetPath) async {
     try {
-      debugPrint('[SoundService] Playing: $assetPath');
+      // debugPrint('[SoundService] Playing: $assetPath');
       // 允许声音重叠，不调用 stop()
       // 创建新的临时播放器实例以支持并发播放效果更好，
       // 但为了性能先尝试复用 player。如果复用有问题，改为每次 new AudioPlayer()。

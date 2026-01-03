@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/constants/constants.dart';
+import '../../../core/utils/date_utils.dart';
 import '../../../data/models/models.dart';
 import '../../providers/providers.dart';
 
@@ -57,6 +58,7 @@ class _DetailSheetContent extends ConsumerStatefulWidget {
 class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
   late TextEditingController _titleController;
   late TextEditingController _descController;
+  late FocusNode _titleFocusNode;
   late FocusNode _descFocusNode;
 
   @override
@@ -64,9 +66,20 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
     super.initState();
     _titleController = TextEditingController(text: widget.task.title);
     _descController = TextEditingController(text: widget.task.description ?? '');
+    
+    _titleFocusNode = FocusNode();
+    _titleFocusNode.addListener(() {
+      if (!_titleFocusNode.hasFocus) {
+        _saveTitle();
+      }
+    });
+
     _descFocusNode = FocusNode();
     _descFocusNode.addListener(() {
       setState(() {});
+      if (!_descFocusNode.hasFocus) {
+        _saveDescription();
+      }
     });
   }
 
@@ -74,6 +87,7 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
+    _titleFocusNode.dispose();
     _descFocusNode.dispose();
     super.dispose();
   }
@@ -83,99 +97,114 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
     final taskLists = ref.watch(taskListProvider);
     final currentList = taskLists.where((l) => l.id == widget.task.listId).firstOrNull;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.25,
-      maxChildSize: 0.95,
-      snap: true,
-      snapSizes: const [0.4, 0.7, 0.95],
-      builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: AmberColors.cardBackground,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(AmberDimens.radiusXl),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              // 顶部拖拽指示器（点击关闭）
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: _buildDragHandle(),
-              ),
-              // 任务详情内容（可滚动）
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AmberDimens.spacingMd,
-                  ),
-                  children: [
-                    // 标题输入框
-                    _buildTitleField(),
-                    const SizedBox(height: AmberDimens.spacingMd),
-                    // 属性列表
-                    _buildPropertyRow(
-                      icon: Icons.calendar_today_outlined,
-                      label: '截止日期',
-                      value: widget.task.dueDate != null
-                          ? DateFormat('yyyy年M月d日').format(widget.task.dueDate!)
-                          : '未设置',
-                      onTap: widget.task.isDeleted
-                          ? null
-                          : () => _showDatePicker(context),
-                    ),
-                    _buildPropertyRow(
-                      icon: Icons.list_rounded,
-                      label: '清单',
-                      value: currentList?.name ?? '收集箱',
-                      valueColor: currentList?.color,
-                      onTap: widget.task.isDeleted
-                          ? null
-                          : () => _showListPicker(context, taskLists),
-                    ),
-                    _buildPropertyRow(
-                      icon: Icons.flag_outlined,
-                      label: '优先级',
-                      value: _getPriorityText(widget.task.priority),
-                      valueColor: _getPriorityColor(widget.task.priority),
-                      onTap: widget.task.isDeleted
-                          ? null
-                          : () => _showPriorityPicker(context),
-                    ),
-                    _buildPropertyRow(
-                      icon: Icons.label_outline,
-                      label: '标签',
-                      value: widget.task.tags.isEmpty
-                          ? '添加标签'
-                          : widget.task.tags.join(', '),
-                      onTap: widget.task.isDeleted
-                          ? null
-                          : () => _showTagsDialog(context),
-                    ),
-                    const SizedBox(height: AmberDimens.spacingLg),
-                    // 描述区域
-                    _buildDescriptionSection(),
-                    const SizedBox(height: AmberDimens.spacingLg),
-                    // 底部信息和删除按钮
-                    _buildFooter(),
-                    // 底部安全区域
-                    SizedBox(height: MediaQuery.of(context).padding.bottom + AmberDimens.spacingMd),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
+    // 使用 WillPopScope 拦截返回/关闭事件
+    // 确保在页面关闭时保存数据，避免在 dispose 中调用 ref 导致 Crash
+    return WillPopScope(
+      onWillPop: () async {
+        _saveTitle();
+        _saveDescription();
+        return true; // 允许关闭
       },
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.25,
+        maxChildSize: 0.95,
+        snap: true,
+        snapSizes: const [0.4, 0.7, 0.95],
+        builder: (context, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: AmberColors.cardBackground,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(AmberDimens.radiusXl),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // 顶部拖拽指示器（点击关闭）
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: _buildDragHandle(),
+                ),
+                // 任务详情内容（可滚动）
+                Expanded(
+                  child: ListView(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AmberDimens.spacingMd,
+                    ),
+                    children: [
+                      // 标题输入框
+                      _buildTitleField(),
+                      const SizedBox(height: AmberDimens.spacingMd),
+                      // 属性列表
+                      _buildPropertyRow(
+                        icon: Icons.calendar_today_outlined,
+                        label: '截止日期',
+                        value: widget.task.dueDate != null
+                            ? DateFormat(
+                                'yyyy年M月d日',
+                              ).format(widget.task.dueDate!)
+                            : '未设置',
+                        onTap: widget.task.isDeleted
+                            ? null
+                            : () => _showDatePicker(context),
+                      ),
+                      _buildPropertyRow(
+                        icon: Icons.list_rounded,
+                        label: '清单',
+                        value: currentList?.name ?? '收集箱',
+                        valueColor: currentList?.color,
+                        onTap: widget.task.isDeleted
+                            ? null
+                            : () => _showListPicker(context, taskLists),
+                      ),
+                      _buildPropertyRow(
+                        icon: Icons.flag_outlined,
+                        label: '优先级',
+                        value: _getPriorityText(widget.task.priority),
+                        valueColor: _getPriorityColor(widget.task.priority),
+                        onTap: widget.task.isDeleted
+                            ? null
+                            : () => _showPriorityPicker(context),
+                      ),
+                      _buildPropertyRow(
+                        icon: Icons.label_outline,
+                        label: '标签',
+                        value: widget.task.tags.isEmpty
+                            ? '添加标签'
+                            : widget.task.tags.join(', '),
+                        onTap: widget.task.isDeleted
+                            ? null
+                            : () => _showTagsDialog(context),
+                      ),
+                      const SizedBox(height: AmberDimens.spacingLg),
+                      // 描述区域
+                      _buildDescriptionSection(),
+                      const SizedBox(height: AmberDimens.spacingLg),
+                      // 底部信息和删除按钮
+                      _buildFooter(),
+                      // 底部安全区域
+                      SizedBox(
+                        height:
+                            MediaQuery.of(context).padding.bottom +
+                            AmberDimens.spacingMd,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -196,6 +225,7 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
   Widget _buildTitleField() {
     return TextField(
       controller: _titleController,
+      focusNode: _titleFocusNode,
       readOnly: widget.task.isDeleted,
       style: TextStyle(
         fontSize: 24,
@@ -205,6 +235,8 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
             : AmberColors.textPrimary,
         fontFamily: 'PingFang SC', // 确保中文显示效果
       ),
+      maxLines: null,
+      keyboardType: TextInputType.multiline,
       decoration: const InputDecoration(
         border: InputBorder.none,
         hintText: '准备做什么？',
@@ -213,7 +245,8 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
       ),
-      onSubmitted: widget.task.isDeleted ? null : _updateTitle,
+      // 移除实时保存，改为监听 FocusNode
+      onChanged: null,
     );
   }
 
@@ -327,7 +360,8 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
               filled: false, // 覆盖主题默认的 true
               contentPadding: const EdgeInsets.all(16),
             ),
-            onChanged: widget.task.isDeleted ? null : _updateDescription,
+            // 移除实时保存，改为监听 FocusNode
+            onChanged: null,
           ),
         ),
       ],
@@ -369,17 +403,45 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
   // 数据更新方法
   // ============================================================
 
-  void _updateTitle(String title) {
-    if (title.trim().isEmpty) return;
-    ref.read(taskProvider.notifier).updateTask(
-      widget.task.copyWith(title: title.trim(), updatedAt: DateTime.now()),
-    );
+  void _saveTitle() {
+    final title = _titleController.text.trim();
+    if (title.isEmpty) return;
+
+    // 获取最新任务状态进行比较，避免 widget.task 过期导致的重复保存或覆盖
+    final currentTask =
+        ref
+            .read(taskProvider)
+            .where((t) => t.id == widget.task.id)
+            .firstOrNull ??
+        widget.task;
+
+    if (title != currentTask.title) {
+      ref
+          .read(taskProvider.notifier)
+          .updateTask(
+            currentTask.copyWith(title: title, updatedAt: DateTime.now()),
+          );
+    }
   }
 
-  void _updateDescription(String desc) {
-    ref.read(taskProvider.notifier).updateTask(
-      widget.task.copyWith(description: desc, updatedAt: DateTime.now()),
-    );
+  void _saveDescription() {
+    final desc = _descController.text;
+
+    // 获取最新任务状态进行比较
+    final currentTask =
+        ref
+            .read(taskProvider)
+            .where((t) => t.id == widget.task.id)
+            .firstOrNull ??
+        widget.task;
+
+    if (desc != (currentTask.description ?? '')) {
+      ref
+          .read(taskProvider.notifier)
+          .updateTask(
+            currentTask.copyWith(description: desc, updatedAt: DateTime.now()),
+          );
+    }
   }
 
   // ============================================================
@@ -395,8 +457,10 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
     );
     if (date != null) {
+      // 规范化为 UTC 日期存储，确保跨设备同步时日期一致
+      final normalizedDate = AmberDateUtils.normalizeToUtcDate(date);
       ref.read(taskProvider.notifier).updateTask(
-        widget.task.copyWith(dueDate: date, updatedAt: DateTime.now()),
+        widget.task.copyWith(dueDate: normalizedDate, updatedAt: DateTime.now()),
       );
     }
   }
@@ -621,11 +685,54 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
               backgroundColor: AmberColors.warning,
             ),
             child: const Text('删除'),
-            onPressed: () {
-              ref.read(soundServiceProvider).playDelete();
-              ref.read(taskProvider.notifier).deleteTask(widget.task.id);
-              Navigator.pop(context); // 关闭确认对话框
-              Navigator.pop(context); // 关闭 BottomSheet
+            onPressed: () async {
+              final success = await ref
+                  .read(taskProvider.notifier)
+                  .deleteTask(widget.task.id);
+
+              if (!context.mounted) return;
+
+              if (success) {
+                ref.read(soundServiceProvider).playDelete();
+                Navigator.pop(context); // 关闭确认对话框
+                Navigator.pop(context); // 关闭 BottomSheet
+              } else {
+                // 有番茄记录冲突
+                Navigator.pop(context); // 先关闭当前对话框
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('无法删除'),
+                    content: const Text(
+                      '该任务有关联的番茄时钟记录。\n\n'
+                      '请先前往番茄时钟页面删除相关记录，或选择"强制删除"移入垃圾桶。',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('取消'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          ref
+                              .read(taskProvider.notifier)
+                              .forceDeleteTask(widget.task.id);
+                          ref.read(soundServiceProvider).playDelete();
+                          Navigator.pop(ctx); // 关闭冲突对话框
+                          Navigator.pop(context); // 关闭 BottomSheet
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                        ),
+                        child: const Text(
+                          '强制删除',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
             },
           ),
         ],
