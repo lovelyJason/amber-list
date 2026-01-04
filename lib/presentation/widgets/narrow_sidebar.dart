@@ -51,6 +51,12 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
     }
   }
 
+  /// 处理日历点击 - 直接跳转到日历页面
+  /// 未激活时日历页面会自己显示遮罩层和激活提示
+  void _handleCalendarTap(BuildContext context, WidgetRef ref) {
+    ref.read(appNavProvider.notifier).setView(NavView.calendar);
+  }
+
   @override
   Widget build(BuildContext context) {
     final navState = ref.watch(appNavProvider);
@@ -127,7 +133,7 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
             isSelected: navState.currentView == NavView.notes,
           ),
 
-          // 3. 日历 (Calendar)
+          // 3. 日历 (Calendar) - 需要激活才能使用
           _buildNavItem(
             context,
             ref,
@@ -135,8 +141,8 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
                 ? FluentIcons.calendar_ltr_24_filled
                 : FluentIcons.calendar_ltr_24_regular,
             tooltip: '日历',
-            view: NavView.calendar,
             isSelected: navState.currentView == NavView.calendar,
+            onTap: () => _handleCalendarTap(context, ref),
           ),
 
           // 4. 番茄时钟 (Pomodoro)
@@ -278,7 +284,7 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
               color: _showRefresh && !syncState.isSyncing
-                  ? Colors.black.withOpacity(0.05) // 悬停刷新时加个淡背景
+                  ? Colors.black.withValues(alpha: 0.05) // 悬停刷新时加个淡背景
                   : Colors.transparent,
             ),
             child: syncState.isSyncing

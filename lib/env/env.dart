@@ -49,4 +49,18 @@ abstract class Env {
   /// 是否使用 SharedPreferences 存储
   static bool get useSharedPreferences =>
       secretStorageType == SecretStorageType.sharedPreferences;
+
+  /// 应用更新检查 API 地址
+  /// 可以是 GitHub Raw、CDN、自建服务器等
+  @EnviedField(varName: 'APP_UPDATE_URL')
+  static const String appUpdateUrl = _Env.appUpdateUrl;
+
+  /// 激活码验证 API 地址
+  @EnviedField(varName: 'ACTIVATION_API_URL')
+  static const String activationApiUrl = _Env.activationApiUrl;
+
+  /// HMAC 签名密钥
+  /// 用于激活码验证接口的签名
+  @EnviedField(varName: 'HUPO_HMAC_SECRET_KEY', obfuscate: true)
+  static String hmacSecretKey = _Env.hmacSecretKey;
 }

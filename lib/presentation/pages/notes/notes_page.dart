@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' as drift;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -5,83 +8,107 @@ import 'package:window_manager/window_manager.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/utils/responsive_helper.dart';
 import '../../../data/models/models.dart';
+import '../../../data/datasources/local/database.dart' as db;
+import '../../providers/database_provider.dart';
 import '../../widgets/adaptive/bottom_nav_bar.dart';
+import '../../widgets/common/toast/toast_manager.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 
-/// 笔记状态Provider
+/// 将数据库笔记对象转换为 UI 模型
+Note _mapDbNoteToModel(db.Note dbNote) {
+  List<String> tags = [];
+  try {
+    tags = List<String>.from(jsonDecode(dbNote.tags));
+  } catch (_) {}
+
+  return Note(
+    id: dbNote.id,
+    title: dbNote.title,
+    content: dbNote.content,
+    folderId: dbNote.folderId,
+    tags: tags,
+    isPinned: dbNote.isPinned,
+    createdAt: dbNote.createdAt,
+    updatedAt: dbNote.updatedAt,
+  );
+}
+
+/// 笔记状态管理 Provider
+/// 使用数据库持久化存储，支持 CRUD 操作
 final notesProvider = StateNotifierProvider<NotesNotifier, List<Note>>((ref) {
-  return NotesNotifier();
+  final database = ref.watch(databaseProvider);
+  return NotesNotifier(database);
 });
 
+/// 笔记状态管理器
+/// 订阅数据库 Stream，自动同步状态变更
 class NotesNotifier extends StateNotifier<List<Note>> {
-  NotesNotifier() : super(_mockNotes);
+  final db.AppDatabase database;
 
-  static final _mockNotes = [
-    Note(
-      id: '1',
-      title: '产品路线图 2024',
-      content: '## Q1 目标\n- 完成核心功能开发\n- 用户测试\n\n## Q2 目标\n- 上线公测版本',
-      tags: ['工作'],
-      createdAt: DateTime.now().subtract(const Duration(days: 5)),
-      updatedAt: DateTime.now().subtract(const Duration(hours: 2)),
-    ),
-    Note(
-      id: '2',
-      title: '设计灵感',
-      content: '- 简约排版\n- 琥珀色调\n- 圆角设计\n- 柔和阴影',
-      tags: ['灵感'],
-      isPinned: true,
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      updatedAt: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-    Note(
-      id: '3',
-      title: '购物清单',
-      content: '- 牛奶\n- 面包\n- 鸡蛋\n- 咖啡豆',
-      tags: ['生活'],
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      updatedAt: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-    Note(
-      id: '4',
-      title: '读书笔记：深入理解Flutter',
-      content: '## 第一章\nFlutter是Google开发的跨平台框架...\n\n## 关键概念\n- Widget\n- State\n- BuildContext',
-      tags: ['阅读', '技术'],
-      createdAt: DateTime.now().subtract(const Duration(days: 10)),
-      updatedAt: DateTime.now().subtract(const Duration(days: 2)),
-    ),
-    Note(
-      id: '5',
-      title: '会议记录',
-      content: '参会人员：\n- 张三\n- 李四\n\n讨论内容：\n1. 项目进度\n2. 下周计划',
-      tags: ['工作', '会议'],
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      updatedAt: DateTime.now().subtract(const Duration(hours: 5)),
-    ),
-  ];
-
-  void addNote(Note note) {
-    state = [note, ...state];
+  NotesNotifier(this.database) : super([]) {
+    _init();
   }
 
-  void updateNote(Note updated) {
-    state = state.map((n) => n.id == updated.id ? updated : n).toList();
+  /// 初始化：订阅数据库笔记表的变更流
+  /// 数据库已按 sortOrder 排序返回，这里不再额外排序
+  void _init() {
+    database.watchAllNotes().listen((dbNotes) {
+      // 转换为 UI 模型（数据库已按 sortOrder 排序）
+      final notes = dbNotes.map(_mapDbNoteToModel).toList();
+      state = notes;
+    });
   }
 
-  void deleteNote(String id) {
-    state = state.where((n) => n.id != id).toList();
+  /// 添加笔记
+  Future<void> addNote(Note note) async {
+    await database.insertNote(
+      db.NotesCompanion.insert(
+        id: note.id,
+        title: note.title,
+        content: drift.Value(note.content),
+        folderId: drift.Value(note.folderId),
+        tags: drift.Value(jsonEncode(note.tags)),
+        isPinned: drift.Value(note.isPinned),
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+      ),
+    );
   }
 
-  void togglePin(String id) {
-    state = state.map((n) {
-      if (n.id == id) {
-        return n.copyWith(isPinned: !n.isPinned, updatedAt: DateTime.now());
-      }
-      return n;
-    }).toList();
+  /// 更新笔记
+  Future<void> updateNote(Note updated) async {
+    await database.updateNote(
+      db.NotesCompanion(
+        id: drift.Value(updated.id),
+        title: drift.Value(updated.title),
+        content: drift.Value(updated.content),
+        folderId: drift.Value(updated.folderId),
+        tags: drift.Value(jsonEncode(updated.tags)),
+        isPinned: drift.Value(updated.isPinned),
+        updatedAt: drift.Value(DateTime.now()),
+      ),
+    );
   }
 
-  void reorderPinned(int oldIndex, int newIndex) {
+  /// 删除笔记
+  Future<void> deleteNote(String id) async {
+    await database.deleteNote(id);
+  }
+
+  /// 切换置顶状态
+  Future<void> togglePin(String id) async {
+    final note = state.firstWhere((n) => n.id == id);
+    await database.updateNote(
+      db.NotesCompanion(
+        id: drift.Value(id),
+        isPinned: drift.Value(!note.isPinned),
+        updatedAt: drift.Value(DateTime.now()),
+      ),
+    );
+  }
+
+  /// 重排序置顶笔记（持久化到数据库）
+  Future<void> reorderPinned(int oldIndex, int newIndex) async {
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
@@ -89,12 +116,19 @@ class NotesNotifier extends StateNotifier<List<Note>> {
     final item = pinned.removeAt(oldIndex);
     pinned.insert(newIndex, item);
 
-    // Merge back: pinned + unpinned
+    // 合并：置顶 + 非置顶
     final unpinned = state.where((n) => !n.isPinned).toList();
-    state = [...pinned, ...unpinned];
+    final newOrder = [...pinned, ...unpinned];
+
+    // 立即更新UI状态
+    state = newOrder;
+
+    // 持久化排序到数据库
+    await database.updateNotesOrder(newOrder.map((n) => n.id).toList());
   }
 
-  void reorderRegular(int oldIndex, int newIndex) {
+  /// 重排序非置顶笔记（持久化到数据库）
+  Future<void> reorderRegular(int oldIndex, int newIndex) async {
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
@@ -102,9 +136,15 @@ class NotesNotifier extends StateNotifier<List<Note>> {
     final item = unpinned.removeAt(oldIndex);
     unpinned.insert(newIndex, item);
 
-    // Merge back: pinned + unpinned
+    // 合并：置顶 + 非置顶
     final pinned = state.where((n) => n.isPinned).toList();
-    state = [...pinned, ...unpinned];
+    final newOrder = [...pinned, ...unpinned];
+
+    // 立即更新UI状态
+    state = newOrder;
+
+    // 持久化排序到数据库
+    await database.updateNotesOrder(newOrder.map((n) => n.id).toList());
   }
 }
 
@@ -879,20 +919,20 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
     super.dispose();
   }
 
-  void _updateTitle(String title) {
-    ref
-        .read(notesProvider.notifier)
-        .updateNote(
-          widget.note.copyWith(title: title, updatedAt: DateTime.now()),
-        );
-  }
+  /// 保存笔记（手动触发保存，同时更新标题和内容）
+  void _saveNote() {
+    final updatedNote = widget.note.copyWith(
+      title: _titleController.text,
+      content: _contentController.text,
+      updatedAt: DateTime.now(),
+    );
+    ref.read(notesProvider.notifier).updateNote(updatedNote);
 
-  void _updateContent(String content) {
-    ref
-        .read(notesProvider.notifier)
-        .updateNote(
-          widget.note.copyWith(content: content, updatedAt: DateTime.now()),
-        );
+    // 显示保存成功提示
+    ToastManager().show(context, '已保存', type: ToastType.success);
+
+    // 关闭编辑面板
+    widget.onClose();
   }
 
   String _formatDate(DateTime date) {
@@ -907,6 +947,35 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
       return '${diff.inDays}天前';
     } else {
       return DateFormat('M月d日').format(date);
+    }
+  }
+
+  /// 显示删除确认对话框
+  Future<void> _showDeleteConfirmDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除笔记'),
+        content: Text('确定要删除笔记"${widget.note.title}"吗？此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              '取消',
+              style: TextStyle(color: AmberColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      ref.read(notesProvider.notifier).deleteNote(widget.note.id);
+      widget.onClose();
     }
   }
 
@@ -925,6 +994,35 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
             child: Row(
               children: [
                 const Spacer(),
+                // 关闭按钮
+                IconButton(
+                  onPressed: widget.onClose,
+                  icon: const Icon(
+                    Icons.close,
+                    size: 20,
+                    color: AmberColors.textSecondary,
+                  ),
+                  tooltip: '关闭',
+                  style: IconButton.styleFrom(
+                    hoverColor: Colors.red.withValues(alpha: 0.1),
+                  ),
+                ),
+                const SizedBox(width: AmberDimens.spacingSm),
+                // 保存按钮
+                IconButton(
+                  onPressed: _saveNote,
+                  icon: const Icon(
+                    Icons.check,
+                    size: 20,
+                    color: AmberColors.success,
+                  ),
+                  tooltip: '保存',
+                  style: IconButton.styleFrom(
+                    hoverColor: AmberColors.success.withValues(alpha: 0.1),
+                  ),
+                ),
+                const SizedBox(width: AmberDimens.spacingSm),
+                // 置顶按钮
                 IconButton(
                   onPressed: () => ref
                       .read(notesProvider.notifier)
@@ -941,19 +1039,6 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
                   tooltip: widget.note.isPinned ? '取消置顶' : '置顶',
                   style: IconButton.styleFrom(
                     hoverColor: AmberColors.primary.withValues(alpha: 0.1),
-                  ),
-                ),
-                const SizedBox(width: AmberDimens.spacingSm),
-                IconButton(
-                  onPressed: widget.onClose,
-                  icon: const Icon(
-                    Icons.close,
-                    size: 20,
-                    color: AmberColors.textSecondary,
-                  ),
-                  tooltip: '关闭',
-                  style: IconButton.styleFrom(
-                    hoverColor: Colors.red.withValues(alpha: 0.1),
                   ),
                 ),
               ],
@@ -992,7 +1077,7 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
                     vertical: 0,
                   ),
                 ),
-                onChanged: _updateTitle,
+                // 移除 onChanged，只通过保存按钮触发保存
               ),
               
               const SizedBox(height: AmberDimens.spacingMd),
@@ -1059,7 +1144,7 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
                       vertical: 0,
                     ),
                   ),
-                  onChanged: _updateContent,
+                  // 移除 onChanged，只通过保存按钮触发保存
                 ),
               ),
             ],
@@ -1080,10 +1165,7 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
               ),
               const Spacer(),
               IconButton(
-                onPressed: () {
-                  ref.read(notesProvider.notifier).deleteNote(widget.note.id);
-                  widget.onClose();
-                },
+                onPressed: () => _showDeleteConfirmDialog(),
                 icon: const Icon(Icons.delete_outline, size: 20),
                 color: AmberColors.textSecondary,
                 hoverColor: Colors.red.withValues(alpha: 0.1),

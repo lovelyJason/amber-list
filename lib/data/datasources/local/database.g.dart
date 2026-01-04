@@ -1536,6 +1536,18 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1566,6 +1578,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     folderId,
     tags,
     isPinned,
+    sortOrder,
     createdAt,
     updatedAt,
   ];
@@ -1618,6 +1631,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         isPinned.isAcceptableOrUnknown(data['is_pinned']!, _isPinnedMeta),
       );
     }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1667,6 +1686,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_pinned'],
       )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1691,6 +1714,7 @@ class Note extends DataClass implements Insertable<Note> {
   final String? folderId;
   final String tags;
   final bool isPinned;
+  final int sortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Note({
@@ -1700,6 +1724,7 @@ class Note extends DataClass implements Insertable<Note> {
     this.folderId,
     required this.tags,
     required this.isPinned,
+    required this.sortOrder,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1714,6 +1739,7 @@ class Note extends DataClass implements Insertable<Note> {
     }
     map['tags'] = Variable<String>(tags);
     map['is_pinned'] = Variable<bool>(isPinned);
+    map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1729,6 +1755,7 @@ class Note extends DataClass implements Insertable<Note> {
           : Value(folderId),
       tags: Value(tags),
       isPinned: Value(isPinned),
+      sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1746,6 +1773,7 @@ class Note extends DataClass implements Insertable<Note> {
       folderId: serializer.fromJson<String?>(json['folderId']),
       tags: serializer.fromJson<String>(json['tags']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1760,6 +1788,7 @@ class Note extends DataClass implements Insertable<Note> {
       'folderId': serializer.toJson<String?>(folderId),
       'tags': serializer.toJson<String>(tags),
       'isPinned': serializer.toJson<bool>(isPinned),
+      'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1772,6 +1801,7 @@ class Note extends DataClass implements Insertable<Note> {
     Value<String?> folderId = const Value.absent(),
     String? tags,
     bool? isPinned,
+    int? sortOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Note(
@@ -1781,6 +1811,7 @@ class Note extends DataClass implements Insertable<Note> {
     folderId: folderId.present ? folderId.value : this.folderId,
     tags: tags ?? this.tags,
     isPinned: isPinned ?? this.isPinned,
+    sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1792,6 +1823,7 @@ class Note extends DataClass implements Insertable<Note> {
       folderId: data.folderId.present ? data.folderId.value : this.folderId,
       tags: data.tags.present ? data.tags.value : this.tags,
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1806,6 +1838,7 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('folderId: $folderId, ')
           ..write('tags: $tags, ')
           ..write('isPinned: $isPinned, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1820,6 +1853,7 @@ class Note extends DataClass implements Insertable<Note> {
     folderId,
     tags,
     isPinned,
+    sortOrder,
     createdAt,
     updatedAt,
   );
@@ -1833,6 +1867,7 @@ class Note extends DataClass implements Insertable<Note> {
           other.folderId == this.folderId &&
           other.tags == this.tags &&
           other.isPinned == this.isPinned &&
+          other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1844,6 +1879,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<String?> folderId;
   final Value<String> tags;
   final Value<bool> isPinned;
+  final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -1854,6 +1890,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.folderId = const Value.absent(),
     this.tags = const Value.absent(),
     this.isPinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1865,6 +1902,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.folderId = const Value.absent(),
     this.tags = const Value.absent(),
     this.isPinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -1879,6 +1917,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<String>? folderId,
     Expression<String>? tags,
     Expression<bool>? isPinned,
+    Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -1890,6 +1929,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (folderId != null) 'folder_id': folderId,
       if (tags != null) 'tags': tags,
       if (isPinned != null) 'is_pinned': isPinned,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1903,6 +1943,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<String?>? folderId,
     Value<String>? tags,
     Value<bool>? isPinned,
+    Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -1914,6 +1955,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
       folderId: folderId ?? this.folderId,
       tags: tags ?? this.tags,
       isPinned: isPinned ?? this.isPinned,
+      sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1941,6 +1983,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     if (isPinned.present) {
       map['is_pinned'] = Variable<bool>(isPinned.value);
     }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1962,6 +2007,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('folderId: $folderId, ')
           ..write('tags: $tags, ')
           ..write('isPinned: $isPinned, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -4281,6 +4327,7 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<String?> folderId,
       Value<String> tags,
       Value<bool> isPinned,
+      Value<int> sortOrder,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -4293,6 +4340,7 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<String?> folderId,
       Value<String> tags,
       Value<bool> isPinned,
+      Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -4333,6 +4381,11 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
 
   ColumnFilters<bool> get isPinned => $composableBuilder(
     column: $table.isPinned,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4386,6 +4439,11 @@ class $$NotesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4423,6 +4481,9 @@ class $$NotesTableAnnotationComposer
 
   GeneratedColumn<bool> get isPinned =>
       $composableBuilder(column: $table.isPinned, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4465,6 +4526,7 @@ class $$NotesTableTableManager
                 Value<String?> folderId = const Value.absent(),
                 Value<String> tags = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -4475,6 +4537,7 @@ class $$NotesTableTableManager
                 folderId: folderId,
                 tags: tags,
                 isPinned: isPinned,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -4487,6 +4550,7 @@ class $$NotesTableTableManager
                 Value<String?> folderId = const Value.absent(),
                 Value<String> tags = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -4497,6 +4561,7 @@ class $$NotesTableTableManager
                 folderId: folderId,
                 tags: tags,
                 isPinned: isPinned,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

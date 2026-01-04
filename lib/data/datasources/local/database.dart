@@ -60,6 +60,7 @@ class Notes extends Table {
   TextColumn get folderId => text().nullable()();
   TextColumn get tags => text().withDefault(const Constant('[]'))(); // JSON数组
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))(); // 排序顺序
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -110,7 +111,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6; // Bump version for isInProgress field
+  int get schemaVersion => 8; // Bump version for notes sortOrder column
 
 
   @override
@@ -147,8 +148,77 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(tasks, tasks.isInProgress);
           }
         }
+        if (from < 7) {
+          // 为老用户补种笔记数据（如果笔记表为空）
+          await _seedNotesIfEmpty();
+        }
+        if (from < 8) {
+          // 安全迁移：先检查列是否已存在，避免重复添加报错
+          final columns = await customSelect(
+            "PRAGMA table_info(notes)",
+          ).get();
+          final hasSortOrder = columns.any(
+            (row) => row.read<String>('name') == 'sort_order',
+          );
+          if (!hasSortOrder) {
+            await m.addColumn(notes, notes.sortOrder);
+          }
+        }
       },
     );
+  }
+
+  /// 为老用户补种笔记数据（仅当笔记表为空时）
+  Future<void> _seedNotesIfEmpty() async {
+    final existingNotes = await select(notes).get();
+    if (existingNotes.isNotEmpty) return; // 已有笔记，不补种
+
+    final now = DateTime.now();
+    await batch((batch) {
+      batch.insertAll(notes, [
+        NotesCompanion.insert(
+          id: 'seed-note-roadmap-001',
+          title: '产品路线图 2024',
+          content: const Value('## Q1 目标\n- 完成核心功能开发\n- 用户测试\n\n## Q2 目标\n- 上线公测版本'),
+          tags: Value(jsonEncode(['工作'])),
+          createdAt: now.subtract(const Duration(days: 5)),
+          updatedAt: now.subtract(const Duration(hours: 2)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-design-002',
+          title: '设计灵感',
+          content: const Value('- 简约排版\n- 琥珀色调\n- 圆角设计\n- 柔和阴影'),
+          tags: Value(jsonEncode(['灵感'])),
+          isPinned: const Value(true),
+          createdAt: now.subtract(const Duration(days: 3)),
+          updatedAt: now.subtract(const Duration(days: 1)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-shopping-003',
+          title: '购物清单',
+          content: const Value('- 牛奶\n- 面包\n- 鸡蛋\n- 咖啡豆'),
+          tags: Value(jsonEncode(['生活'])),
+          createdAt: now.subtract(const Duration(days: 1)),
+          updatedAt: now.subtract(const Duration(days: 1)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-flutter-004',
+          title: '读书笔记：深入理解Flutter',
+          content: const Value('## 第一章\nFlutter是Google开发的跨平台框架...\n\n## 关键概念\n- Widget\n- State\n- BuildContext'),
+          tags: Value(jsonEncode(['阅读', '技术'])),
+          createdAt: now.subtract(const Duration(days: 10)),
+          updatedAt: now.subtract(const Duration(days: 2)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-meeting-005',
+          title: '会议记录',
+          content: const Value('参会人员：\n- 张三\n- 李四\n\n讨论内容：\n1. 项目进度\n2. 下周计划'),
+          tags: Value(jsonEncode(['工作', '会议'])),
+          createdAt: now.subtract(const Duration(hours: 5)),
+          updatedAt: now.subtract(const Duration(hours: 5)),
+        ),
+      ]);
+    });
   }
 
   /// 种子数据初始化
@@ -269,6 +339,53 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: now,
             ),
           ]);
+    });
+
+    // 4. 插入默认笔记（固定ID，避免多设备同步重复）
+    await batch((batch) {
+      batch.insertAll(notes, [
+        NotesCompanion.insert(
+          id: 'seed-note-roadmap-001',
+          title: '产品路线图 2024',
+          content: const Value('## Q1 目标\n- 完成核心功能开发\n- 用户测试\n\n## Q2 目标\n- 上线公测版本'),
+          tags: Value(jsonEncode(['工作'])),
+          createdAt: now.subtract(const Duration(days: 5)),
+          updatedAt: now.subtract(const Duration(hours: 2)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-design-002',
+          title: '设计灵感',
+          content: const Value('- 简约排版\n- 琥珀色调\n- 圆角设计\n- 柔和阴影'),
+          tags: Value(jsonEncode(['灵感'])),
+          isPinned: const Value(true),
+          createdAt: now.subtract(const Duration(days: 3)),
+          updatedAt: now.subtract(const Duration(days: 1)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-shopping-003',
+          title: '购物清单',
+          content: const Value('- 牛奶\n- 面包\n- 鸡蛋\n- 咖啡豆'),
+          tags: Value(jsonEncode(['生活'])),
+          createdAt: now.subtract(const Duration(days: 1)),
+          updatedAt: now.subtract(const Duration(days: 1)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-flutter-004',
+          title: '读书笔记：深入理解Flutter',
+          content: const Value('## 第一章\nFlutter是Google开发的跨平台框架...\n\n## 关键概念\n- Widget\n- State\n- BuildContext'),
+          tags: Value(jsonEncode(['阅读', '技术'])),
+          createdAt: now.subtract(const Duration(days: 10)),
+          updatedAt: now.subtract(const Duration(days: 2)),
+        ),
+        NotesCompanion.insert(
+          id: 'seed-note-meeting-005',
+          title: '会议记录',
+          content: const Value('参会人员：\n- 张三\n- 李四\n\n讨论内容：\n1. 项目进度\n2. 下周计划'),
+          tags: Value(jsonEncode(['工作', '会议'])),
+          createdAt: now.subtract(const Duration(hours: 5)),
+          updatedAt: now.subtract(const Duration(hours: 5)),
+        ),
+      ]);
     });
   }
 
@@ -411,7 +528,9 @@ class AppDatabase extends _$AppDatabase {
   // ===== 笔记操作 =====
   Future<List<Note>> getAllNotes() => select(notes).get();
 
-  Stream<List<Note>> watchAllNotes() => select(notes).watch();
+  /// 监听所有笔记（按 sortOrder 升序排列）
+  Stream<List<Note>> watchAllNotes() =>
+      (select(notes)..orderBy([(n) => OrderingTerm.asc(n.sortOrder)])).watch();
 
   Future<int> insertNote(NotesCompanion entry) => into(notes).insert(entry);
 
@@ -422,6 +541,17 @@ class AppDatabase extends _$AppDatabase {
 
   Future<int> deleteNote(String id) =>
       (delete(notes)..where((t) => t.id.equals(id))).go();
+
+  /// 批量更新笔记排序顺序
+  /// [noteIds] 按新顺序排列的笔记ID列表
+  Future<void> updateNotesOrder(List<String> noteIds) async {
+    await transaction(() async {
+      for (int i = 0; i < noteIds.length; i++) {
+        await (update(notes)..where((n) => n.id.equals(noteIds[i])))
+            .write(NotesCompanion(sortOrder: Value(i)));
+      }
+    });
+  }
 
   // ===== 标签操作 =====
   Future<List<Tag>> getAllTags() => select(tags).get();

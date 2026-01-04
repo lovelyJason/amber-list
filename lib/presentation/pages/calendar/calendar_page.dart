@@ -8,6 +8,7 @@ import '../../../core/constants/constants.dart';
 import '../../../core/utils/responsive_helper.dart';
 import '../../../data/models/models.dart';
 import '../../providers/providers.dart';
+import '../../widgets/activation_dialog.dart';
 import '../../widgets/adaptive/bottom_nav_bar.dart';
 import 'widgets/calendar_left_sidebar.dart';
 import 'widgets/calendar_header.dart';
@@ -47,6 +48,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   final GlobalKey _gridKey = GlobalKey();
 
   bool _hasCheckedTour = false;
+  bool _hasShownActivationDialog = false;
 
   @override
   void initState() {
@@ -86,30 +88,284 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   @override
   Widget build(BuildContext context) {
     final allTasks = ref.watch(taskProvider);
-    final tasks = _filterTasks(allTasks);
+    final activationState = ref.watch(activationProvider);
+    final isActivated = activationState.isActivated && !activationState.isExpired;
+
+    // 未激活时使用假数据展示，勾引用户付费
+    final tasks = isActivated ? _filterTasks(allTasks) : _generateDemoTasks();
 
     return ShowCaseWidget(
       builder: (context) {
-        if (!_hasCheckedTour) {
+        // 检测后台校验失败，自动弹出激活弹窗
+        if (activationState.isInitialized &&
+            activationState.backgroundVerifyFailed &&
+            !_hasShownActivationDialog) {
+          _hasShownActivationDialog = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            // 清除标志，避免重复弹窗
+            ref.read(activationProvider.notifier).clearBackgroundVerifyFailed();
+            // 弹出激活弹窗
+            ActivationDialog.show(context);
+          });
+        }
+
+        if (!_hasCheckedTour && isActivated) {
           _hasCheckedTour = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _checkShowcase(context);
           });
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final isMobile =
-                constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+        return Stack(
+          children: [
+            // 日历主体内容
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile =
+                    constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
 
-            if (isMobile) {
-              return _buildMobileLayout(context, tasks);
-            } else {
-              return _buildDesktopLayout(context, tasks);
-            }
-          },
+                if (isMobile) {
+                  return _buildMobileLayout(context, tasks);
+                } else {
+                  return _buildDesktopLayout(context, tasks);
+                }
+              },
+            ),
+
+            // 未激活时覆盖遮罩，禁止操作
+            if (!isActivated)
+              _buildActivationOverlay(context),
+          ],
         );
       },
+    );
+  }
+
+  /// 生成假数据用于展示（勾引用户付费）
+  /// 在日历上展示丰富的任务分布，让用户看到功能价值
+  List<Task> _generateDemoTasks() {
+    final now = DateTime.now();
+    return [
+      // 今天的任务
+      Task(
+        id: 'demo-1',
+        title: '完成项目方案设计',
+        priority: TaskPriority.high,
+        dueDate: now,
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-2',
+        title: '回复客户邮件',
+        priority: TaskPriority.medium,
+        dueDate: now,
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      // 未来几天
+      Task(
+        id: 'demo-3',
+        title: '团队周会',
+        priority: TaskPriority.medium,
+        dueDate: now.add(const Duration(days: 1)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-4',
+        title: '代码审查',
+        priority: TaskPriority.low,
+        dueDate: now.add(const Duration(days: 2)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-5',
+        title: '提交周报',
+        priority: TaskPriority.medium,
+        dueDate: now.add(const Duration(days: 3)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-6',
+        title: '产品需求评审',
+        priority: TaskPriority.high,
+        dueDate: now.add(const Duration(days: 5)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-7',
+        title: '技术分享会',
+        priority: TaskPriority.low,
+        dueDate: now.add(const Duration(days: 7)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-8',
+        title: '版本发布',
+        priority: TaskPriority.high,
+        dueDate: now.add(const Duration(days: 10)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-9',
+        title: '季度总结',
+        priority: TaskPriority.medium,
+        dueDate: now.add(const Duration(days: 14)),
+        isCompleted: false,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      // 过去几天（已完成）
+      Task(
+        id: 'demo-10',
+        title: '客户需求沟通',
+        priority: TaskPriority.high,
+        dueDate: now.subtract(const Duration(days: 1)),
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-11',
+        title: '文档整理',
+        priority: TaskPriority.low,
+        dueDate: now.subtract(const Duration(days: 2)),
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-12',
+        title: '系统优化',
+        priority: TaskPriority.medium,
+        dueDate: now.subtract(const Duration(days: 3)),
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-13',
+        title: 'Bug修复',
+        priority: TaskPriority.high,
+        dueDate: now.subtract(const Duration(days: 5)),
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      Task(
+        id: 'demo-14',
+        title: '需求分析',
+        priority: TaskPriority.medium,
+        dueDate: now.subtract(const Duration(days: 7)),
+        isCompleted: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ];
+  }
+
+  /// 构建激活遮罩层
+  /// 设计理念：极其轻微的遮罩，让用户几乎感觉不到有遮罩存在
+  /// 点击遮罩层本身不弹窗（但会拦截点击阻止操作日历），只有点击中间的激活按钮才触发
+  Widget _buildActivationOverlay(BuildContext context) {
+    return Positioned.fill(
+      child: GestureDetector(
+        // 拦截点击但不做任何操作（阻止用户操作下层日历）
+        onTap: () {},
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          // 几乎透明的白色遮罩，只是非常轻微地降低对比度，看起来像没有遮罩
+          color: Colors.white.withValues(alpha: 0.03),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AmberDimens.spacingXl,
+                vertical: AmberDimens.spacingLg,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 锁图标
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AmberColors.primaryLight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline,
+                      color: AmberColors.primary,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: AmberDimens.spacingMd),
+                  // 标题
+                  const Text(
+                    '日历功能需要激活',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AmberColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: AmberDimens.spacingSm),
+                  // 描述
+                  const Text(
+                    '激活后即可使用完整的日历视图功能',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AmberColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: AmberDimens.spacingLg),
+                  // 激活按钮
+                  ElevatedButton.icon(
+                    onPressed: () => ActivationDialog.show(context),
+                    icon: const Icon(Icons.key, size: 18),
+                    label: const Text('立即激活'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AmberColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AmberDimens.spacingXl,
+                        vertical: AmberDimens.spacingMd,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

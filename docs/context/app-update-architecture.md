@@ -186,11 +186,17 @@ checkForUpdates()
 
 ### 修改 API 地址
 
-编辑 `lib/data/services/update/app_update_service.dart`：
+编辑 `.env` 文件（从 `.env.example` 复制）：
 
-```dart
-static const String _updateCheckUrl =
-    'https://your-server.com/api/app-update.json';
+```bash
+# 应用更新检查 API 地址
+APP_UPDATE_URL=https://your-server.com/api/app-update.json
+```
+
+修改后需要重新生成代码：
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
 ```
 
 ### 部署建议

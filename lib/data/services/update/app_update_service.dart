@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../env/env.dart';
 import '../../models/app_update_info.dart';
 
 /// ============================================================
@@ -20,11 +21,9 @@ class AppUpdateService {
   factory AppUpdateService() => _instance;
   AppUpdateService._internal();
 
-  /// 更新检查 API 地址
-  /// TODO: 替换为实际的服务端 API 地址
-  /// 可以是你自己的服务器、GitHub Releases API、或其他托管服务
-  static const String _updateCheckUrl =
-      'https://raw.githubusercontent.com/YOUR_USERNAME/amber-list/main/update.json';
+  /// 更新检查 API 地址（从 .env 环境变量读取）
+  /// 可以是 GitHub Raw、CDN、自建服务器等
+  static String get _updateCheckUrl => Env.appUpdateUrl;
 
   /// HTTP 请求超时时间
   static const Duration _requestTimeout = Duration(seconds: 10);
@@ -51,7 +50,14 @@ class AppUpdateService {
       debugPrint('[AppUpdateService] 当前版本: $currentVersion ($currentBuildNumber)');
 
       // 发起 HTTP 请求获取更新信息
-      final url = customUrl ?? _updateCheckUrl;
+      // 添加时间戳参数绕过 CDN 缓存，确保每次都获取最新内容
+      final baseUrl = customUrl ?? _updateCheckUrl;
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final separator = baseUrl.contains('?') ? '&' : '?';
+      final url = '$baseUrl${separator}_t=$timestamp';
+
+      debugPrint('[AppUpdateService] 请求 URL: $url');
+
       final response = await http
           .get(Uri.parse(url))
           .timeout(_requestTimeout);
