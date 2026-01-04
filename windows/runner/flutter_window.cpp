@@ -27,7 +27,7 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
 
-  // 注册原生便签窗口管理器的 Platform Channel
+  // Register native sticky note manager's Platform Channel
   StickyNoteManager::GetInstance().Setup(flutter_controller_->engine());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
