@@ -136,7 +136,16 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(pomodoroQueue);
         }
         if (from < 6) {
-          await m.addColumn(tasks, tasks.isInProgress);
+          // 安全迁移：先检查列是否已存在，避免重复添加报错
+          final columns = await customSelect(
+            "PRAGMA table_info(tasks)",
+          ).get();
+          final hasIsInProgress = columns.any(
+            (row) => row.read<String>('name') == 'is_in_progress',
+          );
+          if (!hasIsInProgress) {
+            await m.addColumn(tasks, tasks.isInProgress);
+          }
         }
       },
     );
