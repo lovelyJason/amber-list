@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -89,6 +91,14 @@ class AboutTab extends ConsumerWidget {
                 // TODO: 打开更新日志
               },
             ),
+            // 仅桌面端显示日志功能（移动端不写日志文件）
+            if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
+              SettingsTile(
+                icon: Icons.article_outlined,
+                title: '应用日志',
+                subtitle: '查看运行日志，排查问题',
+                onTap: () => _showLogOptionsDialog(context),
+              ),
           ],
         ),
         const SizedBox(height: AmberDimens.spacingLg),
@@ -260,6 +270,226 @@ class AboutTab extends ConsumerWidget {
     );
   }
 
+  /// 获取日志目录路径
+  String _getLogDirectory() {
+    String home = '';
+    if (Platform.isMacOS) {
+      home = Platform.environment['HOME'] ?? '';
+    } else if (Platform.isWindows) {
+      home = Platform.environment['USERPROFILE'] ?? '';
+    } else if (Platform.isLinux) {
+      home = Platform.environment['HOME'] ?? '';
+    }
+    return '$home/amber-list/logs';
+  }
+
+  /// 显示日志选项弹窗
+  void _showLogOptionsDialog(BuildContext context) {
+    final logDir = _getLogDirectory();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+        ),
+        child: Container(
+          width: 360,
+          padding: const EdgeInsets.all(AmberDimens.spacingLg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题
+              const Row(
+                children: [
+                  Icon(
+                    Icons.article_outlined,
+                    color: AmberColors.primary,
+                    size: 24,
+                  ),
+                  SizedBox(width: AmberDimens.spacingSm),
+                  Text(
+                    '应用日志',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AmberDimens.spacingSm),
+
+              // 日志路径
+              Container(
+                padding: const EdgeInsets.all(AmberDimens.spacingSm),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusSm),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.folder_outlined,
+                      size: 16,
+                      color: AmberColors.textSecondary,
+                    ),
+                    const SizedBox(width: AmberDimens.spacingXs),
+                    Expanded(
+                      child: Text(
+                        logDir,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AmberColors.textSecondary,
+                          fontFamily: 'monospace',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: AmberDimens.spacingMd),
+
+              // 选项列表
+              _LogOptionTile(
+                icon: Platform.isMacOS ? Icons.folder_open : Icons.folder_open,
+                title: Platform.isMacOS ? '在 Finder 中打开' : '在资源管理器中打开',
+                subtitle: '打开日志文件夹',
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _openInFileManager(context, logDir);
+                },
+              ),
+              _LogOptionTile(
+                icon: Icons.code,
+                title: '用 VS Code 打开',
+                subtitle: '需要已安装 VS Code',
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _openInVSCode(context, logDir);
+                },
+              ),
+              _LogOptionTile(
+                icon: Icons.edit_note,
+                title: '用系统编辑器打开',
+                subtitle: Platform.isMacOS ? '使用 TextEdit 打开' : '使用记事本打开',
+                onTap: () {
+                  Navigator.pop(dialogContext);
+                  _openInSystemEditor(context, logDir);
+                },
+              ),
+
+              const SizedBox(height: AmberDimens.spacingMd),
+
+              // 关闭按钮
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 在文件管理器中打开日志目录
+  Future<void> _openInFileManager(BuildContext context, String logDir) async {
+    try {
+      // 确保目录存在
+      final dir = Directory(logDir);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+
+      if (Platform.isMacOS) {
+        await Process.run('open', [logDir]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer', [logDir.replaceAll('/', '\\')]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [logDir]);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastManager().show(context, '打开失败: $e', type: ToastType.error);
+      }
+    }
+  }
+
+  /// 用 VS Code 打开日志目录
+  Future<void> _openInVSCode(BuildContext context, String logDir) async {
+    try {
+      // 确保目录存在
+      final dir = Directory(logDir);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+
+      final result = await Process.run('code', [logDir], runInShell: true);
+
+      if (result.exitCode != 0 && context.mounted) {
+        ToastManager().show(
+          context,
+          '打开失败，请确认已安装 VS Code 并添加到 PATH',
+          type: ToastType.warning,
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastManager().show(
+          context,
+          '打开失败，请确认已安装 VS Code',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  /// 用系统默认文本编辑器打开日志文件
+  Future<void> _openInSystemEditor(BuildContext context, String logDir) async {
+    try {
+      // 确保目录存在
+      final dir = Directory(logDir);
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+
+      // 优先打开 warning.log，如果没有则打开 error.log
+      final warningLog = File('$logDir/warning.log');
+      final errorLog = File('$logDir/error.log');
+
+      String? targetFile;
+      if (await warningLog.exists()) {
+        targetFile = warningLog.path;
+      } else if (await errorLog.exists()) {
+        targetFile = errorLog.path;
+      } else {
+        // 没有日志文件，创建一个空的 warning.log
+        await warningLog.create();
+        targetFile = warningLog.path;
+      }
+
+      if (Platform.isMacOS) {
+        // macOS 使用 open -e 打开 TextEdit
+        await Process.run('open', ['-e', targetFile]);
+      } else if (Platform.isWindows) {
+        // Windows 使用 notepad
+        await Process.run('notepad', [targetFile.replaceAll('/', '\\')]);
+      } else if (Platform.isLinux) {
+        // Linux 使用 xdg-open
+        await Process.run('xdg-open', [targetFile]);
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ToastManager().show(context, '打开失败: $e', type: ToastType.error);
+      }
+    }
+  }
+
   /// 显示捐赠弹窗
   void _showDonationDialog(BuildContext context) {
     showDialog(
@@ -356,6 +586,80 @@ class AboutTab extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 日志选项按钮组件
+class _LogOptionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _LogOptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AmberDimens.spacingSm,
+          vertical: AmberDimens.spacingMd,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AmberColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AmberDimens.radiusSm),
+              ),
+              child: Icon(
+                icon,
+                color: AmberColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: AmberDimens.spacingMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AmberColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              color: AmberColors.textDisabled,
+              size: 20,
+            ),
+          ],
         ),
       ),
     );

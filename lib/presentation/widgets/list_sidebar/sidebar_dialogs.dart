@@ -26,21 +26,43 @@ class SidebarDialogs {
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(isFolder ? '新建文件夹' : '新建清单'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: isFolder ? '文件夹名称' : '清单名称',
-                  labelText: '名称',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) {
+          // 创建清单/文件夹的逻辑，提取为函数供按钮和回车调用
+          void doCreate() {
+            if (controller.text.trim().isNotEmpty) {
+              if (isFolder) {
+                ref.read(taskListProvider.notifier).createFolder(
+                      controller.text.trim(),
+                      parentId: selectedParentId,
+                    );
+              } else {
+                ref.read(taskListProvider.notifier).addList(
+                      controller.text.trim(),
+                      selectedColor,
+                      parentId: selectedParentId,
+                    );
+              }
+              Navigator.pop(dialogContext);
+            }
+          }
+
+          return AlertDialog(
+            title: Text(isFolder ? '新建文件夹' : '新建清单'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: isFolder ? '文件夹名称' : '清单名称',
+                    labelText: '名称',
+                  ),
+                  // 回车触发创建
+                  onSubmitted: (_) => doCreate(),
                 ),
-              ),
               const SizedBox(height: AmberDimens.spacingMd),
 
               // 父级与位置选择 (Dropdown)
@@ -121,33 +143,18 @@ class SidebarDialogs {
               ],
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty) {
-                  if (isFolder) {
-                    ref.read(taskListProvider.notifier).createFolder(
-                          controller.text.trim(),
-                          parentId: selectedParentId,
-                        );
-                  } else {
-                    ref.read(taskListProvider.notifier).addList(
-                          controller.text.trim(),
-                          selectedColor,
-                          parentId: selectedParentId,
-                        );
-                  }
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('创建'),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: doCreate,
+                child: const Text('创建'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -219,27 +226,81 @@ class SidebarDialogs {
   }
 
   /// 显示删除清单确认对话框
-  static void showDeleteConfirm(
+  /// 会先查询清单下的任务数和番茄记录数，在对话框中显示将被删除的内容
+  static Future<void> showDeleteConfirm(
     BuildContext context,
     WidgetRef ref,
     TaskList list,
-  ) {
+  ) async {
+    // 先获取清单关联数据统计
+    final database = ref.read(databaseProvider);
+    final stats = await database.getTaskListStats(list.id);
+    final taskCount = stats['taskCount'] ?? 0;
+    final pomodoroCount = stats['pomodoroCount'] ?? 0;
+
+    // 构建提示文本
+    String contentText = '清单将被永久删除。此操作无法撤销。';
+    if (taskCount > 0 || pomodoroCount > 0) {
+      final parts = <String>[];
+      if (taskCount > 0) {
+        parts.add('$taskCount 个任务');
+      }
+      if (pomodoroCount > 0) {
+        parts.add('$pomodoroCount 条番茄记录');
+      }
+      contentText = '该清单下有 ${parts.join('、')}，将一并删除。\n\n此操作无法撤销。';
+    }
+
+    if (!context.mounted) return;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('删除清单?'),
-        content: const Text('清单及其中的任务将被永久删除。此操作无法撤销。'),
+        content: Text(contentText),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () {
-              ref.read(soundServiceProvider).playDelete();
-              ref.read(taskListProvider.notifier).deleteList(list.id);
-              Navigator.pop(context);
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                ref.read(soundServiceProvider).playDelete();
+                await ref.read(taskListProvider.notifier).deleteList(list.id);
+
+                // 删除成功后，如果当前正在查看被删除的清单，跳转到收集箱
+                final navState = ref.read(appNavProvider);
+                if (navState.currentView == NavView.list &&
+                    navState.selectedListId == list.id) {
+                  ref.read(appNavProvider.notifier).setView(NavView.inbox);
+                }
+
+                // 删除成功提示
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('已删除清单 "${list.name}"'),
+                      behavior: SnackBarBehavior.floating,
+                      width: 300,
+                    ),
+                  );
+                }
+              } catch (e) {
+                // 删除失败提示
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('删除失败: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      width: 400,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('删除'),
           ),

@@ -292,6 +292,49 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteTaskList(String id) =>
       (delete(taskLists)..where((t) => t.id.equals(id))).go();
 
+  /// 获取清单关联数据统计（用于删除前提示）
+  /// 返回 {taskCount: 任务数, pomodoroCount: 番茄记录数}
+  Future<Map<String, int>> getTaskListStats(String listId) async {
+    // 获取该清单下的任务
+    final listTasks = await (select(tasks)..where((t) => t.listId.equals(listId))).get();
+    final taskCount = listTasks.length;
+
+    // 统计番茄记录数
+    int pomodoroCount = 0;
+    for (final task in listTasks) {
+      final queueCount = await (selectOnly(pomodoroQueue)
+            ..addColumns([pomodoroQueue.id.count()])
+            ..where(pomodoroQueue.taskId.equals(task.id)))
+          .map((row) => row.read(pomodoroQueue.id.count()) ?? 0)
+          .getSingle();
+      final sessionCount = await (selectOnly(pomodoroSessions)
+            ..addColumns([pomodoroSessions.id.count()])
+            ..where(pomodoroSessions.taskId.equals(task.id)))
+          .map((row) => row.read(pomodoroSessions.id.count()) ?? 0)
+          .getSingle();
+      pomodoroCount += queueCount + sessionCount;
+    }
+
+    return {'taskCount': taskCount, 'pomodoroCount': pomodoroCount};
+  }
+
+  /// 删除清单及其所有关联任务
+  /// 先删除所有属于该清单的任务，再删除清单本身，避免外键约束错误
+  Future<void> deleteTaskListWithTasks(String listId) async {
+    // 1. 先删除该清单下所有任务关联的番茄记录
+    final listTasks = await (select(tasks)..where((t) => t.listId.equals(listId))).get();
+    for (final task in listTasks) {
+      await (delete(pomodoroQueue)..where((q) => q.taskId.equals(task.id))).go();
+      await (delete(pomodoroSessions)..where((s) => s.taskId.equals(task.id))).go();
+    }
+
+    // 2. 删除该清单下的所有任务
+    await (delete(tasks)..where((t) => t.listId.equals(listId))).go();
+
+    // 3. 最后删除清单本身
+    await (delete(taskLists)..where((t) => t.id.equals(listId))).go();
+  }
+
   // ===== 任务操作 =====
   Future<List<Task>> getAllTasks() => select(tasks).get();
 
