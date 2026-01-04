@@ -48,7 +48,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
-  // 清理便签窗口
+  // Cleanup sticky note windows
   StickyNoteManager::GetInstance().CloseAllWindows();
 
   ::CoUninitialize();

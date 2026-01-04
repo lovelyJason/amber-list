@@ -38,6 +38,7 @@ class Task {
   final DateTime? dueDate;
   final TaskPriority priority;
   final bool isCompleted;
+  final bool isInProgress; // 是否处于"进行中"状态（半完成）
   final bool isDeleted; // 是否已删除（移入垃圾桶）
   final DateTime? completedAt;
   final List<String> tags;
@@ -54,6 +55,7 @@ class Task {
     this.dueDate,
     this.priority = TaskPriority.none,
     this.isCompleted = false,
+    this.isInProgress = false,
     this.isDeleted = false,
     this.completedAt,
     this.tags = const [],
@@ -71,6 +73,7 @@ class Task {
     DateTime? dueDate,
     TaskPriority? priority,
     bool? isCompleted,
+    bool? isInProgress,
     bool? isDeleted,
     DateTime? completedAt,
     List<String>? tags,
@@ -87,6 +90,7 @@ class Task {
       dueDate: dueDate ?? this.dueDate,
       priority: priority ?? this.priority,
       isCompleted: isCompleted ?? this.isCompleted,
+      isInProgress: isInProgress ?? this.isInProgress,
       isDeleted: isDeleted ?? this.isDeleted,
       completedAt: completedAt ?? this.completedAt,
       tags: tags ?? this.tags,
@@ -110,6 +114,7 @@ class Task {
         dueDate: dueDate,
         priority: priority,
         isCompleted: false,
+        isInProgress: false, // 取消完成时也清除进行中状态
         isDeleted: isDeleted,
         completedAt: null,
         tags: tags,
@@ -119,9 +124,24 @@ class Task {
         updatedAt: now,
       );
     } else {
-      // Complete
+      // Complete: 完成时也清除进行中状态
       return copyWith(
-        isCompleted: true, completedAt: now, updatedAt: now);
+        isCompleted: true,
+        isInProgress: false,
+        completedAt: now,
+        updatedAt: now,
+      );
     }
+  }
+
+  /// 切换进行中（半完成）状态
+  /// 如果任务已完成，不能设置为进行中
+  Task toggleInProgress() {
+    if (isCompleted) return this; // 已完成的任务不能设为进行中
+    final now = DateTime.now();
+    return copyWith(
+      isInProgress: !isInProgress,
+      updatedAt: now,
+    );
   }
 }

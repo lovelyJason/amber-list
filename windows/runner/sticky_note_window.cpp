@@ -2,6 +2,20 @@
 #include <windowsx.h>
 #include <uxtheme.h>
 #include <algorithm>
+#include <sstream>
+
+// Debug logging helper
+static void DebugLog(const char* message) {
+    OutputDebugStringA(message);
+    OutputDebugStringA("\n");
+}
+
+static void DebugLogError(const char* prefix, DWORD error) {
+    char buffer[256];
+    snprintf(buffer, sizeof(buffer), "%s error: %lu", prefix, error);
+    OutputDebugStringA(buffer);
+    OutputDebugStringA("\n");
+}
 
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "comctl32.lib")
@@ -63,15 +77,27 @@ bool StickyNoteWindow::RegisterWindowClass() {
     wcex.lpszClassName = kWindowClassName;
 
     if (!RegisterClassExW(&wcex)) {
+        DWORD error = GetLastError();
+        // ERROR_CLASS_ALREADY_EXISTS (1410) is normal, means class already registered
+        if (error == ERROR_CLASS_ALREADY_EXISTS) {
+            DebugLog("[StickyNoteWindow] Window class already registered");
+            class_registered_ = true;
+            return true;
+        }
+        DebugLogError("[StickyNoteWindow] RegisterClassExW failed,", error);
         return false;
     }
 
+    DebugLog("[StickyNoteWindow] Window class registered successfully");
     class_registered_ = true;
     return true;
 }
 
 bool StickyNoteWindow::Create() {
+    DebugLog("[StickyNoteWindow] Create() called");
+
     if (!RegisterWindowClass()) {
+        DebugLog("[StickyNoteWindow] Failed to register window class");
         return false;
     }
 
@@ -81,6 +107,17 @@ bool StickyNoteWindow::Create() {
     int x = (screenWidth - kWindowWidth) / 2;
     int y = (screenHeight - kWindowHeight) / 2;
 
+    char posBuffer[128];
+    snprintf(posBuffer, sizeof(posBuffer),
+        "[StickyNoteWindow] Creating window at (%d, %d) size %dx%d, screen=%dx%d",
+        x, y, kWindowWidth, kWindowHeight, screenWidth, screenHeight);
+    DebugLog(posBuffer);
+
+    HINSTANCE hInstance = GetModuleHandle(nullptr);
+    char hInstBuffer[64];
+    snprintf(hInstBuffer, sizeof(hInstBuffer), "[StickyNoteWindow] hInstance: %p", hInstance);
+    DebugLog(hInstBuffer);
+
     // Create window
     window_handle_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | (is_pinned_ ? WS_EX_TOPMOST : 0),
@@ -89,13 +126,17 @@ bool StickyNoteWindow::Create() {
         WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX,  // No maximize
         x, y, kWindowWidth, kWindowHeight,
         nullptr, nullptr,
-        GetModuleHandle(nullptr),
+        hInstance,
         this  // Pass this pointer
     );
 
     if (!window_handle_) {
+        DWORD error = GetLastError();
+        DebugLogError("[StickyNoteWindow] CreateWindowExW failed,", error);
         return false;
     }
+
+    DebugLog("[StickyNoteWindow] Window created successfully");
 
     // Create controls
     CreateControls();
@@ -182,19 +223,25 @@ LRESULT CALLBACK StickyNoteWindow::WindowProc(HWND hwnd, UINT message,
     if (message == WM_NCCREATE) {
         auto createStruct = reinterpret_cast<CREATESTRUCT*>(lparam);
         self = static_cast<StickyNoteWindow*>(createStruct->lpCreateParams);
-        SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-    } else {
-        self = reinterpret_cast<StickyNoteWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+        if (self) {
+            // Store hwnd early so HandleMessage can use it
+            self->window_handle_ = hwnd;
+            SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        // WM_NCCREATE must return TRUE to continue window creation
+        return DefWindowProcW(hwnd, message, wparam, lparam);
     }
 
+    self = reinterpret_cast<StickyNoteWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+
     if (self) {
-        return self->HandleMessage(message, wparam, lparam);
+        return self->HandleMessage(hwnd, message, wparam, lparam);
     }
 
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
-LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
+LRESULT StickyNoteWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
         case WM_CREATE:
             return 0;
@@ -258,7 +305,7 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
         case WM_NCHITTEST: {
             // Allow dragging window (header area)
             POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
-            ScreenToClient(window_handle_, &pt);
+            ScreenToClient(hwnd, &pt);
             if (pt.y < kHeaderHeight && pt.x < (kWindowWidth - kButtonSize * 3 - kPadding)) {
                 return HTCAPTION;
             }
@@ -266,7 +313,7 @@ LRESULT StickyNoteWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpar
         }
     }
 
-    return DefWindowProcW(window_handle_, message, wparam, lparam);
+    return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
 void StickyNoteWindow::CreateControls() {

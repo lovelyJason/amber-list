@@ -67,7 +67,7 @@ public:
 
 protected:
     // Window message handler
-    LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
+    LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 
 private:
     // Window procedure (static)

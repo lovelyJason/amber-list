@@ -1,9 +1,10 @@
 name: Build Windows App
 
-# 触发条件：推送到 main 分支，或者手动触发
+# 触发条件：打标签时触发，或者手动触发
 on:
   push:
-    branches: [ "main" ]
+    tags:
+      - 'v*'  # 匹配 v1.0.0, v1.0.3 等格式的标签
   workflow_dispatch:
 
 jobs:
@@ -19,15 +20,30 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # 2. 获取依赖
+      # 2. 从 pubspec.yaml 提取版本号
+      - name: Extract Version
+        id: version
+        run: |
+          $content = Get-Content pubspec.yaml -Raw
+          if ($content -match 'version:\s*(\d+\.\d+\.\d+)') {
+            $version = $matches[1]
+            echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+            echo "Extracted version: $version"
+          } else {
+            echo "VERSION=unknown" >> $env:GITHUB_OUTPUT
+            echo "Failed to extract version"
+          }
+        shell: pwsh
+
+      # 3. 获取依赖
       - name: Install Dependencies
         run: flutter pub get
 
-      # 3. 构建 Windows Release 版本
+      # 4. 构建 Windows Release 版本
       - name: Build Windows Release
         run: flutter build windows --release
 
-      # 4. 使用 Inno Setup 打包安装程序
+      # 5. 使用 Inno Setup 打包安装程序
       - name: Build Installer with Inno Setup
         run: |
           # 创建输出目录
@@ -36,16 +52,16 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/windows_setup.iss
         shell: pwsh
 
-      # 5. 上传安装包
+      # 6. 上传安装包（带版本号）
       - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
-          name: amber-list-installer
+          name: amber-list-installer-v${{ steps.version.outputs.VERSION }}
           path: build/installer/*.exe
 
-      # 6. 上传原始构建产物（便于调试）
+      # 7. 上传原始构建产物（带版本号，便于调试）
       - name: Upload Raw Build
         uses: actions/upload-artifact@v4
         with:
-          name: amber-list-windows-raw
+          name: amber-list-windows-raw-v${{ steps.version.outputs.VERSION }}
           path: build/windows/x64/runner/Release/

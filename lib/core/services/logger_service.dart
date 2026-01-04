@@ -249,6 +249,20 @@ class AppLogger {
     }
   }
 
+  // ==================== 工具方法 ====================
+
+  /// 格式化本地时间为中国友好格式
+  /// 输出格式：yyyy-MM-dd HH:mm:ss
+  String _formatLocalTime(DateTime dateTime) {
+    final year = dateTime.year.toString();
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final second = dateTime.second.toString().padLeft(2, '0');
+    return '$year-$month-$day $hour:$minute:$second';
+  }
+
   // ==================== 文件操作 ====================
 
   /// 获取日志目录路径
@@ -297,9 +311,10 @@ class AppLogger {
 
   /// 写入日志到文件
   Future<void> _writeToFile(_LogEntry entry) async {
-    // 格式化日志行：ISO时间|级别|Tag|消息|错误|堆栈
+    // 格式化日志行：本地时间|级别|Tag|消息|错误|堆栈
+    // 时间格式：yyyy-MM-dd HH:mm:ss（中国友好格式）
     final buffer = StringBuffer();
-    buffer.write(entry.timestamp.toIso8601String());
+    buffer.write(_formatLocalTime(entry.timestamp));
     buffer.write('|');
     buffer.write(entry.level.name.toUpperCase());
     buffer.write('|');

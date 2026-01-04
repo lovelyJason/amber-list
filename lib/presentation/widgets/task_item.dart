@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import 'adaptive/detail_bottom_sheet.dart';
@@ -37,20 +38,473 @@ class TaskItem extends ConsumerWidget {
     final navState = ref.watch(appNavProvider);
     final isSelected = navState.selectedTaskId == task.id;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: AmberDimens.spacingMd,
-        vertical: 4, // 减小垂直间距，更紧凑
+    // 移动端：使用 Slidable 包裹，支持左滑操作
+    // 桌面端：直接返回卡片
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    if (isMobile) {
+      // 移动端特殊的布局结构：
+      // Margin (Padding) -> Container (Shadow/Border/Radius) -> ClipRRect -> Slidable -> Card (White Bg, Rectangular)
+      // 这样做的目的是：
+      // 1. Shadow/Border/Radius 由外层 Container 统一绘制，形成"卡片"容器。
+      // 2. ClipRRect 确保内部的内容（包括侧滑出来的按钮）都遵循这个圆角。
+      // 3. 内部的 TaskCard 设为直角且无边框，这样滑动时，WhiteCard 和 ActionButton 的边缘是平齐的竖线，
+      //    消除了"左边圆角右边方角"的视觉割裂感，实现类似微信的"卡片内滑动"效果。
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AmberDimens.spacingMd,
+          vertical: 4,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.transparent, // 容器本身透明，背景色由子元素决定
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? AmberColors.primary : const Color(0xFFEEEEEE),
+              width: 1,
+            ),
+            boxShadow: [
+              if (!task.isCompleted)
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  offset: const Offset(0, 2),
+                  blurRadius: 4,
+                ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Slidable(
+              key: ValueKey(task.id),
+              // 右侧滑出的操作按钮（左滑触发）
+              // 使用 DrawerMotion：按钮从右侧抽屉式滑出，覆盖在内容上方
+              // 内容完全不动，按钮盖住文字
+              endActionPane: ActionPane(
+                motion: const DrawerMotion(),
+                extentRatio: 0.4,
+                children: _buildSlideActions(context, ref),
+              ),
+              // 这里的卡片不需要 margin (由外层 Padding 控制)
+              // 不需要 shadow/border/radius (由外层 Container 控制)
+              // 这样它就是一个纯白色的矩形块，滑动时边缘平整
+              // 使用 Builder 确保能正确获取 Slidable.of(context)
+              child: Builder(
+                builder: (slidableContext) {
+                  return _buildMobileTaskCard(
+                    slidableContext,
+                    ref,
+                    isSelected,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 桌面端直接构建带 Margin 的卡片
+    return _buildTaskCard(context, ref, isSelected);
+  }
+
+  /// 构建滑动操作按钮列表
+  /// 根据任务状态（普通/已完成/已删除）返回不同的操作按钮
+  /// 仿微信风格：无圆角、方正贴边、高饱和度颜色、纯文字无图标
+  List<Widget> _buildSlideActions(BuildContext context, WidgetRef ref) {
+    // 微信风格颜色定义
+    const wechatGreen = Color(0xFF07C160); // 微信绿
+    const wechatOrange = Color(0xFFFA9D3B); // 微信橙
+    const wechatRed = Color(0xFFFA5151); // 微信红
+
+    // 构建纯文字按钮（使用 CustomSlidableAction，文字水平垂直居中）
+    Widget buildActionButton({
+      required String label,
+      required Color backgroundColor,
+      required VoidCallback onTap,
+    }) {
+      return CustomSlidableAction(
+        onPressed: (_) => onTap(),
+        backgroundColor: backgroundColor,
+        foregroundColor: Colors.white,
+        padding: EdgeInsets.zero,
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 垃圾桶中的任务：还原 + 彻底删除
+    if (task.isDeleted) {
+      return [
+        buildActionButton(
+          label: '还原',
+          backgroundColor: wechatOrange,
+          onTap: () {
+            ref.read(taskProvider.notifier).restoreTask(task.id);
+          },
+        ),
+        buildActionButton(
+          label: '删除',
+          backgroundColor: wechatRed,
+          onTap: () {
+            _handlePermanentDelete(context, ref);
+          },
+        ),
+      ];
+    }
+
+    // 已完成的任务：取消完成 + 删除
+    if (task.isCompleted) {
+      return [
+        buildActionButton(
+          label: '取消完成',
+          backgroundColor: wechatOrange,
+          onTap: () {
+            ref.read(soundServiceProvider).playAdd();
+            ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
+          },
+        ),
+        buildActionButton(
+          label: '删除',
+          backgroundColor: wechatRed,
+          onTap: () {
+            _handleDelete(context, ref);
+          },
+        ),
+      ];
+    }
+
+    // 普通任务：完成 + 删除
+    return [
+      buildActionButton(
+        label: '完成',
+        backgroundColor: wechatGreen,
+        onTap: () {
+          ref.read(soundServiceProvider).playCompletion();
+          ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
+        },
       ),
+      buildActionButton(
+        label: '删除',
+        backgroundColor: wechatRed,
+        onTap: () {
+          _handleDelete(context, ref);
+        },
+      ),
+    ];
+  }
+
+  /// 处理普通删除（移入垃圾桶）
+  /// 如果任务有番茄记录会弹出确认框
+  Future<void> _handleDelete(BuildContext context, WidgetRef ref) async {
+    final success = await ref.read(taskProvider.notifier).deleteTask(task.id);
+    if (success) {
+      ref.read(soundServiceProvider).playDelete();
+    } else {
+      // 有番茄记录冲突，弹窗提示
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('无法删除'),
+            content: const Text(
+              '该任务有关联的番茄时钟记录。\n\n'
+              '请先前往番茄时钟页面删除相关记录，或选择"强制删除"移入垃圾桶。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  ref.read(taskProvider.notifier).forceDeleteTask(task.id);
+                  ref.read(soundServiceProvider).playDelete();
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                child: const Text(
+                  '强制删除',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  /// 处理彻底删除（从垃圾桶永久删除）
+  /// 如果任务有番茄记录会弹出确认框
+  Future<void> _handlePermanentDelete(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    // 先检查是否有关联的番茄记录
+    final hasPomodoroRecords = await ref
+        .read(taskProvider.notifier)
+        .hasTaskPomodoroRecords(task.id);
+
+    if (!context.mounted) return;
+
+    if (hasPomodoroRecords) {
+      // 有番茄记录，需要特殊提示
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('无法删除'),
+          content: const Text(
+            '该任务有关联的番茄时钟记录。\n\n'
+            '请先前往番茄时钟页面删除相关记录，或选择"强制删除"同时删除任务和番茄记录。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                ref
+                    .read(taskProvider.notifier)
+                    .forceDeleteTaskWithPomodoros(task.id);
+                Navigator.pop(context);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('强制删除', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 无关联记录，直接删除（不弹确认框，保持一致性）
+      ref.read(taskProvider.notifier).permanentlyDeleteTask(task.id);
+    }
+  }
+
+  /// 移动端专用：构建任务卡片
+  /// 微信风格：勾选框随滑动移出屏幕，文字保持原位被按钮遮盖
+  Widget _buildMobileTaskCard(
+    BuildContext context,
+    WidgetRef ref,
+    bool isSelected,
+  ) {
+    final navState = ref.watch(appNavProvider);
+    // 勾选框宽度 + 右边距
+    const checkboxWidth = 24.0;
+    const checkboxMargin = AmberDimens.spacingMd; // 16.0
+    const checkboxTotalWidth = checkboxWidth + checkboxMargin;
+
+    // 获取 Slidable 的动画控制器（context 必须是 Slidable 子树中的）
+    final slidableController = Slidable.of(context);
+
+    return Container(
+      color: Colors.white,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap ?? () {
+            // 检查是否在 Slidable 内部且处于打开状态
+            if (slidableController != null) {
+              if (slidableController.actionPaneType.value != ActionPaneType.none) {
+                slidableController.close();
+                return;
+              }
+            }
+            // 移动端：显示 BottomSheet 详情面板
+            DetailBottomSheet.show(context, task);
+          },
+          onLongPress: () {
+            final RenderBox box = context.findRenderObject() as RenderBox;
+            final Offset position = box.localToGlobal(Offset.zero);
+            _showContextMenu(context, ref, Offset(
+              position.dx + box.size.width / 2,
+              position.dy + box.size.height / 2,
+            ));
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AmberDimens.spacingMd,
+              vertical: 12,
+            ),
+            // 监听滑动动画，让勾选框跟着移动
+            child: AnimatedBuilder(
+              animation: slidableController?.animation ?? const AlwaysStoppedAnimation(0),
+              builder: (context, child) {
+                // ratio: 0 = 关闭, 1 = 完全打开
+                // extentRatio = 0.4，所以最大滑动距离 = 卡片宽度 * 0.4
+                final ratio = slidableController?.animation.value ?? 0.0;
+                // 勾选框向左移动的距离：只需要移出勾选框自身宽度即可
+                final checkboxOffset = ratio * checkboxTotalWidth;
+
+                return Row(
+                  children: [
+                    // 勾选框区域：固定宽度，内部用 ClipRect 裁剪溢出部分
+                    SizedBox(
+                      width: checkboxTotalWidth,
+                      child: ClipRect(
+                        child: Transform.translate(
+                          offset: Offset(-checkboxOffset, 0),
+                          child: Row(
+                            children: [
+                              _buildCheckbox(ref),
+                              const SizedBox(width: AmberDimens.spacingMd),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    // 文字：保持原位，不移动
+                    Expanded(child: _buildTaskContent(ref, navState)),
+                    if (trailing != null) ...[
+                      const SizedBox(width: AmberDimens.spacingMd),
+                      trailing!,
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建任务内容区域（标题 + 日期/标签）
+  Widget _buildTaskContent(WidgetRef ref, AppNavState navState) {
+    final displaySettings = ref.watch(displaySettingsProvider);
+
+    final shouldShowDate = displaySettings.showDueDate &&
+        task.dueDate != null &&
+        !_shouldHideDateLabel(navState.currentView, task.dueDate!);
+    final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
+    final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // 使用 LayoutBuilder 和 Stack 实现半删除线效果
+        _buildTitleWithHalfStrikethrough(
+          title: task.title,
+          isCompleted: task.isCompleted,
+          isInProgress: task.isInProgress,
+          isOverdue: isOverdue,
+          overdueColor: Color(displaySettings.overdueTitleColorValue),
+        ),
+        if (shouldShowDate || shouldShowTags) const SizedBox(height: 4),
+        if (shouldShowDate || shouldShowTags)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (shouldShowDate) ...[
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 12,
+                  color: _getDueDateColor(
+                    task.dueDate!,
+                    overdueColor: Color(displaySettings.overdueLabelColorValue),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDueDate(task.dueDate!),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _getDueDateColor(
+                      task.dueDate!,
+                      overdueColor: Color(displaySettings.overdueLabelColorValue),
+                    ),
+                  ),
+                ),
+              ],
+              if (shouldShowTags) ...[
+                if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
+                ...task.tags.take(3).map((tagName) {
+                  final allTags = ref.watch(tagsProvider);
+                  final tagObj = allTags.firstWhere(
+                    (t) => t.name == tagName,
+                    orElse: () => Tag(
+                      id: '',
+                      name: tagName,
+                      color: AmberColors.primary,
+                      createdAt: DateTime.now(),
+                    ),
+                  );
+                  final tagColor = tagObj.color;
+
+                  return Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: tagColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: tagColor.withValues(alpha: 0.2),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      tagName,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: tagColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// 构建任务卡片主体
+  /// [margin] 可选，默认使用标准间距。移动端由于外层包裹 Slidable 需手动控制 margin。
+  /// [showShadow] 是否显示阴影
+  /// [showBorder] 是否显示边框
+  /// [borderRadius] 边框圆角
+  Widget _buildTaskCard(
+    BuildContext context,
+    WidgetRef ref,
+    bool isSelected, {
+    EdgeInsetsGeometry? margin,
+    bool showShadow = true,
+    bool showBorder = true,
+    BorderRadiusGeometry? borderRadius,
+  }) {
+    final navState = ref.watch(appNavProvider);
+
+    return Container(
+      margin:
+          margin ??
+          const EdgeInsets.symmetric(
+            horizontal: AmberDimens.spacingMd,
+            vertical: 4, // 减小垂直间距，更紧凑
+          ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12), // 更圆润的角
-        border: Border.all(
-          color: isSelected ? AmberColors.primary : const Color(0xFFEEEEEE),
-          width: 1, // 极细边框
-        ),
+        borderRadius: borderRadius ?? BorderRadius.circular(12), // 更圆润的角
+        border: showBorder
+            ? Border.all(
+                color: isSelected
+                    ? AmberColors.primary
+                    : const Color(0xFFEEEEEE),
+                width: 1, // 极细边框
+              )
+            : null,
         boxShadow: [
-          if (!task.isCompleted) // 未完成任务加一点微弱的阴影
+          if (showShadow && !task.isCompleted) // 未完成任务加一点微弱的阴影
             BoxShadow(
               color: Colors.black.withOpacity(0.02),
               offset: const Offset(0, 2),
@@ -60,16 +514,32 @@ class TaskItem extends ConsumerWidget {
       ),
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap ?? () {
-            // 移动端：显示 BottomSheet 详情面板
-            // 桌面端：打开右侧详情面板
-            if (Platform.isAndroid || Platform.isIOS) {
-              DetailBottomSheet.show(context, task);
-            } else {
-              ref.read(appNavProvider.notifier).selectTask(task.id);
-            }
-          },
+        child: Builder(
+          builder: (context) {
+            return InkWell(
+              onTap:
+                  onTap ??
+                  () {
+                    // 检查是否在 Slidable 内部且处于打开状态
+                    final slidable = Slidable.of(context);
+                    if (slidable != null) {
+                      // 如果侧滑菜单是打开的，点击内容区域则关闭菜单
+                      // ActionPaneType.none 表示关闭状态
+                      if (slidable.actionPaneType.value !=
+                          ActionPaneType.none) {
+                        slidable.close();
+                        return;
+                      }
+                    }
+
+                    // 移动端：显示 BottomSheet 详情面板
+                    // 桌面端：打开右侧详情面板
+                    if (Platform.isAndroid || Platform.isIOS) {
+                      DetailBottomSheet.show(context, task);
+                    } else {
+                      ref.read(appNavProvider.notifier).selectTask(task.id);
+                    }
+                  },
           // 桌面端：鼠标右键触发菜单
           onSecondaryTapDown: (details) {
             _showContextMenu(context, ref, details.globalPosition);
@@ -83,141 +553,133 @@ class TaskItem extends ConsumerWidget {
             _showContextMenu(context, ref, Offset(position.dx + box.size.width / 2, position.dy + box.size.height / 2));
           } : null,
           borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AmberDimens.spacingMd,
-              vertical: 12,
-            ),
-            child: Row(
-              children: [
-                _buildCheckbox(ref),
-                const SizedBox(width: AmberDimens.spacingMd),
-                Expanded(
-                  child: Builder(
-                    builder: (context) {
-                      // 获取显示设置
-                      final displaySettings = ref.watch(displaySettingsProvider);
-
-                      // 判断是否需要显示日期
-                      // 条件：1. 全局设置开启 2. 有截止日期 3. 不是在「今天」视图下的今天任务
-                      final shouldShowDate = displaySettings.showDueDate &&
-                          task.dueDate != null &&
-                          !_shouldHideDateLabel(navState.currentView, task.dueDate!);
-
-                      // 判断是否需要显示标签
-                      final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
-
-                      // 判断任务是否已过期
-                      final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            task.title,
-                            style: TextStyle(
-                              fontSize: 15,
-                              // 标题颜色优先级：已完成 > 已过期 > 普通
-                              color: task.isCompleted
-                                  ? AmberColors.textCompleted
-                                  : isOverdue
-                                      ? Color(displaySettings.overdueTitleColorValue)
-                                      : AmberColors.textPrimary,
-                              decoration: task.isCompleted
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (shouldShowDate || shouldShowTags)
-                            const SizedBox(height: 4),
-                          // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
-                          if (shouldShowDate || shouldShowTags)
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // 日期部分（固定宽度，不会溢出）
-                                if (shouldShowDate) ...[
-                                  Icon(
-                                    Icons.calendar_today_outlined,
-                                    size: 12,
-                                    color: _getDueDateColor(
-                                      task.dueDate!,
-                                      overdueColor: Color(displaySettings.overdueLabelColorValue),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _formatDueDate(task.dueDate!),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: _getDueDateColor(
-                                        task.dueDate!,
-                                        overdueColor: Color(displaySettings.overdueLabelColorValue),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                // 标签部分（直接展开，避免嵌套导致对齐问题）
-                                if (shouldShowTags) ...[
-                                  if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
-                                  ...task.tags.take(3).map((tagName) {
-                                    // 查找标签对应的颜色
-                                    final allTags = ref.watch(tagsProvider);
-                                    final tagObj = allTags.firstWhere(
-                                      (t) => t.name == tagName,
-                                      orElse: () => Tag(
-                                        id: '',
-                                        name: tagName,
-                                        color: AmberColors.primary,
-                                        createdAt: DateTime.now(),
-                                      ),
-                                    );
-                                    final tagColor = tagObj.color;
-
-                                    return Container(
-                                      margin: const EdgeInsets.only(right: 4),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: tagColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(
-                                          color: tagColor.withValues(alpha: 0.2),
-                                          width: 0.5,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        tagName,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: tagColor,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    );
-                                  }),
-                                ],
-                              ],
-                            ),
-                        ],
-                      );
-                    },
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AmberDimens.spacingMd,
+                  vertical: 12,
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(width: AmberDimens.spacingMd),
-                  trailing!,
-                ],
-              ],
-            ),
-          ),
+                child: Row(
+                  children: [
+                    _buildCheckbox(ref),
+                    const SizedBox(width: AmberDimens.spacingMd),
+                    Expanded(
+                      child: Builder(
+                        builder: (context) {
+                          // 获取显示设置
+                          final displaySettings = ref.watch(displaySettingsProvider);
+
+                          // 判断是否需要显示日期
+                          // 条件：1. 全局设置开启 2. 有截止日期 3. 不是在「今天」视图下的今天任务
+                          final shouldShowDate = displaySettings.showDueDate &&
+                              task.dueDate != null &&
+                              !_shouldHideDateLabel(navState.currentView, task.dueDate!);
+
+                          // 判断是否需要显示标签
+                          final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
+
+                          // 判断任务是否已过期
+                          final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 使用半删除线组件
+                              _buildTitleWithHalfStrikethrough(
+                                title: task.title,
+                                isCompleted: task.isCompleted,
+                                isInProgress: task.isInProgress,
+                                isOverdue: isOverdue,
+                                overdueColor: Color(displaySettings.overdueTitleColorValue),
+                              ),
+                              if (shouldShowDate || shouldShowTags)
+                                const SizedBox(height: 4),
+                              // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
+                              if (shouldShowDate || shouldShowTags)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    // 日期部分（固定宽度，不会溢出）
+                                    if (shouldShowDate) ...[
+                                      Icon(
+                                        Icons.calendar_today_outlined,
+                                        size: 12,
+                                        color: _getDueDateColor(
+                                          task.dueDate!,
+                                          overdueColor: Color(displaySettings.overdueLabelColorValue),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _formatDueDate(task.dueDate!),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: _getDueDateColor(
+                                            task.dueDate!,
+                                            overdueColor: Color(displaySettings.overdueLabelColorValue),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    // 标签部分（直接展开，避免嵌套导致对齐问题）
+                                    if (shouldShowTags) ...[
+                                      if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
+                                      ...task.tags.take(3).map((tagName) {
+                                        // 查找标签对应的颜色
+                                        final allTags = ref.watch(tagsProvider);
+                                        final tagObj = allTags.firstWhere(
+                                          (t) => t.name == tagName,
+                                          orElse: () => Tag(
+                                            id: '',
+                                            name: tagName,
+                                            color: AmberColors.primary,
+                                            createdAt: DateTime.now(),
+                                          ),
+                                        );
+                                        final tagColor = tagObj.color;
+
+                                        return Container(
+                                          margin: const EdgeInsets.only(right: 4),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: tagColor.withValues(alpha: 0.1),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(
+                                              color: tagColor.withValues(alpha: 0.2),
+                                              width: 0.5,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            tagName,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: tagColor,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  ],
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    if (trailing != null) ...[
+                      const SizedBox(width: AmberDimens.spacingMd),
+                      trailing!,
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -435,6 +897,33 @@ class TaskItem extends ConsumerWidget {
           ],
         ),
       ),
+      // 只有未完成的任务才显示"进行中"选项
+      if (!task.isCompleted)
+        PopupMenuItem<String>(
+          value: 'in_progress',
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          onTap: () {
+            ref.read(taskProvider.notifier).toggleTaskInProgress(task.id);
+          },
+          child: Row(
+            children: [
+              Icon(
+                task.isInProgress ? Icons.remove_circle_outline : Icons.timelapse_outlined,
+                size: 16,
+                color: task.isInProgress ? AmberColors.primary : AmberColors.textPrimary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                task.isInProgress ? '取消进行中' : '标记进行中',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: task.isInProgress ? AmberColors.primary : AmberColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       // 桌面端才显示"打开便签"选项
       if (isDesktop)
         PopupMenuItem<String>(
@@ -957,19 +1446,117 @@ class TaskItem extends ConsumerWidget {
         decoration: BoxDecoration(
           color: task.isCompleted
               ? AmberColors.primary.withValues(alpha: 0.5)
-              : Colors.transparent,
+              : task.isInProgress
+                  ? AmberColors.primary.withValues(alpha: 0.25) // 进行中：浅色背景
+                  : Colors.transparent,
           shape: BoxShape.circle,
           border: Border.all(
             color: task.isCompleted
                 ? AmberColors.primary.withValues(alpha: 0.5)
-                : const Color(0xFFE0E0E0),
+                : task.isInProgress
+                    ? AmberColors.primary.withValues(alpha: 0.5) // 进行中：琥珀色边框
+                    : const Color(0xFFE0E0E0),
             width: 1.5,
           ),
         ),
         child: task.isCompleted
             ? const Icon(Icons.check, size: 16, color: Colors.white)
-            : null,
+            : task.isInProgress
+                ? _buildHalfCheckIcon() // 进行中：半勾图标
+                : null,
       ),
+    );
+  }
+
+  /// 构建半勾图标（进行中状态）
+  /// 使用 CustomPaint 绘制一个只有一半的勾
+  Widget _buildHalfCheckIcon() {
+    return CustomPaint(
+      size: const Size(16, 16),
+      painter: _HalfCheckPainter(color: Colors.white),
+    );
+  }
+
+  /// 构建带半删除线效果的标题
+  /// [isCompleted] 已完成：完整删除线
+  /// [isInProgress] 进行中：半删除线（只覆盖前半部分文字）
+  Widget _buildTitleWithHalfStrikethrough({
+    required String title,
+    required bool isCompleted,
+    required bool isInProgress,
+    required bool isOverdue,
+    required Color overdueColor,
+  }) {
+    // 确定标题颜色
+    final textColor = isCompleted
+        ? AmberColors.textCompleted
+        : isInProgress
+            ? AmberColors.textSecondary // 进行中：使用次要颜色
+            : isOverdue
+                ? overdueColor
+                : AmberColors.textPrimary;
+
+    // 已完成：使用系统删除线
+    if (isCompleted) {
+      return Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          color: textColor,
+          decoration: TextDecoration.lineThrough,
+          fontWeight: FontWeight.w400,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    // 进行中：使用 LayoutBuilder + Stack 实现半删除线
+    if (isInProgress) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              // 底层：正常文字
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: textColor,
+                  fontWeight: FontWeight.w400,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              // 顶层：半删除线（使用 ClipRect 裁剪到一半宽度）
+              Positioned.fill(
+                child: ClipRect(
+                  clipper: _HalfWidthClipper(),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 1.5,
+                      color: textColor.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    // 普通状态：正常文字
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 15,
+        color: textColor,
+        fontWeight: FontWeight.w400,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -1014,6 +1601,59 @@ class TaskItem extends ConsumerWidget {
     }
     return false;
   }
+}
+
+/// 半勾图标绘制器
+/// 用于绘制任务"进行中"状态的半勾标记
+class _HalfCheckPainter extends CustomPainter {
+  final Color color;
+
+  _HalfCheckPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // 绘制半勾：只画勾的前半部分（左下到中心）
+    // 完整勾的路径：左下 -> 中下 -> 右上
+    // 半勾只画：左下 -> 中下
+    final path = Path();
+
+    // 起点：左侧偏下
+    final startX = size.width * 0.2;
+    final startY = size.height * 0.5;
+
+    // 终点：中间偏下（勾的拐点）
+    final endX = size.width * 0.45;
+    final endY = size.height * 0.7;
+
+    path.moveTo(startX, startY);
+    path.lineTo(endX, endY);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HalfCheckPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+/// 半宽度裁剪器
+/// 用于裁剪删除线，只显示左半部分
+class _HalfWidthClipper extends CustomClipper<Rect> {
+  @override
+  Rect getClip(Size size) {
+    // 只保留左半部分
+    return Rect.fromLTWH(0, 0, size.width * 0.5, size.height);
+  }
+
+  @override
+  bool shouldReclip(covariant _HalfWidthClipper oldClipper) => false;
 }
 
 

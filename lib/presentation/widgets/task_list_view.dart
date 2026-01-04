@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import '../../core/constants/constants.dart';
 import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
@@ -166,20 +167,23 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         // 快速添加任务
         if (widget.showInput) _buildQuickAdd(),
         // 任务列表
+        // SlidableAutoCloseBehavior: 滑动一个任务时，其他已打开的会自动关闭（微信风格）
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: AmberDimens.spacingLg),
-            children: [
-              if (!widget.groupCompleted)
-                ...allTasks.map((task) => TaskItem(task: task))
-              else ...[
-                // 未完成任务
-                ...incompleteTasks.map((task) => TaskItem(task: task)),
-                // 已完成任务折叠
-                if (completedTasks.isNotEmpty && !filterSort.hideCompleted)
-                  _buildCompletedSection(completedTasks),
+          child: SlidableAutoCloseBehavior(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: AmberDimens.spacingLg),
+              children: [
+                if (!widget.groupCompleted)
+                  ...allTasks.map((task) => TaskItem(task: task))
+                else ...[
+                  // 未完成任务
+                  ...incompleteTasks.map((task) => TaskItem(task: task)),
+                  // 已完成任务折叠
+                  if (completedTasks.isNotEmpty && !filterSort.hideCompleted)
+                    _buildCompletedSection(completedTasks),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ],
@@ -448,24 +452,38 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
     }
   }
 
-  void _addTask(String title) {
+  Future<void> _addTask(String title) async {
     if (title.trim().isEmpty) return;
 
     // 规范化为 UTC 日期存储，确保跨设备同步时日期一致
     final normalizedDate = AmberDateUtils.normalizeToUtcDate(_selectedDate);
 
-    ref.read(soundServiceProvider).playAdd(); // Sound
-    ref.read(taskProvider.notifier).createTask(
-      title: title.trim(),
-      listId: widget.listId,
-      dueDate: normalizedDate,
-    );
+    try {
+      ref.read(soundServiceProvider).playAdd(); // Sound
+      await ref.read(taskProvider.notifier).createTask(
+        title: title.trim(),
+        listId: widget.listId,
+        dueDate: normalizedDate,
+      );
 
-    _inputController.clear();
-    setState(() {
-      _isAddingTask = false;
-      _selectedDate = DateTime.now(); // Reset to today
-    });
+      _inputController.clear();
+      setState(() {
+        _isAddingTask = false;
+        _selectedDate = DateTime.now(); // Reset to today
+      });
+    } catch (e) {
+      // 创建任务失败提示（可能是清单已被删除等原因）
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('添加任务失败: ${e.toString().contains('FOREIGN KEY') ? '清单已被删除，请刷新页面' : e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            width: 400,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildCompletedSection(List<Task> completedTasks) {

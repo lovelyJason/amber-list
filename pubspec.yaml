@@ -1,7 +1,7 @@
 name: amber_list
 description: "琥珀清单 - 一款简约而不失质感的桌面端待办应用"
 publish_to: 'none'
-version: 1.0.3+4
+version: 1.0.4+5
 
 environment:
   sdk: ^3.10.1

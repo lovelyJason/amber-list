@@ -70,6 +70,7 @@ Task _mapDbTaskToModel(db.Task dbTask) {
     dueDate: dbTask.dueDate,
     priority: TaskPriority.fromValue(dbTask.priority),
     isCompleted: dbTask.isCompleted,
+    isInProgress: dbTask.isInProgress, // 进行中状态
     isDeleted: dbTask.isDeleted,
     completedAt: dbTask.completedAt,
     tags: tags,
@@ -209,29 +210,17 @@ class TaskListNotifier extends StateNotifier<List<TaskList>> {
     await deleteList(folderId);
   }
 
-  /// 删除清单/文件夹 (注意：如果是文件夹，需要根据需求决定是否级联删除。目前 deleteList 仅删除自身)
+  /// 删除清单/文件夹
+  /// 使用安全删除方法，会先删除关联的任务及其番茄记录，避免外键约束错误
   Future<void> deleteList(String id) async {
-    // 简单的级联删除防止孤儿：如果删除的是文件夹，其子项也删除？
-    // 或者目前保持简单：用户应先清空或解散。
-    // 为了防止孤儿数据，这里做一个简单的级联删除逻辑 (Optional)
-    // 但用户需求里有 "Disband" 和 "Delete".
-    // "Delete" for list implies delete. "Delete" for folder usually means delete all.
-    // "Disband" means keep children.
-    // Let's safe delete children for now to avoid database inconsistencies if we don't have constraints.
-    // BUT, Drift usually implies we handle this.
-    // Let's just delete the node. Orphans might appear in "All" or just disappear from tree.
-    // Given the tree build logic `childrenMap.putIfAbsent(list.parentId!, ...)`
-    // if parent doesn't exist in `allLists`, they won't be in `childrenMap` but `rootLists` only takes `parentId == null`.
-    // So orphans with non-null `parentId` (that doesn't exist) will vanish from UI.
-    // This is "Safe" in terms of UI not crashing, but data is hidden.
-    // I will implement recursive delete for `deleteList`.
-
+    // 递归删除子清单/文件夹
     final children = state.where((l) => l.parentId == id).toList();
     for (var child in children) {
-      await deleteList(child.id); // Recursive delete
+      await deleteList(child.id);
     }
 
-    await database.deleteTaskList(id);
+    // 使用安全删除方法，会先删除清单下的任务再删除清单
+    await database.deleteTaskListWithTasks(id);
   }
 }
 
@@ -277,6 +266,7 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       db.TasksCompanion(
         id: drift.Value(id),
         isCompleted: drift.Value(isCompleted),
+        isInProgress: const drift.Value(false), // 完成/取消完成时都清除进行中状态
         completedAt: drift.Value(isCompleted ? now : null),
         updatedAt: drift.Value(now),
       ),
@@ -336,6 +326,26 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     } catch (e) {
       debugPrint('Failed to sync with sticky note: $e');
     }
+  }
+
+  /// 切换任务进行中（半完成）状态
+  /// 已完成的任务不能设为进行中
+  Future<void> toggleTaskInProgress(String id) async {
+    final task = state.firstWhere((t) => t.id == id);
+
+    // 已完成的任务不能设为进行中
+    if (task.isCompleted) return;
+
+    final isInProgress = !task.isInProgress;
+    final now = DateTime.now();
+
+    await database.updateTask(
+      db.TasksCompanion(
+        id: drift.Value(id),
+        isInProgress: drift.Value(isInProgress),
+        updatedAt: drift.Value(now),
+      ),
+    );
   }
 
   /// 创建新任务
