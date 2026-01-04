@@ -39,6 +39,7 @@ class Tasks extends Table {
   DateTimeColumn get dueDate => dateTime().nullable()();
   IntColumn get priority => integer().withDefault(const Constant(0))();
   BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  BoolColumn get isInProgress => boolean().withDefault(const Constant(false))(); // 进行中（半完成）状态
   BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
   DateTimeColumn get completedAt => dateTime().nullable()();
   TextColumn get tags => text().withDefault(const Constant('[]'))(); // JSON数组
@@ -109,7 +110,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5; // Bump version for Pomodoro tables
+  int get schemaVersion => 6; // Bump version for isInProgress field
 
 
   @override
@@ -133,6 +134,9 @@ class AppDatabase extends _$AppDatabase {
         if (from < 5) {
           await m.createTable(pomodoroSessions);
           await m.createTable(pomodoroQueue);
+        }
+        if (from < 6) {
+          await m.addColumn(tasks, tasks.isInProgress);
         }
       },
     );

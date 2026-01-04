@@ -70,6 +70,7 @@ Task _mapDbTaskToModel(db.Task dbTask) {
     dueDate: dbTask.dueDate,
     priority: TaskPriority.fromValue(dbTask.priority),
     isCompleted: dbTask.isCompleted,
+    isInProgress: dbTask.isInProgress, // 进行中状态
     isDeleted: dbTask.isDeleted,
     completedAt: dbTask.completedAt,
     tags: tags,
@@ -265,6 +266,7 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       db.TasksCompanion(
         id: drift.Value(id),
         isCompleted: drift.Value(isCompleted),
+        isInProgress: const drift.Value(false), // 完成/取消完成时都清除进行中状态
         completedAt: drift.Value(isCompleted ? now : null),
         updatedAt: drift.Value(now),
       ),
@@ -324,6 +326,26 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     } catch (e) {
       debugPrint('Failed to sync with sticky note: $e');
     }
+  }
+
+  /// 切换任务进行中（半完成）状态
+  /// 已完成的任务不能设为进行中
+  Future<void> toggleTaskInProgress(String id) async {
+    final task = state.firstWhere((t) => t.id == id);
+
+    // 已完成的任务不能设为进行中
+    if (task.isCompleted) return;
+
+    final isInProgress = !task.isInProgress;
+    final now = DateTime.now();
+
+    await database.updateTask(
+      db.TasksCompanion(
+        id: drift.Value(id),
+        isInProgress: drift.Value(isInProgress),
+        updatedAt: drift.Value(now),
+      ),
+    );
   }
 
   /// 创建新任务

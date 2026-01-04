@@ -390,20 +390,13 @@ class TaskItem extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          task.title,
-          style: TextStyle(
-            fontSize: 15,
-            color: task.isCompleted
-                ? AmberColors.textCompleted
-                : isOverdue
-                    ? Color(displaySettings.overdueTitleColorValue)
-                    : AmberColors.textPrimary,
-            decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-            fontWeight: FontWeight.w400,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        // 使用 LayoutBuilder 和 Stack 实现半删除线效果
+        _buildTitleWithHalfStrikethrough(
+          title: task.title,
+          isCompleted: task.isCompleted,
+          isInProgress: task.isInProgress,
+          isOverdue: isOverdue,
+          overdueColor: Color(displaySettings.overdueTitleColorValue),
         ),
         if (shouldShowDate || shouldShowTags) const SizedBox(height: 4),
         if (shouldShowDate || shouldShowTags)
@@ -590,23 +583,13 @@ class TaskItem extends ConsumerWidget {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                task.title,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  // 标题颜色优先级：已完成 > 已过期 > 普通
-                                  color: task.isCompleted
-                                      ? AmberColors.textCompleted
-                                      : isOverdue
-                                          ? Color(displaySettings.overdueTitleColorValue)
-                                          : AmberColors.textPrimary,
-                                  decoration: task.isCompleted
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  fontWeight: FontWeight.w400,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              // 使用半删除线组件
+                              _buildTitleWithHalfStrikethrough(
+                                title: task.title,
+                                isCompleted: task.isCompleted,
+                                isInProgress: task.isInProgress,
+                                isOverdue: isOverdue,
+                                overdueColor: Color(displaySettings.overdueTitleColorValue),
                               ),
                               if (shouldShowDate || shouldShowTags)
                                 const SizedBox(height: 4),
@@ -914,6 +897,33 @@ class TaskItem extends ConsumerWidget {
           ],
         ),
       ),
+      // 只有未完成的任务才显示"进行中"选项
+      if (!task.isCompleted)
+        PopupMenuItem<String>(
+          value: 'in_progress',
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          onTap: () {
+            ref.read(taskProvider.notifier).toggleTaskInProgress(task.id);
+          },
+          child: Row(
+            children: [
+              Icon(
+                task.isInProgress ? Icons.remove_circle_outline : Icons.timelapse_outlined,
+                size: 16,
+                color: task.isInProgress ? AmberColors.primary : AmberColors.textPrimary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                task.isInProgress ? '取消进行中' : '标记进行中',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: task.isInProgress ? AmberColors.primary : AmberColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
       // 桌面端才显示"打开便签"选项
       if (isDesktop)
         PopupMenuItem<String>(
@@ -1436,19 +1446,117 @@ class TaskItem extends ConsumerWidget {
         decoration: BoxDecoration(
           color: task.isCompleted
               ? AmberColors.primary.withValues(alpha: 0.5)
-              : Colors.transparent,
+              : task.isInProgress
+                  ? AmberColors.primary.withValues(alpha: 0.25) // 进行中：浅色背景
+                  : Colors.transparent,
           shape: BoxShape.circle,
           border: Border.all(
             color: task.isCompleted
                 ? AmberColors.primary.withValues(alpha: 0.5)
-                : const Color(0xFFE0E0E0),
+                : task.isInProgress
+                    ? AmberColors.primary.withValues(alpha: 0.5) // 进行中：琥珀色边框
+                    : const Color(0xFFE0E0E0),
             width: 1.5,
           ),
         ),
         child: task.isCompleted
             ? const Icon(Icons.check, size: 16, color: Colors.white)
-            : null,
+            : task.isInProgress
+                ? _buildHalfCheckIcon() // 进行中：半勾图标
+                : null,
       ),
+    );
+  }
+
+  /// 构建半勾图标（进行中状态）
+  /// 使用 CustomPaint 绘制一个只有一半的勾
+  Widget _buildHalfCheckIcon() {
+    return CustomPaint(
+      size: const Size(16, 16),
+      painter: _HalfCheckPainter(color: Colors.white),
+    );
+  }
+
+  /// 构建带半删除线效果的标题
+  /// [isCompleted] 已完成：完整删除线
+  /// [isInProgress] 进行中：半删除线（只覆盖前半部分文字）
+  Widget _buildTitleWithHalfStrikethrough({
+    required String title,
+    required bool isCompleted,
+    required bool isInProgress,
+    required bool isOverdue,
+    required Color overdueColor,
+  }) {
+    // 确定标题颜色
+    final textColor = isCompleted
+        ? AmberColors.textCompleted
+        : isInProgress
+            ? AmberColors.textSecondary // 进行中：使用次要颜色
+            : isOverdue
+                ? overdueColor
+                : AmberColors.textPrimary;
+
+    // 已完成：使用系统删除线
+    if (isCompleted) {
+      return Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          color: textColor,
+          decoration: TextDecoration.lineThrough,
+          fontWeight: FontWeight.w400,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    // 进行中：使用 LayoutBuilder + Stack 实现半删除线
+    if (isInProgress) {
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: [
+              // 底层：正常文字
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: textColor,
+                  fontWeight: FontWeight.w400,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              // 顶层：半删除线（使用 ClipRect 裁剪到一半宽度）
+              Positioned.fill(
+                child: ClipRect(
+                  clipper: _HalfWidthClipper(),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 1.5,
+                      color: textColor.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    // 普通状态：正常文字
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 15,
+        color: textColor,
+        fontWeight: FontWeight.w400,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -1493,6 +1601,59 @@ class TaskItem extends ConsumerWidget {
     }
     return false;
   }
+}
+
+/// 半勾图标绘制器
+/// 用于绘制任务"进行中"状态的半勾标记
+class _HalfCheckPainter extends CustomPainter {
+  final Color color;
+
+  _HalfCheckPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // 绘制半勾：只画勾的前半部分（左下到中心）
+    // 完整勾的路径：左下 -> 中下 -> 右上
+    // 半勾只画：左下 -> 中下
+    final path = Path();
+
+    // 起点：左侧偏下
+    final startX = size.width * 0.2;
+    final startY = size.height * 0.5;
+
+    // 终点：中间偏下（勾的拐点）
+    final endX = size.width * 0.45;
+    final endY = size.height * 0.7;
+
+    path.moveTo(startX, startY);
+    path.lineTo(endX, endY);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HalfCheckPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+/// 半宽度裁剪器
+/// 用于裁剪删除线，只显示左半部分
+class _HalfWidthClipper extends CustomClipper<Rect> {
+  @override
+  Rect getClip(Size size) {
+    // 只保留左半部分
+    return Rect.fromLTWH(0, 0, size.width * 0.5, size.height);
+  }
+
+  @override
+  bool shouldReclip(covariant _HalfWidthClipper oldClipper) => false;
 }
 
 
