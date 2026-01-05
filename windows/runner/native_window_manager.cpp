@@ -26,14 +26,14 @@ void NativeWindowManager::Setup(flutter::FlutterEngine* engine) {
         }
     );
 
-    // 注册内置窗口工厂
+    // Register built-in window factories
     RegisterBuiltInFactories();
 
     std::cout << "[NativeWindowManager] Platform Channel registered: com.amberlist.native_window" << std::endl;
 }
 
 void NativeWindowManager::RegisterBuiltInFactories() {
-    // 注册 QuickAdd 窗口工厂
+    // Register QuickAdd window factory
     RegisterFactory("quick_add", [](const std::wstring& windowId, const flutter::EncodableMap* arguments) {
         return std::make_unique<QuickAddWindow>(windowId, arguments);
     });
@@ -61,13 +61,13 @@ void NativeWindowManager::HandleMethodCall(
 
     const std::string& method = call.method_name();
 
-    // 不需要参数的方法优先处理
+    // Handle methods that don't require arguments first
     if (method == "getOpenWindows") {
         HandleGetOpenWindows(std::move(result));
         return;
     }
 
-    // 获取参数（其他方法需要参数）
+    // Get arguments (other methods require arguments)
     const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
     if (!args) {
         result->Error("INVALID_ARGS", "Arguments must be a map");
@@ -93,7 +93,7 @@ void NativeWindowManager::HandleCreateOrShow(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析 windowType
+    // Parse windowType
     auto typeIt = args.find(flutter::EncodableValue("windowType"));
     if (typeIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing windowType");
@@ -101,24 +101,24 @@ void NativeWindowManager::HandleCreateOrShow(
     }
     std::string windowType = std::get<std::string>(typeIt->second);
 
-    // 解析 windowId（可选）
+    // Parse windowId (optional)
     std::wstring windowId;
     auto idIt = args.find(flutter::EncodableValue("windowId"));
     if (idIt != args.end() && !std::holds_alternative<std::monostate>(idIt->second)) {
         windowId = Utf8ToWString(std::get<std::string>(idIt->second));
     }
 
-    // 解析 arguments（可选）
+    // Parse arguments (optional)
     const flutter::EncodableMap* showArgs = nullptr;
     auto argsIt = args.find(flutter::EncodableValue("arguments"));
     if (argsIt != args.end()) {
         showArgs = std::get_if<flutter::EncodableMap>(&argsIt->second);
     }
 
-    // 生成窗口标识符
+    // Generate window identifier
     std::string identifier = MakeIdentifier(windowType, windowId);
 
-    // 如果窗口已存在，直接显示
+    // If window already exists, just show it
     auto existingIt = windows_.find(identifier);
     if (existingIt != windows_.end() && existingIt->second) {
         existingIt->second->Show(showArgs);
@@ -131,24 +131,24 @@ void NativeWindowManager::HandleCreateOrShow(
         return;
     }
 
-    // 查找工厂创建新窗口
+    // Find factory to create new window
     auto factoryIt = factories_.find(windowType);
     if (factoryIt == factories_.end()) {
         result->Error("UNKNOWN_TYPE", "No factory registered for window type: " + windowType);
         return;
     }
 
-    // 创建窗口
+    // Create window
     auto window = factoryIt->second(windowId, showArgs);
     if (!window) {
         result->Error("CREATE_FAILED", "Failed to create window");
         return;
     }
 
-    // 显示窗口
+    // Show window
     window->Show(showArgs);
 
-    // 存储窗口
+    // Store window
     windows_[identifier] = std::move(window);
 
     std::cout << "[NativeWindowManager] Created window: " << identifier << std::endl;
@@ -164,7 +164,7 @@ void NativeWindowManager::HandleHide(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析 windowType
+    // Parse windowType
     auto typeIt = args.find(flutter::EncodableValue("windowType"));
     if (typeIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing windowType");
@@ -172,7 +172,7 @@ void NativeWindowManager::HandleHide(
     }
     std::string windowType = std::get<std::string>(typeIt->second);
 
-    // 解析 windowId（可选）
+    // Parse windowId (optional)
     std::wstring windowId;
     auto idIt = args.find(flutter::EncodableValue("windowId"));
     if (idIt != args.end() && !std::holds_alternative<std::monostate>(idIt->second)) {
@@ -200,7 +200,7 @@ void NativeWindowManager::HandleDestroy(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析 windowType
+    // Parse windowType
     auto typeIt = args.find(flutter::EncodableValue("windowType"));
     if (typeIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing windowType");
@@ -208,7 +208,7 @@ void NativeWindowManager::HandleDestroy(
     }
     std::string windowType = std::get<std::string>(typeIt->second);
 
-    // 解析 windowId（可选）
+    // Parse windowId (optional)
     std::wstring windowId;
     auto idIt = args.find(flutter::EncodableValue("windowId"));
     if (idIt != args.end() && !std::holds_alternative<std::monostate>(idIt->second)) {
@@ -239,7 +239,7 @@ void NativeWindowManager::HandleSendMessage(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析 windowType
+    // Parse windowType
     auto typeIt = args.find(flutter::EncodableValue("windowType"));
     if (typeIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing windowType");
@@ -247,7 +247,7 @@ void NativeWindowManager::HandleSendMessage(
     }
     std::string windowType = std::get<std::string>(typeIt->second);
 
-    // 解析 method
+    // Parse method
     auto methodIt = args.find(flutter::EncodableValue("method"));
     if (methodIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing method");
@@ -255,14 +255,14 @@ void NativeWindowManager::HandleSendMessage(
     }
     std::string method = std::get<std::string>(methodIt->second);
 
-    // 解析 windowId（可选）
+    // Parse windowId (optional)
     std::wstring windowId;
     auto idIt = args.find(flutter::EncodableValue("windowId"));
     if (idIt != args.end() && !std::holds_alternative<std::monostate>(idIt->second)) {
         windowId = Utf8ToWString(std::get<std::string>(idIt->second));
     }
 
-    // 解析 arguments（可选）
+    // Parse arguments (optional)
     const flutter::EncodableValue* messageArgs = nullptr;
     auto argsIt = args.find(flutter::EncodableValue("arguments"));
     if (argsIt != args.end()) {
@@ -283,7 +283,7 @@ void NativeWindowManager::HandleIsWindowOpen(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
-    // 解析 windowType
+    // Parse windowType
     auto typeIt = args.find(flutter::EncodableValue("windowType"));
     if (typeIt == args.end()) {
         result->Error("INVALID_ARGS", "Missing windowType");
@@ -291,7 +291,7 @@ void NativeWindowManager::HandleIsWindowOpen(
     }
     std::string windowType = std::get<std::string>(typeIt->second);
 
-    // 解析 windowId（可选）
+    // Parse windowId (optional)
     std::wstring windowId;
     auto idIt = args.find(flutter::EncodableValue("windowId"));
     if (idIt != args.end() && !std::holds_alternative<std::monostate>(idIt->second)) {

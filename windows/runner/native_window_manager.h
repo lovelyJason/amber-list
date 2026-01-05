@@ -13,57 +13,57 @@
 // Forward declaration
 class NativeWindowBase;
 
-/// 原生窗口管理器 (Windows)
+/// Native Window Manager (Windows)
 ///
-/// 统一管理所有原生窗口的生命周期和 Platform Channel 通信。
-/// 支持多种窗口类型（QuickAdd、StickyNote 等），通过窗口类型进行消息路由。
+/// Manages the lifecycle of all native windows and Platform Channel communication.
+/// Supports multiple window types (QuickAdd, StickyNote, etc.) with message routing by window type.
 ///
-/// 设计理念：
-/// - 单一入口：所有原生窗口操作都通过此管理器
-/// - 工厂模式：通过注册的工厂函数创建窗口
-/// - 消息路由：根据 windowType 分发 Flutter 消息
+/// Design principles:
+/// - Single entry point: All native window operations go through this manager
+/// - Factory pattern: Windows are created via registered factory functions
+/// - Message routing: Flutter messages are dispatched based on windowType
 class NativeWindowManager {
 public:
-    /// 窗口工厂函数类型
-    /// 参数: windowId, arguments
-    /// 返回: 窗口实例
+    /// Window factory function type
+    /// Parameters: windowId, arguments
+    /// Returns: Window instance
     using WindowFactory = std::function<std::unique_ptr<NativeWindowBase>(
         const std::wstring& windowId,
         const flutter::EncodableMap* arguments)>;
 
-    /// 获取单例实例
+    /// Get singleton instance
     static NativeWindowManager& GetInstance();
 
-    // 禁用拷贝和移动
+    // Disable copy and move
     NativeWindowManager(const NativeWindowManager&) = delete;
     NativeWindowManager& operator=(const NativeWindowManager&) = delete;
 
-    /// 初始化 Platform Channel
-    /// @param engine Flutter 引擎
+    /// Initialize Platform Channel
+    /// @param engine Flutter engine
     void Setup(flutter::FlutterEngine* engine);
 
-    /// 注册窗口工厂
-    /// @param windowType 窗口类型标识
-    /// @param factory 创建窗口的工厂函数
+    /// Register window factory
+    /// @param windowType Window type identifier
+    /// @param factory Factory function to create windows
     void RegisterFactory(const std::string& windowType, WindowFactory factory);
 
-    /// 向 Flutter 发送消息
-    /// @param method 方法名
-    /// @param arguments 参数
+    /// Send message to Flutter
+    /// @param method Method name
+    /// @param arguments Arguments
     void NotifyFlutter(const std::string& method, const flutter::EncodableMap& arguments);
 
-    /// 窗口关闭回调（由窗口调用）
-    /// @param windowType 窗口类型
-    /// @param windowId 窗口 ID（可选）
+    /// Window close callback (called by windows)
+    /// @param windowType Window type
+    /// @param windowId Window ID (optional)
     void WindowDidClose(const std::string& windowType, const std::wstring& windowId);
 
-    /// 关闭所有窗口
+    /// Close all windows
     void CloseAllWindows();
 
-    /// 辅助函数：宽字符串转 UTF-8
+    /// Helper: Wide string to UTF-8
     static std::string WStringToUtf8(const std::wstring& wstr);
 
-    /// 辅助函数：UTF-8 转宽字符串
+    /// Helper: UTF-8 to wide string
     static std::wstring Utf8ToWString(const std::string& str);
 
 private:
@@ -72,46 +72,46 @@ private:
 
     // ===== Method Channel handlers =====
 
-    /// 处理来自 Flutter 的方法调用
+    /// Handle method calls from Flutter
     void HandleMethodCall(
         const flutter::MethodCall<flutter::EncodableValue>& call,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 创建或显示窗口
+    /// Create or show window
     void HandleCreateOrShow(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 隐藏窗口
+    /// Hide window
     void HandleHide(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 销毁窗口
+    /// Destroy window
     void HandleDestroy(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 向窗口发送消息
+    /// Send message to window
     void HandleSendMessage(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 检查窗口是否打开
+    /// Check if window is open
     void HandleIsWindowOpen(
         const flutter::EncodableMap& args,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-    /// 获取所有打开的窗口
+    /// Get all open windows
     void HandleGetOpenWindows(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     // ===== Helpers =====
 
-    /// 生成窗口标识符
+    /// Generate window identifier
     std::string MakeIdentifier(const std::string& windowType, const std::wstring& windowId);
 
-    /// 注册内置窗口工厂
+    /// Register built-in window factories
     void RegisterBuiltInFactories();
 
     // ===== Member variables =====
@@ -119,43 +119,43 @@ private:
     /// Platform Channel
     std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> method_channel_;
 
-    /// 所有活跃窗口的注册表
-    /// Key: 窗口标识符（windowType 或 windowType_windowId）
+    /// Registry of all active windows
+    /// Key: Window identifier (windowType or windowType_windowId)
     std::map<std::string, std::unique_ptr<NativeWindowBase>> windows_;
 
-    /// 窗口工厂注册表
-    /// Key: 窗口类型
+    /// Registry of window factories
+    /// Key: Window type
     std::map<std::string, WindowFactory> factories_;
 };
 
-/// 原生窗口基类
+/// Native Window Base Class
 ///
-/// 所有原生窗口（QuickAdd、StickyNote 等）必须继承此类。
-/// 提供统一的窗口生命周期管理接口。
+/// All native windows (QuickAdd, StickyNote, etc.) must inherit from this class.
+/// Provides a unified window lifecycle management interface.
 class NativeWindowBase {
 public:
     virtual ~NativeWindowBase() = default;
 
-    /// 获取窗口类型标识
+    /// Get window type identifier
     virtual std::string GetWindowType() const = 0;
 
-    /// 获取窗口实例 ID（可选）
+    /// Get window instance ID (optional)
     virtual std::wstring GetWindowId() const { return L""; }
 
-    /// 显示窗口
-    /// @param arguments 创建/显示参数
+    /// Show window
+    /// @param arguments Create/show arguments
     virtual void Show(const flutter::EncodableMap* arguments) = 0;
 
-    /// 隐藏窗口（不销毁）
+    /// Hide window (without destroying)
     virtual void Hide() = 0;
 
-    /// 销毁窗口
+    /// Destroy window
     virtual void Destroy() = 0;
 
-    /// 处理来自 Flutter 的消息
-    /// @param method 方法名
-    /// @param arguments 参数
-    /// @param result Flutter 结果回调
+    /// Handle messages from Flutter
+    /// @param method Method name
+    /// @param arguments Arguments
+    /// @param result Flutter result callback
     virtual void HandleFlutterMessage(
         const std::string& method,
         const flutter::EncodableValue* arguments,

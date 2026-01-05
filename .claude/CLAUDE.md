@@ -122,6 +122,35 @@ const SizedBox(height: AmberDimens.spacingMd), // 仅 16px,会被窗口控制按
 - 涉及到大的变更，要看看docs中对应的文档要不要更新，重要的功能和使用方法必须更新；小的变更，比如ui调整， 图标更换，代码优化等不需要更新
 - 改动尽可能缩小范围， 比如我让你改输入框样式，你别修改输入框附近的图标等与本地需求不相干的内容
 
+### Windows 原生代码规范 (C++)
+
+**重要**: `windows/runner/` 目录下的 C++ 代码有特殊要求：
+
+1. **禁止使用中文注释** - MSVC 在中文 Windows (代码页 936/GBK) 编译时会报错 `C4819`
+2. **禁止使用非 ASCII 字符的 Emoji** - 部分 Emoji 在 MSVC 编译器中不兼容
+3. **所有注释必须使用英文** - 确保跨平台编译兼容性
+
+```cpp
+// ✅ 正确 - 英文注释
+/// Create window (method name avoids Windows API CreateWindow macro)
+bool InitWindow();
+
+// ❌ 错误 - 中文注释会导致编译失败
+/// 创建窗口（方法名避开 Windows API 的 CreateWindow 宏）
+bool InitWindow();
+```
+
+**注意**: 宽字符串字面量 `L"中文"` 用于运行时显示是允许的，但注释必须是英文。
+
+```cpp
+// ✅ 允许 - 运行时显示的中文字符串
+window_handle_ = CreateWindowExW(..., L"Amber Quick Add", ...);
+std::wstring placeholder = L"Add task to " + FormatDate(...) + L"...";
+
+// ❌ 禁止 - 中文注释
+// 创建无边框窗口
+```
+
 ### Git 提交规范
 ```
 feat: 添加新功能

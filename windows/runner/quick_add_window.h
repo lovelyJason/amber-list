@@ -2,35 +2,42 @@
 #define RUNNER_QUICK_ADD_WINDOW_H_
 
 #include <windows.h>
+#include <gdiplus.h>
 #include <string>
+#include <vector>
 #include <functional>
+#include <memory>
 
 #include "native_window_manager.h"
 
-/// 闪念胶囊窗口 (Windows)
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "msimg32.lib")
+
+/// Quick Add Window (Windows) - Win32 Native Controls Version
 ///
-/// 全局快捷键唤起的快速任务输入窗口，类似 macOS Spotlight。
-/// 窗口特性：
-/// - 无边框、圆角、阴影
-/// - 居中显示在屏幕上方
-/// - 输入完成后自动消失
-/// - ESC 键取消
+/// A modern, Spotlight-like quick task input window using Win32 native controls
+/// with GDI+ for logo rendering and owner-draw for control styling.
 ///
-/// 设计理念：
-/// - 轻量级：仅包含输入框、日期选择、确认按钮
-/// - 快速：全局热键唤起，输入完成即消失
-/// - 专注：不打断用户当前工作流
+/// Architecture:
+/// - Main window: WS_POPUP borderless window with DWM rounded corners
+/// - Logo: GDI+ loads PNG from embedded resource, draws with alpha blending
+/// - Input: Win32 EDIT control with owner-draw background (full IME support)
+/// - Button: Owner-draw button with rounded corners and amber color
+///
+/// Features:
+/// - White background matching macOS design
+/// - Amber logo loaded from embedded PNG resource
+/// - Chinese placeholder text with medium font weight
+/// - Tab key to expand to detailed mode
+/// - Enter to submit, ESC to cancel
+///
+/// Design matches macOS QuickAddWindow.swift implementation.
 class QuickAddWindow : public NativeWindowBase {
 public:
-    /// 构造函数
-    /// @param windowId 窗口实例 ID（可选）
-    /// @param arguments 初始参数
     QuickAddWindow(const std::wstring& windowId, const flutter::EncodableMap* arguments);
-
     virtual ~QuickAddWindow();
 
-    // ===== NativeWindowBase 接口实现 =====
-
+    // NativeWindowBase interface
     std::string GetWindowType() const override { return "quick_add"; }
     std::wstring GetWindowId() const override { return window_id_; }
 
@@ -44,113 +51,160 @@ public:
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) override;
 
 private:
-    // ===== 窗口过程 =====
-
-    /// 静态窗口过程
+    // Window procedure
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
-
-    /// 实例窗口消息处理
     LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
-
-    /// 注册窗口类
     static bool RegisterWindowClass();
 
-    // ===== 创建和布局 =====
+    // Edit control subclass (for Enter/ESC/Tab handling)
+    static LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam,
+                                              UINT_PTR subclassId, DWORD_PTR refData);
 
-    /// 创建窗口
-    bool CreateWindow();
+    // Window creation
+    bool InitWindow();
+    void CreateCompactControls();
+    void CreateExpandedControls();
+    void DestroyExpandedControls();
 
-    /// 创建控件
-    void CreateControls();
+    // GDI+ logo loading
+    bool LoadLogoFromResource();
+    void DrawLogo(HDC hdc, int x, int y, int size);
 
-    /// 布局控件
-    void LayoutControls();
-
-    // ===== 事件处理 =====
-
-    /// 处理绘制
+    // Owner-draw painting
     void OnPaint();
+    void PaintBackground(HDC hdc);
+    void PaintLogo(HDC hdc);
+    LRESULT OnCtlColorEdit(HDC hdc, HWND hwndEdit);
+    void OnDrawItem(DRAWITEMSTRUCT* dis);
+    void DrawRoundedButton(HDC hdc, RECT rect, const std::wstring& text, bool isAmber, bool isHovered, int iconType = 0, int highlightColor = 0);
 
-    /// 处理命令
-    void OnCommand(WORD id, WORD code);
+    // Mode switching
+    void ExpandToDetailMode();
+    void CollapseToCompactMode();
+    void ResizeWindow(int newHeight, bool animate = true);
 
-    /// 处理键盘
-    void OnKeyDown(WPARAM key);
-
-    /// 输入框子类化过程（拦截 Enter/ESC）
-    static LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
-
-    /// 提交任务
+    // Actions
     void SubmitTask();
-
-    /// 取消输入
     void CancelInput();
 
-    /// 请求日期选择
-    void RequestDatePicker();
+    // Menu handling (expanded mode)
+    void ShowDateMenu();
+    void ShowPriorityMenu();
+    void ShowTagMenu();
+    void ShowListSelectorMenu();   // Inbox and task lists (bottom selector button)
+    void OnMenuCommand(int id);
 
-    // ===== 辅助函数 =====
+    // Helpers
+    std::wstring FormatDateShort(double timestamp);
+    void UpdatePlaceholderText();
+    void UpdateListSelectorText();
+    void UpdateListButtonText();   // Update toolbar list/note button
+    void UpdateDateButtonText();
+    void UpdatePriorityButtonText();
+    void UpdateTagButtonText();
+    int CalculateButtonWidth(HWND button);  // Calculate button width based on text + icon
+    void RelayoutToolbarButtons();          // Re-layout toolbar buttons with dynamic widths
 
-    /// 格式化日期
-    std::wstring FormatDate(double timestamp);
-
-    /// 获取输入框文本
-    std::wstring GetInputText();
-
-    /// 清空输入框
-    void ClearInput();
-
-    /// 聚焦输入框
-    void FocusInput();
-
-    /// 更新占位符文本
-    void UpdatePlaceholder();
-
-    // ===== 成员变量 =====
-
-    /// 窗口 ID
+    // Member variables
     std::wstring window_id_;
-
-    /// 当前选中的日期（毫秒时间戳）
-    double selected_date_ms_ = 0;
-
-    /// 窗口句柄
     HWND window_handle_ = nullptr;
+    float dpi_scale_ = 1.0f;  // DPI scaling factor
 
-    /// 输入框句柄
-    HWND edit_handle_ = nullptr;
+    // GDI+ resources
+    ULONG_PTR gdiplus_token_ = 0;
+    std::unique_ptr<Gdiplus::Bitmap> logo_bitmap_;
 
-    /// 日期按钮句柄
-    HWND date_button_ = nullptr;
-
-    /// 提交按钮句柄
+    // Compact mode controls
+    HWND edit_control_ = nullptr;
     HWND submit_button_ = nullptr;
 
-    /// Logo 图片句柄
-    HBITMAP logo_bitmap_ = nullptr;
+    // Expanded mode controls
+    HWND title_label_ = nullptr;
+    HWND content_edit_ = nullptr;
+    HWND list_button_ = nullptr;
+    HWND tag_button_ = nullptr;
+    HWND date_button_ = nullptr;
+    HWND priority_button_ = nullptr;
+    HWND list_selector_button_ = nullptr;
+    HWND cancel_button_ = nullptr;
+    HWND confirm_button_ = nullptr;
 
-    /// 背景画刷
-    HBRUSH bg_brush_ = nullptr;
+    // Fonts
+    HFONT main_font_ = nullptr;
+    HFONT title_font_ = nullptr;
+    HFONT button_font_ = nullptr;
+    HFONT placeholder_font_ = nullptr;
 
-    /// 自定义字体
-    HFONT edit_font_ = nullptr;
+    // Brushes for owner-draw
+    HBRUSH white_brush_ = nullptr;
+    HBRUSH amber_brush_ = nullptr;
+    HBRUSH gray_brush_ = nullptr;
 
-    /// 输入框原始窗口过程（子类化前保存）
-    WNDPROC original_edit_proc_ = nullptr;
+    // Mode and data
+    bool is_expanded_ = false;
+    bool is_note_mode_ = false;
+    double selected_date_ms_ = 0;
+    bool has_selected_date_ = false;
+    int selected_priority_ = 0;
+    std::vector<std::wstring> selected_tags_;
+    std::vector<std::wstring> available_tags_;
+    std::vector<std::pair<std::wstring, std::wstring>> available_task_lists_;
+    std::wstring selected_list_id_;
+    std::wstring selected_list_name_ = L"Inbox";
 
-    /// 窗口类名
+    // Button hover state
+    HWND hovered_button_ = nullptr;
+
+    // Static members
     static const wchar_t* kWindowClassName;
     static bool class_registered_;
 
-    /// 控件 ID
-    static const int ID_EDIT = 1001;
-    static const int ID_DATE_BTN = 1002;
-    static const int ID_SUBMIT_BTN = 1003;
-
-    /// 窗口尺寸
+    // Dimensions (matching macOS)
     static const int kWindowWidth = 600;
-    static const int kWindowHeight = 60;
+    static const int kCompactHeight = 60;
+    static const int kExpandedHeight = 280;
     static const int kCornerRadius = 12;
+    static const int kLogoSize = 32;
+    static const int kPadding = 16;
+
+    // Control IDs
+    static const int ID_EDIT = 1001;
+    static const int ID_SUBMIT_BUTTON = 1002;
+    static const int ID_CONTENT_EDIT = 1003;
+    static const int ID_LIST_BUTTON = 1004;
+    static const int ID_TAG_BUTTON = 1005;
+    static const int ID_DATE_BUTTON = 1006;
+    static const int ID_PRIORITY_BUTTON = 1007;
+    static const int ID_LIST_SELECTOR = 1008;
+    static const int ID_CANCEL_BUTTON = 1009;
+    static const int ID_CONFIRM_BUTTON = 1010;
+
+    // Menu IDs
+    static const int ID_MENU_TODAY = 2001;
+    static const int ID_MENU_TOMORROW = 2002;
+    static const int ID_MENU_NEXT_WEEK = 2003;
+    static const int ID_MENU_CLEAR_DATE = 2005;
+    static const int ID_MENU_PRIORITY_NONE = 2010;
+    static const int ID_MENU_PRIORITY_LOW = 2011;
+    static const int ID_MENU_PRIORITY_MEDIUM = 2012;
+    static const int ID_MENU_PRIORITY_HIGH = 2013;
+    static const int ID_MENU_MODE_TASK = 2020;
+    static const int ID_MENU_MODE_NOTE = 2021;
+    static const int ID_MENU_TAG_BASE = 2100;
+    static const int ID_MENU_TAG_CLEAR = 2199;
+    static const int ID_MENU_LIST_INBOX = 2200;
+    static const int ID_MENU_LIST_BASE = 2201;
+
+    // Colors (RGB)
+    static const COLORREF kAmberColor = RGB(245, 166, 35);   // #F5A623
+    static const COLORREF kWhiteColor = RGB(255, 255, 255);
+    static const COLORREF kBlackColor = RGB(0, 0, 0);
+    static const COLORREF kGrayColor = RGB(128, 128, 128);
+    static const COLORREF kLightGrayColor = RGB(230, 230, 230);
+    static const COLORREF kPlaceholderColor = RGB(160, 160, 160);
+    static const COLORREF kGreenColor = RGB(76, 175, 80);
+    static const COLORREF kOrangeColor = RGB(255, 152, 0);
+    static const COLORREF kRedColor = RGB(244, 67, 54);
 };
 
 #endif  // RUNNER_QUICK_ADD_WINDOW_H_

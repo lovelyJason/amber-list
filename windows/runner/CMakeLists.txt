@@ -20,13 +20,18 @@ add_executable(${BINARY_NAME} WIN32
   "runner.exe.manifest"
 )
 
-# 注意：OUTPUT_NAME 必须和 BINARY_NAME 保持一致（都是 amber_list）
-# 否则 flutter run 找不到 exe 文件！中文显示名在 Runner.rc 里配置即可
-# set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "琥珀清单")  # 已移除
+# Note: OUTPUT_NAME must match BINARY_NAME (amber_list)
+# Otherwise flutter run cannot find the exe. Display name is set in Runner.rc
+# set_target_properties(${BINARY_NAME} PROPERTIES OUTPUT_NAME "amber_list")
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+
+# Use UTF-8 source encoding for MSVC (fixes C4819 warning on Chinese Windows)
+if(MSVC)
+  target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
+endif()
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -42,6 +47,8 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "gdiplus.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "msimg32.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
