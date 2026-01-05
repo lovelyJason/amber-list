@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/constants.dart';
 import '../../data/models/app_update_info.dart';
 import '../providers/app_update_provider.dart';
+import 'common/toast/toast_manager.dart';
 
 /// ============================================================
 /// 应用更新对话框
@@ -279,10 +280,10 @@ class AppUpdateDialog extends ConsumerWidget {
                             .read(appUpdateProvider.notifier)
                             .openDownloadUrl();
                         if (!success && context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('无法打开下载链接，请稍后重试'),
-                            ),
+                          ToastManager().show(
+                            context,
+                            '无法打开下载链接，请稍后重试',
+                            type: ToastType.error,
                           );
                         }
                       },
@@ -386,10 +387,10 @@ class ForceUpdateScreen extends ConsumerWidget {
                         .read(appUpdateProvider.notifier)
                         .openDownloadUrl();
                     if (!success && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('无法打开下载链接，请稍后重试'),
-                        ),
+                      ToastManager().show(
+                        context,
+                        '无法打开下载链接，请稍后重试',
+                        type: ToastType.error,
                       );
                     }
                   },
