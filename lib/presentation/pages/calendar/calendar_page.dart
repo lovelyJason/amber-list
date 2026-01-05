@@ -91,8 +91,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     final activationState = ref.watch(activationProvider);
     final isActivated = activationState.isActivated && !activationState.isExpired;
 
-    // 未激活时使用假数据展示，勾引用户付费
-    final tasks = isActivated ? _filterTasks(allTasks) : _generateDemoTasks();
+    // 初始化完成前：显示真实数据（避免闪烁，宁可让未激活用户短暂看到真实数据）
+    // 初始化完成后：根据激活状态决定显示真实数据还是假数据
+    // 这样已激活用户不会看到假数据闪烁
+    final tasks = !activationState.isInitialized || isActivated
+        ? _filterTasks(allTasks)
+        : _generateDemoTasks();
 
     return ShowCaseWidget(
       builder: (context) {
@@ -133,7 +137,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             ),
 
             // 未激活时覆盖遮罩，禁止操作
-            if (!isActivated)
+            // 必须等初始化完成后再判断，否则会在校验期间闪现遮罩
+            if (activationState.isInitialized && !isActivated)
               _buildActivationOverlay(context),
           ],
         );

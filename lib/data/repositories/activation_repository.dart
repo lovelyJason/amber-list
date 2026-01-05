@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../../env/env.dart';
 import '../models/activation_code.dart';
 import '../services/activation/hmac_signer.dart';
+import '../services/device/device_id_service.dart';
 
 /// ============================================================
 /// API 调用结果
@@ -48,15 +49,19 @@ class ActivationRepository {
   /// 校验激活码
   ///
   /// [code] 激活码
-  /// 返回校验结果
+  /// 返回校验结果，同时上报设备ID用于设备绑定
   Future<ApiResult<ActivationCode>> verify(String code) async {
     try {
       final url = '$_baseUrl/hupo/activation-code/verify';
+
+      // 获取设备ID（硬件级别唯一标识）
+      final deviceId = await DeviceIdService().getDeviceId();
 
       // 生成签名请求头
       final signHeaders = HmacSigner.generateHeaders(code);
 
       debugPrint('[ActivationRepository] 发起校验请求: $url');
+      debugPrint('[ActivationRepository] 设备ID: $deviceId');
 
       final response = await _client
           .post(
@@ -65,7 +70,10 @@ class ActivationRepository {
               'Content-Type': 'application/json',
               ...signHeaders,
             },
-            body: jsonEncode({'code': code}),
+            body: jsonEncode({
+              'code': code,
+              'deviceId': deviceId,
+            }),
           )
           .timeout(const Duration(seconds: 10));
 

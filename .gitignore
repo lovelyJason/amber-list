@@ -98,3 +98,4 @@ remove_bg.py
 # 环境配置文件（如果包含敏感信息，不应提交）
 # .env
 # .env.example 应该提交，作为配置模板
+update.json

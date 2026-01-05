@@ -23,23 +23,16 @@ class SettingsPage extends StatelessWidget {
         backgroundColor: AmberColors.cardBackground,
         elevation: 0,
         automaticallyImplyLeading: false, // 禁用默认返回按钮
-        // Dialog 模式显示 macOS 风格的关闭按钮
-        leading: isDialog ? _buildMacOSCloseButton(context) : null,
+        // Dialog Mode: Close button on the top left
+        leading: isDialog
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+                tooltip: 'Close',
+              )
+            : null,
       ),
-      body: const SettingsContent(), // 🔧 内容已封装，可复用
-    );
-  }
-
-  /// macOS 风格的关闭按钮 (红色圆点 + hover 效果)
-  Widget _buildMacOSCloseButton(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 12),
-        child: _MacOSCloseButton(
-          onTap: () => Navigator.of(context).pop(),
-        ),
-      ),
+      body: const SettingsContent(),
     );
   }
 }
@@ -191,48 +184,3 @@ class _SettingsContentState extends State<SettingsContent> {
   }
 }
 
-/// macOS 窗口控制按钮 (红色关闭按钮)
-class _MacOSCloseButton extends StatefulWidget {
-  final VoidCallback onTap;
-
-  const _MacOSCloseButton({required this.onTap});
-
-  @override
-  State<_MacOSCloseButton> createState() => _MacOSCloseButtonState();
-}
-
-class _MacOSCloseButtonState extends State<_MacOSCloseButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFF5F57), // macOS 红色
-            shape: BoxShape.circle,
-            border: _isHovered ? null : Border.all(
-              color: const Color(0xFFE14C40),
-              width: 0.5,
-            ),
-          ),
-          // Hover 时显示关闭图标
-          child: _isHovered
-              ? const Icon(
-                  Icons.close,
-                  size: 8,
-                  color: Color(0xFF4D0000),
-                )
-              : null,
-        ),
-      ),
-    );
-  }
-}

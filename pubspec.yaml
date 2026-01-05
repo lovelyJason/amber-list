@@ -1,7 +1,7 @@
 name: amber_list
 description: "琥珀清单 - 一款简约而不失质感的桌面端待办应用"
 publish_to: 'none'
-version: 1.0.6+7
+version: 1.0.7+8
 
 environment:
   sdk: ^3.10.1
@@ -55,6 +55,7 @@ dependencies:
   showcaseview: ^5.0.1
   package_info_plus: ^9.0.0
   envied: ^1.3.2
+  device_info_plus: ^11.3.3       # 设备信息获取（用于激活码设备绑定）
 
 dev_dependencies:
   flutter_test:

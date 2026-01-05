@@ -102,6 +102,15 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
   bool _isAddingTask = false;
 
   @override
+  void initState() {
+    super.initState();
+    // 弹窗打开后自动聚焦输入框
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
   void dispose() {
     _inputController.dispose();
     _focusNode.dispose();
@@ -141,12 +150,18 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
         style: const TextStyle(fontWeight: FontWeight.bold),
       ),
       content: SizedBox(
-        width: 400,
+        width: 500,
         height: MediaQuery.of(context).size.height * 0.6,
         child: Column(
           children: [
             // 任务输入框（与清单页一致的样式）
-            _buildQuickAdd(),
+            // 加上水平边距，与 TaskItem 内部的 margin 保持一致
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AmberDimens.spacingMd,
+              ),
+              child: _buildQuickAdd(),
+            ),
             const SizedBox(height: AmberDimens.spacingSm),
             // 任务列表
             Expanded(
@@ -160,12 +175,18 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: currentDayTasks.length,
-                      itemBuilder: (context, index) {
-                        return TaskItem(task: currentDayTasks[index]);
-                      },
+                  : ScrollConfiguration(
+                      // 隐藏滚动条，避免占用宽度导致任务项比输入框窄
+                      behavior: ScrollConfiguration.of(context).copyWith(
+                        scrollbars: false,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: currentDayTasks.length,
+                        itemBuilder: (context, index) {
+                          return TaskItem(task: currentDayTasks[index]);
+                        },
+                      ),
                     ),
             ),
           ],

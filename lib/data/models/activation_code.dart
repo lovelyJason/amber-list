@@ -94,11 +94,12 @@ class ActivationCode {
     this.updatedAt,
   });
 
-  /// 是否永久有效
-  bool get isPermanent => validDays == 0;
+  /// 是否永久有效（validDays = -1 表示永久）
+  bool get isPermanent => validDays == -1;
 
-  /// 是否已过期
+  /// 是否已过期（永久激活码不会过期）
   bool get isExpired {
+    if (isPermanent) return false; // 永久激活码不会过期
     if (status == ActivationCodeStatus.expired) return true;
     if (expiresAt == null) return false;
     return DateTime.now().isAfter(expiresAt!);

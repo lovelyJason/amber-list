@@ -79,7 +79,17 @@ class _ActivationDialogState extends ConsumerState<ActivationDialog> {
     if (!mounted) return;
 
     if (success) {
-      ToastManager().show(context, '激活成功！', type: ToastType.success);
+      // 获取激活码信息，显示有效期
+      final activationCode = ref.read(activationProvider).activationCode;
+      String toastMessage = '激活成功！';
+      if (activationCode != null) {
+        if (activationCode.isPermanent) {
+          toastMessage = '激活成功！永久有效';
+        } else {
+          toastMessage = '激活成功！有效期 ${activationCode.validDays} 天';
+        }
+      }
+      ToastManager().show(context, toastMessage, type: ToastType.success);
       widget.onActivated?.call();
       Navigator.of(context).pop(true);
     }
