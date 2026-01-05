@@ -47,6 +47,7 @@ dependencies:
   # 桌面窗口管理
   window_manager: ^0.4.3
   desktop_multi_window: ^0.2.0
+  hotkey_manager: ^0.2.3          # 全局快捷键（用于闪念胶囊）
   fluentui_system_icons: ^1.1.273
   audioplayers: ^6.5.1
   flutter_localizations:

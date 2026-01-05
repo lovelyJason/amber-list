@@ -227,6 +227,7 @@ class SidebarDialogs {
 
   /// 显示删除清单确认对话框
   /// 会先查询清单下的任务数和番茄记录数，在对话框中显示将被删除的内容
+  /// 如果清单下有垃圾桶中的任务，则阻止删除，提示用户先清空垃圾桶
   static Future<void> showDeleteConfirm(
     BuildContext context,
     WidgetRef ref,
@@ -235,8 +236,41 @@ class SidebarDialogs {
     // 先获取清单关联数据统计
     final database = ref.read(databaseProvider);
     final stats = await database.getTaskListStats(list.id);
-    final taskCount = stats['taskCount'] ?? 0;
+    final taskCount = stats['taskCount'] ?? 0; // 正常任务数
+    final trashCount = stats['trashCount'] ?? 0; // 垃圾桶任务数
     final pomodoroCount = stats['pomodoroCount'] ?? 0;
+
+    if (!context.mounted) return;
+
+    // 如果有垃圾桶任务，阻止删除
+    if (trashCount > 0) {
+      showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('无法删除清单'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('该清单下有 $trashCount 个任务在垃圾桶中。'),
+              const SizedBox(height: 8),
+              const Text('请先前往垃圾桶永久删除这些任务，或将它们移到其他清单。'),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                // 跳转到垃圾桶
+                ref.read(appNavProvider.notifier).setView(NavView.trash);
+              },
+              child: const Text('前往垃圾桶'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     // 构建提示文本
     String contentText = '清单将被永久删除。此操作无法撤销。';
@@ -250,8 +284,6 @@ class SidebarDialogs {
       }
       contentText = '该清单下有 ${parts.join('、')}，将一并删除。\n\n此操作无法撤销。';
     }
-
-    if (!context.mounted) return;
 
     showDialog(
       context: context,

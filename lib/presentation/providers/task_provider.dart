@@ -474,6 +474,18 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     await database.forceDeleteTaskWithPomodoros(id);
   }
 
+  /// 清空垃圾桶（永久删除所有垃圾桶中的任务）
+  /// 包括有番茄记录的任务也会被删除
+  Future<void> emptyTrash() async {
+    // 获取所有垃圾桶任务
+    final trashTasks = state.where((t) => t.isDeleted).toList();
+
+    // 逐个强制删除（包含番茄记录）
+    for (final task in trashTasks) {
+      await database.forceDeleteTaskWithPomodoros(task.id);
+    }
+  }
+
   Future<void> _ensureTagExists(String tagName) async {
     final tags = await database.getAllTags();
     if (!tags.any((t) => t.name == tagName)) {

@@ -85,27 +85,28 @@ class CalendarDayView extends StatelessWidget {
 
   /// 构建日视图任务项
   Widget _buildDayViewTaskItem(Task task) {
-    Widget? timeBadge;
-    if (task.dueDate != null &&
-        (task.dueDate!.hour != 0 || task.dueDate!.minute != 0)) {
-      timeBadge = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          DateFormat('HH:mm').format(task.dueDate!),
-          style: const TextStyle(
-            fontSize: 12,
-            color: AmberColors.textSecondary,
-            fontWeight: FontWeight.w500,
-            fontFamily: 'Monospace',
-          ),
-        ),
-      );
-    }
+    // TODO: 时间显示暂时注释掉，后续再完善
+    // Widget? timeBadge;
+    // if (task.dueDate != null &&
+    //     (task.dueDate!.hour != 0 || task.dueDate!.minute != 0)) {
+    //   timeBadge = Container(
+    //     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    //     decoration: BoxDecoration(
+    //       color: const Color(0xFFF5F5F5),
+    //       borderRadius: BorderRadius.circular(4),
+    //     ),
+    //     child: Text(
+    //       DateFormat('HH:mm').format(task.dueDate!),
+    //       style: const TextStyle(
+    //         fontSize: 12,
+    //         color: AmberColors.textSecondary,
+    //         fontWeight: FontWeight.w500,
+    //         fontFamily: 'Monospace',
+    //       ),
+    //     ),
+    //   );
+    // }
 
-    return TaskItem(task: task, trailing: timeBadge);
+    return TaskItem(task: task);
   }
 }

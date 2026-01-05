@@ -36,6 +36,7 @@ class TaskListView extends ConsumerStatefulWidget {
     this.groupCompleted = true,
     this.showHeader = true, // 是否显示头部（标题+筛选排序），移动端设为 false
     this.showFilterSort = true, // 是否显示筛选排序按钮，已完成/垃圾桶页面设为 false
+    this.isTrash = false, // 是否是垃圾桶视图，垃圾桶视图显示清空按钮
   });
 
   final bool showInput;
@@ -49,6 +50,10 @@ class TaskListView extends ConsumerStatefulWidget {
   /// 是否显示筛选排序按钮
   /// 已完成/垃圾桶页面设为 false，因为这些页面不需要筛选排序
   final bool showFilterSort;
+
+  /// 是否是垃圾桶视图
+  /// 垃圾桶视图会显示"清空垃圾桶"按钮
+  final bool isTrash;
 
   @override
   ConsumerState<TaskListView> createState() => _TaskListViewState();
@@ -228,6 +233,16 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
             ),
           ),
           const Spacer(),
+          // 清空垃圾桶按钮（仅垃圾桶视图显示）
+          if (widget.isTrash && widget.tasks.isNotEmpty)
+            IconButton(
+              onPressed: () => _showEmptyTrashDialog(context),
+              icon: const Icon(
+                Icons.delete_forever_outlined,
+                color: Colors.red,
+              ),
+              tooltip: '清空垃圾桶',
+            ),
           // 筛选排序按钮（已完成/垃圾桶页面不显示）
           if (widget.showFilterSort) ...[
             InstantPopupMenuButton<bool>(
@@ -484,6 +499,46 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         );
       }
     }
+  }
+
+  /// 显示清空垃圾桶确认对话框
+  void _showEmptyTrashDialog(BuildContext context) {
+    final taskCount = widget.tasks.length;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清空垃圾桶?'),
+        content: Text('将永久删除垃圾桶中的 $taskCount 个任务及其番茄记录。\n\n此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              // 播放删除音效
+              ref.read(soundServiceProvider).playDelete();
+              // 清空垃圾桶
+              await ref.read(taskProvider.notifier).emptyTrash();
+              // 显示成功提示
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('已清空 $taskCount 个任务'),
+                    behavior: SnackBarBehavior.floating,
+                    width: 300,
+                  ),
+                );
+              }
+            },
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildCompletedSection(List<Task> completedTasks) {

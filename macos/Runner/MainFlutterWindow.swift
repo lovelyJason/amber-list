@@ -37,6 +37,9 @@ class MainFlutterWindow: NSWindow {
     // 注册原生便签窗口管理器的 Platform Channel
     StickyNoteManager.shared.setup(with: flutterViewController.engine.binaryMessenger)
 
+    // 注册统一的原生窗口管理器（用于 QuickAdd 等新窗口）
+    NativeWindowManager.shared.setup(with: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 }

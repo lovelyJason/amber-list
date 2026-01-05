@@ -28,8 +28,9 @@ class SidebarTreeItems {
             context,
             ref,
             list: node.data,
+            // 统计未完成且不在垃圾桶中的任务数量
             taskCount: allTasks
-                .where((t) => t.listId == node.data.id && !t.isCompleted)
+                .where((t) => t.listId == node.data.id && !t.isCompleted && !t.isDeleted)
                 .length,
             isSelected: navState.currentView == NavView.list &&
                 navState.selectedListId == node.data.id,

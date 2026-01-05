@@ -423,11 +423,14 @@ class AppDatabase extends _$AppDatabase {
       (delete(taskLists)..where((t) => t.id.equals(id))).go();
 
   /// 获取清单关联数据统计（用于删除前提示）
-  /// 返回 {taskCount: 任务数, pomodoroCount: 番茄记录数}
+  /// 返回 {taskCount: 正常任务数, trashCount: 垃圾桶任务数, pomodoroCount: 番茄记录数}
   Future<Map<String, int>> getTaskListStats(String listId) async {
-    // 获取该清单下的任务
+    // 获取该清单下的所有任务
     final listTasks = await (select(tasks)..where((t) => t.listId.equals(listId))).get();
-    final taskCount = listTasks.length;
+
+    // 区分正常任务和垃圾桶任务
+    final normalTasks = listTasks.where((t) => !t.isDeleted).toList();
+    final trashTasks = listTasks.where((t) => t.isDeleted).toList();
 
     // 统计番茄记录数
     int pomodoroCount = 0;
@@ -445,7 +448,11 @@ class AppDatabase extends _$AppDatabase {
       pomodoroCount += queueCount + sessionCount;
     }
 
-    return {'taskCount': taskCount, 'pomodoroCount': pomodoroCount};
+    return {
+      'taskCount': normalTasks.length,
+      'trashCount': trashTasks.length,
+      'pomodoroCount': pomodoroCount,
+    };
   }
 
   /// 删除清单及其所有关联任务

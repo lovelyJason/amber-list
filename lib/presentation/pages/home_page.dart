@@ -752,6 +752,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           groupCompleted: false,
           showHeader: !isMobile,
           showFilterSort: false, // 垃圾桶页面不需要筛选排序
+          isTrash: true, // 标记为垃圾桶视图，显示清空按钮
         );
     }
   }

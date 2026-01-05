@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'settings_tab_type.dart';
 import 'tabs/display_tab.dart';
+import 'tabs/quick_add_tab.dart';
 import 'tabs/data_management_tab.dart';
 import 'tabs/cloud_sync_tab.dart';
 import 'tabs/about_tab.dart';
@@ -24,6 +25,10 @@ class SettingsTabConfig {
       SettingsTabConfig(
         type: SettingsTabType.display,
         builder: (context) => const DisplayTab(),
+      ),
+      SettingsTabConfig(
+        type: SettingsTabType.quickAdd,
+        builder: (context) => const QuickAddTab(),
       ),
       SettingsTabConfig(
         type: SettingsTabType.dataManagement,

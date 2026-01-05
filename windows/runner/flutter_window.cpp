@@ -4,6 +4,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "sticky_note_manager.h"
+#include "native_window_manager.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -29,6 +30,9 @@ bool FlutterWindow::OnCreate() {
 
   // Register native sticky note manager's Platform Channel
   StickyNoteManager::GetInstance().Setup(flutter_controller_->engine());
+
+  // Register unified native window manager (for QuickAdd, etc.)
+  NativeWindowManager::GetInstance().Setup(flutter_controller_->engine());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 

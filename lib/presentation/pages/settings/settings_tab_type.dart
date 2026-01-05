@@ -5,6 +5,9 @@ enum SettingsTabType {
   /// 显示设置（控制任务列表项的显示选项）
   display,
 
+  /// 闪念胶囊（快捷键配置）
+  quickAdd,
+
   /// 数据管理（导入/导出）
   dataManagement,
 
@@ -19,6 +22,8 @@ enum SettingsTabType {
     switch (this) {
       case SettingsTabType.display:
         return '显示';
+      case SettingsTabType.quickAdd:
+        return '闪念胶囊';
       case SettingsTabType.dataManagement:
         return '数据管理';
       case SettingsTabType.cloudSync:
@@ -33,6 +38,8 @@ enum SettingsTabType {
     switch (this) {
       case SettingsTabType.display:
         return Icons.visibility_outlined;
+      case SettingsTabType.quickAdd:
+        return Icons.flash_on_outlined;
       case SettingsTabType.dataManagement:
         return Icons.storage_outlined;
       case SettingsTabType.cloudSync:
