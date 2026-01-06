@@ -39,27 +39,35 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      # 4. 构建 Windows Release 版本
+      # 4. Build Windows Release
       - name: Build Windows Release
         run: flutter build windows --release
 
-      # 5. 使用 Inno Setup 打包安装程序
+      # 5. Download VC++ Redistributable for bundling
+      - name: Download VC++ Redistributable
+        run: |
+          # Download VC++ 2015-2022 Redistributable (x64)
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "build/vc_redist.x64.exe"
+          echo "Downloaded VC++ Redistributable"
+        shell: pwsh
+
+      # 6. Build Installer with Inno Setup
       - name: Build Installer with Inno Setup
         run: |
-          # 创建输出目录
+          # Create output directory
           New-Item -ItemType Directory -Force -Path build/installer
-          # 使用 GitHub Actions runner 自带的 Inno Setup
+          # Use Inno Setup bundled with GitHub Actions runner
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/windows_setup.iss
         shell: pwsh
 
-      # 6. 上传安装包（带版本号）
+      # 7. Upload Installer (with version)
       - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
           name: amber-list-installer-v${{ steps.version.outputs.VERSION }}
           path: build/installer/*.exe
 
-      # 7. 上传原始构建产物（带版本号，便于调试）
+      # 8. Upload Raw Build (with version, for debugging)
       - name: Upload Raw Build
         uses: actions/upload-artifact@v4
         with:

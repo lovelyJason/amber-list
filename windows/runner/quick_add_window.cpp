@@ -348,9 +348,18 @@ void QuickAddWindow::CreateCompactControls() {
 
     SendMessage(edit_control_, WM_SETFONT, reinterpret_cast<WPARAM>(main_font_), TRUE);
 
-    // Set placeholder text (cue banner) - Chinese: "Add task...(Tab to expand)"
-    SendMessage(edit_control_, EM_SETCUEBANNER, TRUE,
-                reinterpret_cast<LPARAM>(L"\x6DFB\x52A0\x4EFB\x52A1...\xFF08Tab \x5C55\x5F00\x8BE6\x60C5\xFF09"));
+    // Generate placeholder text with today's date
+    // Format: "Add task to MM/DD... (Tab to expand)"
+    // Note: EM_SETCUEBANNER doesn't work in some scenarios, so we manually draw placeholder
+    {
+        time_t now = std::time(nullptr);
+        struct tm tm_info;
+        localtime_s(&tm_info, &now);
+        wchar_t placeholderText[128];
+        swprintf_s(placeholderText, 128, L"添加任务到 %d月%d日...（Tab 展开详情）",
+                   tm_info.tm_mon + 1, tm_info.tm_mday);
+        placeholder_text_ = placeholderText;
+    }
 
     // Subclass edit control to handle Enter/ESC/Tab
     SetWindowSubclass(edit_control_, EditSubclassProc, 0, reinterpret_cast<DWORD_PTR>(this));
@@ -396,6 +405,40 @@ LRESULT CALLBACK QuickAddWindow::EditSubclassProc(
             }
             return 0;
         }
+    }
+
+    // Draw placeholder after edit control finishes painting
+    if (msg == WM_PAINT) {
+        // Let edit control draw itself first
+        LRESULT result = DefSubclassProc(hwnd, msg, wparam, lparam);
+
+        // Only draw placeholder in compact mode when edit is empty
+        if (hwnd == self->edit_control_ && !self->is_expanded_ && !self->placeholder_text_.empty()) {
+            int textLen = GetWindowTextLengthW(hwnd);
+            if (textLen == 0) {
+                HDC hdc = GetDC(hwnd);
+                if (hdc) {
+                    RECT rect;
+                    GetClientRect(hwnd, &rect);
+                    // Add left margin
+                    rect.left += static_cast<int>(2 * self->dpi_scale_);
+
+                    // Set font and color
+                    HFONT oldFont = (HFONT)SelectObject(hdc, self->main_font_);
+                    SetBkMode(hdc, TRANSPARENT);
+                    SetTextColor(hdc, kPlaceholderColor);
+
+                    // Draw placeholder text
+                    DrawTextW(hdc, self->placeholder_text_.c_str(), -1, &rect,
+                              DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX);
+
+                    SelectObject(hdc, oldFont);
+                    ReleaseDC(hwnd, hdc);
+                }
+            }
+        }
+
+        return result;
     }
 
     return DefSubclassProc(hwnd, msg, wparam, lparam);
@@ -451,6 +494,13 @@ LRESULT QuickAddWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LP
             int id = LOWORD(wparam);
             int code = HIWORD(wparam);
 
+            // Handle edit content change - control placeholder visibility
+            if (code == EN_CHANGE && id == ID_EDIT) {
+                // When edit content changes, trigger repaint to update placeholder state
+                // Placeholder drawing is handled in EditSubclassProc's WM_PAINT
+                InvalidateRect(edit_control_, nullptr, TRUE);
+            }
+
             if (code == BN_CLICKED) {
                 switch (id) {
                     case ID_SUBMIT_BUTTON:
@@ -490,6 +540,10 @@ LRESULT QuickAddWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LP
 
         case WM_ACTIVATE:
             if (LOWORD(wparam) == WA_INACTIVE) {
+                // When date picker popup is open, ignore focus loss (prevent window close)
+                if (is_showing_date_picker_) {
+                    return 0;
+                }
                 // Window lost focus - hide like Spotlight
                 Hide();
                 NativeWindowManager::GetInstance().NotifyFlutter("onQuickAddCancelled", {
@@ -610,7 +664,7 @@ void QuickAddWindow::OnDrawItem(DRAWITEMSTRUCT* dis) {
     }
 
     // Determine icon type based on control ID
-    // 0=none, 1=return, 2=list(三横线), 3=tag, 4=calendar, 5=flag, 6=note, 7=inbox
+    // 0=none, 1=return, 2=list(hamburger), 3=tag, 4=calendar, 5=flag, 6=note, 7=inbox
     int iconType = 0;
     switch (dis->CtlID) {
         case ID_SUBMIT_BUTTON: iconType = 1; break;
@@ -750,7 +804,7 @@ void QuickAddWindow::DrawRoundedButton(HDC hdc, RECT rect, const std::wstring& t
         Gdiplus::SolidBrush iconBrush(iconColor);
 
         if (iconType == 2) {
-            // List icon (三横线) - always gray since it doesn't have selection state
+            // List icon (hamburger menu) - always gray since it doesn't have selection state
             float lineY1 = iconY + iconSize * 0.2f;
             float lineY2 = iconY + iconSize * 0.5f;
             float lineY3 = iconY + iconSize * 0.8f;
@@ -759,7 +813,7 @@ void QuickAddWindow::DrawRoundedButton(HDC hdc, RECT rect, const std::wstring& t
             graphics.DrawLine(&iconPen, iconX, lineY2, iconX + lineW, lineY2);
             graphics.DrawLine(&iconPen, iconX, lineY3, iconX + lineW, lineY3);
         } else if (iconType == 3) {
-            // Tag icon (圆形标签) - uses iconPen for highlight color
+            // Tag icon (circle tag) - uses iconPen for highlight color
             float tagSize = iconSize * 0.7f;
             float tagX = iconX;
             float tagY = iconY + (iconSize - tagSize) / 2.0f;
@@ -797,7 +851,7 @@ void QuickAddWindow::DrawRoundedButton(HDC hdc, RECT rect, const std::wstring& t
             };
             graphics.DrawPolygon(&iconPen, flagPoints, 3);
         } else if (iconType == 6) {
-            // Note icon (文档/笔记图标) - amber colored
+            // Note icon (document/note icon) - amber colored
             float noteW = iconSize * 0.7f;
             float noteH = iconSize * 0.85f;
             float noteX = iconX;
@@ -811,7 +865,7 @@ void QuickAddWindow::DrawRoundedButton(HDC hdc, RECT rect, const std::wstring& t
             graphics.DrawLine(&iconPen, lineX, noteY + noteH * 0.5f, lineX + lineW, noteY + noteH * 0.5f);
             graphics.DrawLine(&iconPen, lineX, noteY + noteH * 0.7f, lineX + lineW * 0.6f, noteY + noteH * 0.7f);
         } else if (iconType == 7) {
-            // Inbox icon (收件箱图标) - envelope/tray style, uses iconPen for color
+            // Inbox icon - envelope/tray style, uses iconPen for color
             float boxW = iconSize * 0.85f;
             float boxH = iconSize * 0.7f;
             float boxX = iconX;
@@ -873,6 +927,10 @@ void QuickAddWindow::ExpandToDetailMode() {
     if (is_expanded_) return;
     is_expanded_ = true;
 
+    // Set default date to today when expanding
+    selected_date_ms_ = static_cast<double>(std::time(nullptr)) * 1000.0;
+    has_selected_date_ = true;
+
     // Resize window
     ResizeWindow(kExpandedHeight);
 
@@ -881,6 +939,9 @@ void QuickAddWindow::ExpandToDetailMode() {
 
     // Create expanded mode controls
     CreateExpandedControls();
+
+    // Update date button to show today's date
+    UpdateDateButtonText();
 
     // Transfer text from compact edit to content edit
     int len = GetWindowTextLengthW(edit_control_);
@@ -1109,8 +1170,10 @@ void QuickAddWindow::SubmitTask() {
             args[flutter::EncodableValue("listId")] = flutter::EncodableValue(NativeWindowManager::WStringToUtf8(selected_list_id_));
         }
     } else {
-        // Compact mode defaults
-        args[flutter::EncodableValue("hasDate")] = flutter::EncodableValue(false);
+        // Compact mode defaults - default to today's date
+        double todayMs = static_cast<double>(std::time(nullptr)) * 1000.0;
+        args[flutter::EncodableValue("dueDate")] = flutter::EncodableValue(todayMs);
+        args[flutter::EncodableValue("hasDate")] = flutter::EncodableValue(true);
         args[flutter::EncodableValue("isNote")] = flutter::EncodableValue(false);
         args[flutter::EncodableValue("priority")] = flutter::EncodableValue(0);
         args[flutter::EncodableValue("tags")] = flutter::EncodableValue(flutter::EncodableList());
@@ -1139,12 +1202,15 @@ void QuickAddWindow::CancelInput() {
 void QuickAddWindow::ShowDateMenu() {
     HMENU menu = CreatePopupMenu();
 
-    // Chinese menu items: Today, Tomorrow, Next week, Clear date
-    AppendMenuW(menu, MF_STRING, ID_MENU_TODAY, L"\x4ECA\x5929");
-    AppendMenuW(menu, MF_STRING, ID_MENU_TOMORROW, L"\x660E\x5929");
-    AppendMenuW(menu, MF_STRING, ID_MENU_NEXT_WEEK, L"\x4E0B\x5468");
+    // Date menu items (consistent with macOS)
+    // Note: Windows menu doesn't render emoji well, use simple text
+    AppendMenuW(menu, MF_STRING, ID_MENU_TODAY, L"\x4ECA\x5929");           // Today
+    AppendMenuW(menu, MF_STRING, ID_MENU_TOMORROW, L"\x660E\x5929");        // Tomorrow
+    AppendMenuW(menu, MF_STRING, ID_MENU_DAY_AFTER, L"\x540E\x5929");       // Day after tomorrow
+    AppendMenuW(menu, MF_STRING, ID_MENU_NEXT_WEEK, L"\x4E0B\x5468");       // Next week
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, ID_MENU_CLEAR_DATE, L"\x6E05\x9664\x65E5\x671F");
+    AppendMenuW(menu, MF_STRING, ID_MENU_SELECT_DATE, L"\x9009\x62E9\x65E5\x671F...");  // Select date...
+    AppendMenuW(menu, MF_STRING, ID_MENU_CLEAR_DATE, L"\x6E05\x9664\x65E5\x671F");      // Clear date
 
     RECT rect;
     GetWindowRect(date_button_, &rect);
@@ -1213,24 +1279,102 @@ void QuickAddWindow::ShowListSelectorMenu() {
     DestroyMenu(menu);
 }
 
+/// Show custom date picker popup
+/// Uses GDI+ rendered amber-themed calendar control, click date to select and auto-close
+void QuickAddWindow::ShowDatePicker() {
+    // Set flag to prevent main window from closing when popup is shown
+    is_showing_date_picker_ = true;
+
+    // Get date button position to anchor popup
+    RECT buttonRect;
+    GetWindowRect(date_button_, &buttonRect);
+
+    // Parse currently selected date
+    int selectedYear, selectedMonth, selectedDay;
+    if (has_selected_date_ && selected_date_ms_ > 0) {
+        time_t selectedTime = static_cast<time_t>(selected_date_ms_ / 1000.0);
+        struct tm tmInfo = {};
+        localtime_s(&tmInfo, &selectedTime);
+        selectedYear = tmInfo.tm_year + 1900;
+        selectedMonth = tmInfo.tm_mon + 1;
+        selectedDay = tmInfo.tm_mday;
+    } else {
+        // Default to today
+        time_t now = std::time(nullptr);
+        struct tm tmInfo = {};
+        localtime_s(&tmInfo, &now);
+        selectedYear = tmInfo.tm_year + 1900;
+        selectedMonth = tmInfo.tm_mon + 1;
+        selectedDay = tmInfo.tm_mday;
+    }
+
+    // Create custom date picker popup
+    date_picker_popup_ = std::make_unique<DatePickerPopup>(window_handle_, dpi_scale_);
+
+    // Show popup, callback when date is clicked
+    date_picker_popup_->Show(
+        buttonRect.left,
+        buttonRect.bottom + 4,
+        selectedYear,
+        selectedMonth,
+        selectedDay,
+        [this](int year, int month, int day) {
+            // User selected a date, update state
+            struct tm tmInfo = {};
+            tmInfo.tm_year = year - 1900;
+            tmInfo.tm_mon = month - 1;
+            tmInfo.tm_mday = day;
+            tmInfo.tm_hour = 12;  // Noon to avoid timezone issues
+            tmInfo.tm_min = 0;
+            tmInfo.tm_sec = 0;
+
+            time_t selectedTime = mktime(&tmInfo);
+            selected_date_ms_ = static_cast<double>(selectedTime) * 1000.0;
+            has_selected_date_ = true;
+            UpdateDateButtonText();
+
+            // Reset flag
+            is_showing_date_picker_ = false;
+
+            // Restore main window focus
+            SetForegroundWindow(window_handle_);
+            SetFocus(is_expanded_ ? content_edit_ : edit_control_);
+        }
+    );
+}
+
 void QuickAddWindow::OnMenuCommand(int id) {
     switch (id) {
         case ID_MENU_TODAY:
+            // Today
             selected_date_ms_ = static_cast<double>(std::time(nullptr)) * 1000.0;
             has_selected_date_ = true;
             UpdateDateButtonText();
             break;
         case ID_MENU_TOMORROW:
+            // Tomorrow (+1 day)
             selected_date_ms_ = static_cast<double>(std::time(nullptr) + 86400) * 1000.0;
             has_selected_date_ = true;
             UpdateDateButtonText();
             break;
+        case ID_MENU_DAY_AFTER:
+            // Day after tomorrow (+2 days)
+            selected_date_ms_ = static_cast<double>(std::time(nullptr) + 86400 * 2) * 1000.0;
+            has_selected_date_ = true;
+            UpdateDateButtonText();
+            break;
         case ID_MENU_NEXT_WEEK:
+            // Next week (+7 days)
             selected_date_ms_ = static_cast<double>(std::time(nullptr) + 86400 * 7) * 1000.0;
             has_selected_date_ = true;
             UpdateDateButtonText();
             break;
+        case ID_MENU_SELECT_DATE:
+            // Show date picker
+            ShowDatePicker();
+            break;
         case ID_MENU_CLEAR_DATE:
+            // Clear date
             has_selected_date_ = false;
             UpdateDateButtonText();
             break;

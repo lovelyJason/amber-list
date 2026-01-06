@@ -262,7 +262,122 @@ windows/runner/
 - `DwmSetWindowAttribute` 设置 Windows 11 圆角
 - 输入框子类化（Subclassing）拦截键盘事件
 - `localtime_s` 替代 `localtime` 确保线程安全
-- GDI 自定义绘制背景和图标
+- GDI+ 自定义绘制背景和图标
+
+#### Windows QuickAdd 窗口技术架构
+
+**技术栈选型**：Win32 Native Controls + GDI+ + Owner-Draw
+
+从最初的 Direct2D 方案改为 Win32 原生控件方案，主要考虑：
+1. **IME 兼容性**：原生 EDIT 控件完美支持中文输入法
+2. **系统一致性**：Win32 控件与系统风格统一
+3. **稳定性**：避免 Direct2D 渲染和输入框结合的复杂性
+
+**窗口层次结构**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ QuickAddWindow (WS_POPUP + WS_EX_TOPMOST)                   │
+│ ├── OnPaint() - GDI+ 绘制背景、Logo、分隔线                   │
+│ │                                                           │
+│ ├── Compact Mode (紧凑模式)                                  │
+│ │   ├── edit_control_ (EDIT) - 任务标题输入框                │
+│ │   └── submit_button_ (BS_OWNERDRAW) - 提交按钮             │
+│ │                                                           │
+│ └── Expanded Mode (展开模式)                                 │
+│     ├── title_label_ (STATIC) - 标题显示                     │
+│     ├── content_edit_ (EDIT + ES_MULTILINE) - 详情输入框     │
+│     ├── Toolbar Buttons (BS_OWNERDRAW):                     │
+│     │   ├── list_button_ - 列表/笔记切换                     │
+│     │   ├── tag_button_ - 标签选择（支持多选）               │
+│     │   ├── date_button_ - 日期选择                         │
+│     │   └── priority_button_ - 优先级选择                    │
+│     ├── list_selector_button_ - 收集箱/清单选择              │
+│     ├── cancel_button_ - 取消                               │
+│     └── confirm_button_ - 确认                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**核心功能实现**：
+
+| 功能 | 实现方式 | 关键代码 |
+|------|----------|----------|
+| DPI 缩放 | `GetDpiForWindow()` 获取缩放比例 | `dpi_scale_ = GetDpiForWindow(hwnd) / 96.0f` |
+| 圆角窗口 | DWM API | `DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE)` |
+| 琥珀 Logo | GDI+ 加载 PNG 资源 | `LoadLogoFromResource()` + `Gdiplus::Bitmap` |
+| 按钮绘制 | Owner-Draw | `WM_DRAWITEM` + `DrawRoundedButton()` |
+| 图标绘制 | GDI+ 向量绘制 | `Gdiplus::Graphics` 画线、椭圆、多边形 |
+| 动态宽度 | 文本测量 | `GetTextExtentPoint32W()` + `SetWindowPos()` |
+| 输入拦截 | Edit 子类化 | `SetWindowSubclass()` + `EditSubclassProc()` |
+
+**Owner-Draw 按钮图标类型**：
+
+```cpp
+// iconType 定义
+// 0 = 无图标
+// 1 = 回车箭头 (提交按钮)
+// 2 = 三横线 (列表模式)
+// 3 = 圆形标签 (标签按钮)
+// 4 = 日历 (日期按钮)
+// 5 = 旗帜 (优先级按钮)
+// 6 = 文档 (笔记模式)
+// 7 = 收件箱 (收集箱按钮)
+```
+
+**高亮颜色系统**：
+
+```cpp
+// highlightColor 定义（匹配 macOS 设计）
+// 0 = 灰色 (默认未选中)
+// 1 = 琥珀色 (标签/日期选中)
+// 2 = 绿色 (低优先级)
+// 3 = 橙色 (中优先级)
+// 4 = 红色 (高优先级)
+
+// 颜色值
+kAmberColor = RGB(245, 166, 35)   // #F5A623
+kGreenColor = RGB(76, 175, 80)    // 低优先级
+kOrangeColor = RGB(255, 152, 0)   // 中优先级
+kRedColor = RGB(244, 67, 54)      // 高优先级
+```
+
+**工具栏按钮动态布局**：
+
+```cpp
+void QuickAddWindow::RelayoutToolbarButtons() {
+    // 从右到左排列：优先级 → 日期 → 标签 → 列表
+    int x = windowWidth - margin;
+    x -= CalculateButtonWidth(priority_button_);
+    SetWindowPos(priority_button_, nullptr, x, btnY, ...);
+    x -= spacing + CalculateButtonWidth(date_button_);
+    SetWindowPos(date_button_, nullptr, x, btnY, ...);
+    // ...
+}
+
+int QuickAddWindow::CalculateButtonWidth(HWND button) {
+    // 获取按钮文本
+    // 使用 GetTextExtentPoint32W 测量宽度
+    // 返回：文本宽度 + 图标宽度 + padding
+}
+```
+
+**资源文件配置**：
+
+```rc
+// Runner.rc
+IDB_AMBER_LOGO  RCDATA  "resources\\mosquito_amber.png"
+
+// resource.h
+#define IDB_AMBER_LOGO  102
+```
+
+**CMakeLists.txt 依赖**：
+
+```cmake
+target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")   # DWM 圆角
+target_link_libraries(${BINARY_NAME} PRIVATE "gdiplus.lib")  # GDI+ 绘图
+target_link_libraries(${BINARY_NAME} PRIVATE "msimg32.lib")  # Alpha 混合
+```
 
 ### 热键注册
 
@@ -434,6 +549,19 @@ dependencies:
 - dwmapi.lib (DWM 圆角)
 
 ## 更新日志
+
+### 2026-01-06
+
+- **Windows QuickAdd 窗口重大升级**：
+  - 从 Direct2D 方案改为 Win32 Native Controls + GDI+ + Owner-Draw
+  - 完善 DPI 缩放支持，所有尺寸按 `dpi_scale_` 缩放
+  - 实现工具栏按钮动态宽度（`CalculateButtonWidth()` + `RelayoutToolbarButtons()`）
+  - 添加高亮颜色系统：标签/日期选中显示琥珀色，优先级按等级显示绿/橙/红
+  - 添加收集箱图标（iconType=7）
+  - 修复标签多选显示问题，现在显示完整标签列表（如"阅读, 重要, 设计"）
+  - 修复日期选中后按钮宽度不足问题
+  - 添加 Logo 加载失败时的 fallback 星星图标
+  - 添加 MSVC `/utf-8` 编译选项修复中文警告
 
 ### 2026-01-05
 

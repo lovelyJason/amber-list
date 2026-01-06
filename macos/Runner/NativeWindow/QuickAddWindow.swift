@@ -549,7 +549,8 @@ class QuickAddContentView: NSView {
     private var selectedTags: [String] = []
 
     /// 是否已选择日期（区分"未选择"和"选择了今天"）
-    private var hasSelectedDate = false
+    /// 默认为 true，日期默认选中今天
+    private var hasSelectedDate = true
 
     /// 当前打开的 popover（用于阻止窗口关闭）
     private var activePopover: NSPopover?
@@ -653,7 +654,11 @@ class QuickAddContentView: NSView {
         // 输入框
         textField = NSTextField()
         textField.translatesAutoresizingMaskIntoConstraints = false
-        textField.placeholderString = "添加任务...（Tab 展开详情）"
+        // 生成带当天日期的占位符文本
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        let todayStr = formatter.string(from: Date())
+        textField.placeholderString = "添加任务到 \(todayStr)...（Tab 展开详情）"
         textField.font = NSFont.systemFont(ofSize: 18, weight: .medium)
         textField.isBordered = false
         textField.backgroundColor = .clear
@@ -986,6 +991,10 @@ class QuickAddContentView: NSView {
 
         // 设置展开模式 UI
         setupExpandedUI()
+
+        // 默认选中今天日期并更新显示
+        // hasSelectedDate 默认已为 true，这里确保日期显示更新
+        updateDateDisplay()
 
         // 通知窗口大小变化
         onSizeChange?(expandedHeight)
@@ -1508,8 +1517,9 @@ class QuickAddContentView: NSView {
     private func submitTask() {
         let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        // 基础模式：只有标题，其他都是默认值，listId 为 nil（收集箱）
-        onSubmit?(title, selectedDate, false, false, 0, [], nil)
+        // 基础模式：标题 + 默认今天日期，其他都是默认值，listId 为 nil（收集箱）
+        // 紧凑模式默认设置截止日期为当天（hasDate=true）
+        onSubmit?(title, selectedDate, true, false, 0, [], nil)
     }
 
     private func submitExpandedTask() {

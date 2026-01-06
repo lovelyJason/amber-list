@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "native_window_manager.h"
+#include "date_picker_popup.h"
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "msimg32.lib")
@@ -89,6 +90,7 @@ private:
 
     // Menu handling (expanded mode)
     void ShowDateMenu();
+    void ShowDatePicker();         // Show custom date picker popup
     void ShowPriorityMenu();
     void ShowTagMenu();
     void ShowListSelectorMenu();   // Inbox and task lists (bottom selector button)
@@ -117,6 +119,7 @@ private:
     // Compact mode controls
     HWND edit_control_ = nullptr;
     HWND submit_button_ = nullptr;
+    std::wstring placeholder_text_;  // Placeholder text for compact mode input
 
     // Expanded mode controls
     HWND title_label_ = nullptr;
@@ -155,6 +158,12 @@ private:
     // Button hover state
     HWND hovered_button_ = nullptr;
 
+    // Date picker popup state (ignore WM_ACTIVATE when open to prevent window close)
+    bool is_showing_date_picker_ = false;
+
+    // Custom date picker popup
+    std::unique_ptr<DatePickerPopup> date_picker_popup_;
+
     // Static members
     static const wchar_t* kWindowClassName;
     static bool class_registered_;
@@ -182,8 +191,10 @@ private:
     // Menu IDs
     static const int ID_MENU_TODAY = 2001;
     static const int ID_MENU_TOMORROW = 2002;
-    static const int ID_MENU_NEXT_WEEK = 2003;
-    static const int ID_MENU_CLEAR_DATE = 2005;
+    static const int ID_MENU_DAY_AFTER = 2003;    // Day after tomorrow
+    static const int ID_MENU_NEXT_WEEK = 2004;
+    static const int ID_MENU_SELECT_DATE = 2005;  // Select date...
+    static const int ID_MENU_CLEAR_DATE = 2006;
     static const int ID_MENU_PRIORITY_NONE = 2010;
     static const int ID_MENU_PRIORITY_LOW = 2011;
     static const int ID_MENU_PRIORITY_MEDIUM = 2012;

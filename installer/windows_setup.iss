@@ -1,22 +1,27 @@
-; ==================== 琥珀清单 Windows 安装包脚本 ====================
-; 使用 Inno Setup 6.x 编译
+; ==================== Amber List Windows Installer Script ====================
+; Compiled with Inno Setup 6.x
 ;
-; 功能：
-; - 打包 Flutter build 产物（含所有 DLL）
-; - 创建开始菜单快捷方式
-; - 创建桌面快捷方式（可选）
-; - 支持卸载
-; ==================================================================
+; Features:
+; - Package Flutter build artifacts (including all DLLs)
+; - Create Start menu shortcuts
+; - Create desktop shortcut (optional)
+; - Auto-install Visual C++ Redistributable if missing
+; - Support uninstall
+; ===========================================================================
 
-#define MyAppName "琥珀清单"
+#define MyAppName "Amber List"
+#define MyAppNameCN "琥珀清单"
 #define MyAppNameEn "AmberList"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Amber List Team"
 #define MyAppURL "https://github.com/user/amber-list"
 #define MyAppExeName "amber_list.exe"
 
+; VC++ Redistributable download URL (x64, latest version)
+#define VCRedistURL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
 [Setup]
-; 应用基本信息
+; App basic info
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -25,54 +30,83 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 
-; 安装目录
+; Install directory
 DefaultDirName={autopf}\{#MyAppNameEn}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 
-; 输出设置
+; Output settings
 OutputDir=..\build\installer
 OutputBaseFilename=AmberList_Setup_{#MyAppVersion}
-; SetupIconFile=..\assets\icons\app_icon.ico  ; TODO: 添加自定义图标后取消注释
+; SetupIconFile=..\assets\icons\app_icon.ico  ; TODO: uncomment after adding custom icon
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 
-; 权限设置（不需要管理员权限）
-PrivilegesRequired=lowest
+; Permission settings (admin required for VC++ Redist install)
+PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog
 
-; UI 设置
+; UI settings
 WizardStyle=modern
 DisableWelcomePage=no
 ShowLanguageDialog=auto
 
-; 架构
+; Architecture
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
-; 只用英文，GitHub Actions 的 Inno Setup 没有中文语言包
+; English only, GitHub Actions Inno Setup may not have Chinese language pack
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "vcredist"; Description: "Install Visual C++ Runtime (required if missing)"; GroupDescription: "Dependencies:"; Check: not VCRedistInstalled; Flags: checkedonce
 
 [Files]
-; 复制整个 Release 目录（包含 exe、dll、data 文件夹等）
+; Copy entire Release directory (including exe, dll, data folder, etc.)
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Include VC++ Redistributable installer (downloaded in workflow)
+Source: "..\build\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Tasks: vcredist
 
 [Icons]
-; 开始菜单快捷方式
+; Start menu shortcut
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
-; 桌面快捷方式（用户选择）
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+; Desktop shortcut (user choice)
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; 安装完成后运行（可选）
+; Install VC++ Redistributable silently if user selected the task
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; StatusMsg: "Installing Visual C++ Runtime..."; Flags: waituntilterminated; Tasks: vcredist
+; Run app after install (optional)
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; 卸载时清理用户数据目录（可选，谨慎使用）
+; Clean user data directory on uninstall (optional, use with caution)
 ; Type: filesandordirs; Name: "{userappdata}\amber-list"
+
+[Code]
+// Check if Visual C++ Redistributable is already installed
+function VCRedistInstalled: Boolean;
+var
+  RegKey: String;
+begin
+  // Check for VC++ 2015-2022 Redistributable (x64)
+  // Registry key exists if installed
+  RegKey := 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+  Result := RegKeyExists(HKEY_LOCAL_MACHINE, RegKey);
+
+  if not Result then
+  begin
+    // Also check WOW6432Node for 32-bit registry view
+    RegKey := 'SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64';
+    Result := RegKeyExists(HKEY_LOCAL_MACHINE, RegKey);
+  end;
+
+  if Result then
+    Log('VC++ Redistributable is already installed')
+  else
+    Log('VC++ Redistributable is NOT installed, will install');
+end;
