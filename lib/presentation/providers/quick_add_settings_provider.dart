@@ -185,6 +185,26 @@ class QuickAddSettingsNotifier extends StateNotifier<QuickAddSettings> {
   /// SharedPreferences key
   static const _configKey = 'quick_add_settings';
 
+  /// 是否已完成加载
+  bool _isLoaded = false;
+
+  /// 是否已完成加载
+  bool get isLoaded => _isLoaded;
+
+  /// 等待设置加载完成
+  /// 用于初始化时确保设置已从 SharedPreferences 加载
+  Future<QuickAddSettings> waitForLoad() async {
+    if (_isLoaded) return state;
+
+    // 最多等待 500ms
+    for (int i = 0; i < 50; i++) {
+      await Future.delayed(const Duration(milliseconds: 10));
+      if (_isLoaded) return state;
+    }
+    debugPrint('[QuickAddSettings] 等待加载超时，使用默认设置');
+    return state;
+  }
+
   /// 加载设置
   Future<void> _loadSettings() async {
     try {
@@ -198,6 +218,8 @@ class QuickAddSettingsNotifier extends StateNotifier<QuickAddSettings> {
       }
     } catch (e) {
       debugPrint('[QuickAddSettings] 加载设置失败: $e');
+    } finally {
+      _isLoaded = true;
     }
   }
 

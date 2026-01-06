@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/services/quick_add/quick_add_service.dart';
+import 'core/services/splash_service.dart';
 import 'core/theme/amber_theme.dart';
 import 'data/models/note.dart';
 import 'data/models/task.dart';
@@ -31,11 +32,35 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[App] initState() called');
     // 延迟初始化，避免阻塞启动流程
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      debugPrint('[App] addPostFrameCallback triggered - first frame rendered');
+      // 首帧渲染完成，隐藏原生 Splash 屏幕
+      _hideSplash();
       _checkForUpdatesOnStartup();
       _initializeQuickAddService();
     });
+  }
+
+  /// 隐藏原生 Splash 屏幕
+  ///
+  /// 在 Flutter 首帧渲染后调用，触发 Splash 淡出动画
+  /// Windows 平台额外延迟一小段时间，让用户能看到 Splash 效果
+  Future<void> _hideSplash() async {
+    debugPrint('[App] _hideSplash() called, platform: ${Platform.operatingSystem}');
+    if (Platform.isMacOS || Platform.isWindows) {
+      // Windows 启动较快，额外延迟让用户看到 Splash
+      if (Platform.isWindows) {
+        debugPrint('[App] Windows platform - waiting 2s before hiding splash...');
+        await Future.delayed(const Duration(milliseconds: 2000));
+      }
+      debugPrint('[App] Calling SplashService.hideSplash()...');
+      await SplashService.hideSplash();
+      debugPrint('[App] 原生 Splash 已隐藏');
+    } else {
+      debugPrint('[App] Skipping splash hide - not macOS/Windows');
+    }
   }
 
   @override
@@ -94,8 +119,9 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
     // 设置热键触发回调，获取最新数据后显示窗口
     _quickAddService!.onHotKeyTriggered = _showQuickAddWithData;
 
-    // 读取用户保存的快捷键设置
-    final quickAddSettings = ref.read(quickAddSettingsProvider);
+    // 等待快捷键设置加载完成（从 SharedPreferences 异步加载）
+    final quickAddSettings =
+        await ref.read(quickAddSettingsProvider.notifier).waitForLoad();
     final customHotKey = quickAddSettings.toHotKey();
 
     // 初始化服务（使用用户配置的快捷键）

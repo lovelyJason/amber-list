@@ -60,11 +60,10 @@ class DataManagementTab extends ConsumerWidget {
   Future<void> _exportDatabase(BuildContext context) async {
     final result = await ExportService.exportDatabase();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result != null ? '导出成功：$result' : '导出失败或取消'),
-          backgroundColor: result != null ? AmberColors.success : AmberColors.warning,
-        ),
+      ToastManager().show(
+        context,
+        result != null ? '导出成功：$result' : '导出失败或取消',
+        type: result != null ? ToastType.success : ToastType.warning,
       );
     }
   }
@@ -93,11 +92,10 @@ class DataManagementTab extends ConsumerWidget {
 
     final result = await ExportService.importDatabase();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result ? '导入成功，请重启应用' : '导入失败或取消'),
-          backgroundColor: result ? AmberColors.success : AmberColors.warning,
-        ),
+      ToastManager().show(
+        context,
+        result ? '导入成功，请重启应用' : '导入失败或取消',
+        type: result ? ToastType.success : ToastType.warning,
       );
     }
   }

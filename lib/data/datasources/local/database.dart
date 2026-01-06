@@ -535,9 +535,9 @@ class AppDatabase extends _$AppDatabase {
   // ===== 笔记操作 =====
   Future<List<Note>> getAllNotes() => select(notes).get();
 
-  /// 监听所有笔记（按 sortOrder 升序排列）
+  /// 监听所有笔记（按创建时间倒序排列，最新的在前）
   Stream<List<Note>> watchAllNotes() =>
-      (select(notes)..orderBy([(n) => OrderingTerm.asc(n.sortOrder)])).watch();
+      (select(notes)..orderBy([(n) => OrderingTerm.desc(n.createdAt)])).watch();
 
   Future<int> insertNote(NotesCompanion entry) => into(notes).insert(entry);
 

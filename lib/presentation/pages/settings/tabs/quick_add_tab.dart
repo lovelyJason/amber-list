@@ -8,6 +8,7 @@ import '../../../../core/constants/constants.dart';
 import '../../../../core/services/quick_add/quick_add_service.dart';
 import '../../../providers/providers.dart';
 import '../../../providers/quick_add_settings_provider.dart';
+import '../../../widgets/common/toast/toast_manager.dart';
 import '../widgets/settings_section.dart';
 
 /// 闪念胶囊设置标签页
@@ -294,12 +295,10 @@ class _QuickAddTabState extends ConsumerState<QuickAddTab> {
       });
 
       // 显示成功提示
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('快捷键已更新为 ${newSettings.displayText}'),
-          backgroundColor: AmberColors.success,
-          duration: const Duration(seconds: 2),
-        ),
+      ToastManager().show(
+        context,
+        '快捷键已更新为 ${newSettings.displayText}',
+        type: ToastType.success,
       );
     }
   }

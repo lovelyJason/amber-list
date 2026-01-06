@@ -16,6 +16,7 @@ add_executable(${BINARY_NAME} WIN32
   "native_window_manager.cpp"
   "quick_add_window.cpp"
   "date_picker_popup.cpp"
+  "splash_view.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"

@@ -548,9 +548,30 @@ dependencies:
 - Win32 API
 - dwmapi.lib (DWM 圆角)
 
+## 原生 Splash 屏幕
+
+> 详细文档已迁移至 [native-splash-screen.md](./native-splash-screen.md)
+
+原生 Splash 屏幕解决 Flutter 应用启动时的黑屏问题，在 Flutter 引擎初始化期间显示琥珀主题的启动画面。
+
+**主要特性**：
+- 琥珀背景 + Logo 呼吸动画 + 进度条
+- 支持 fadeOut / crossDissolve 两种过渡效果
+- Platform Channel: `com.amberlist.splash`
+- 双端实现：macOS (NSView) / Windows (Win32 + GDI+)
+
 ## 更新日志
 
 ### 2026-01-06
+
+- **新增原生 Splash 屏幕功能**：
+  - 解决 Flutter 应用启动黑屏问题
+  - macOS: SplashView (NSView) 实现，呼吸动画 + 进度条
+  - Windows: SplashView (Win32/GDI+) 实现，分层窗口 + 双缓冲
+  - Flutter: SplashService 控制隐藏和配置
+  - Platform Channel: `com.amberlist.splash`
+  - 支持 fadeOut/crossDissolve 两种过渡效果
+  - 可配置过渡时长和进度条显示
 
 - **Windows QuickAdd 窗口重大升级**：
   - 从 Direct2D 方案改为 Win32 Native Controls + GDI+ + Owner-Draw

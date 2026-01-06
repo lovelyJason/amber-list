@@ -38,6 +38,69 @@ class AboutTab extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: AmberDimens.spacingLg),
+        // 软件理念区块
+        SettingsSection(
+          title: '设计理念',
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AmberDimens.spacingMd,
+                vertical: AmberDimens.spacingSm,
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(AmberDimens.spacingMd),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AmberColors.primaryLight.withValues(alpha: 0.3),
+                      AmberColors.primaryLight.withValues(alpha: 0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                  border: Border.all(
+                    color: AmberColors.primary.withValues(alpha: 0.2),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.auto_awesome,
+                          color: AmberColors.primary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: AmberDimens.spacingSm),
+                        const Text(
+                          '琥珀 · 清单',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AmberColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AmberDimens.spacingSm),
+                    const Text(
+                      '琥珀，是时间凝固的艺术，温润而珍贵；清单，是生活的秩序，清晰而高效。\n\n我们相信，每一件待办事项都值得被认真对待，如同琥珀珍藏万物。愿这款应用帮你梳理纷繁，留存美好。',
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.8,
+                        color: AmberColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AmberDimens.spacingLg),
         SettingsSection(
           title: '应用信息',
           children: [
@@ -102,9 +165,7 @@ class AboutTab extends ConsumerWidget {
               icon: Icons.history,
               title: '更新日志',
               subtitle: '查看版本更新历史',
-              onTap: () {
-                // TODO: 打开更新日志
-              },
+              onTap: () => _showChangelogDialog(context),
             ),
             // 仅桌面端显示日志功能（移动端不写日志文件）
             if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
@@ -182,6 +243,103 @@ class AboutTab extends ConsumerWidget {
         type: ToastType.error,
       );
     }
+  }
+
+  /// 显示更新日志弹窗
+  Future<void> _showChangelogDialog(BuildContext context) async {
+    // 从 assets 加载 CHANGELOG.md 内容
+    String changelog = '';
+    try {
+      changelog = await DefaultAssetBundle.of(context)
+          .loadString('assets/CHANGELOG.md');
+    } catch (e) {
+      changelog = '加载更新日志失败';
+    }
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+        ),
+        child: Container(
+          width: 480,
+          height: 500,
+          padding: const EdgeInsets.all(AmberDimens.spacingXl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题
+              const Row(
+                children: [
+                  Icon(
+                    Icons.history,
+                    color: AmberColors.primary,
+                    size: 24,
+                  ),
+                  SizedBox(width: AmberDimens.spacingSm),
+                  Text(
+                    '更新日志',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AmberDimens.spacingLg),
+
+              // 更新日志内容（可滚动）
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(AmberDimens.spacingMd),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                    border: Border.all(
+                      color: AmberColors.divider,
+                      width: 1,
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(
+                      changelog,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.8,
+                        color: AmberColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AmberDimens.spacingLg),
+
+              // 关闭按钮
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AmberColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AmberDimens.spacingMd,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                    ),
+                  ),
+                  child: const Text('知道了'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// 显示反馈弹窗

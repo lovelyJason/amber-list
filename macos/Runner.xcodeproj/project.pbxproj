@@ -35,6 +35,7 @@
 		BBCCDD001122334455660001 /* NativeWindowProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCCDD001122334455660002 /* NativeWindowProtocol.swift */; };
 		BBCCDD001122334455660003 /* NativeWindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCCDD001122334455660004 /* NativeWindowManager.swift */; };
 		BBCCDD001122334455660005 /* QuickAddWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBCCDD001122334455660006 /* QuickAddWindow.swift */; };
+		CCDDEE001122334455660001 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCDDEE001122334455660002 /* SplashView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -87,6 +88,7 @@
 		BBCCDD001122334455660002 /* NativeWindowProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWindowProtocol.swift; sourceTree = "<group>"; };
 		BBCCDD001122334455660004 /* NativeWindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeWindowManager.swift; sourceTree = "<group>"; };
 		BBCCDD001122334455660006 /* QuickAddWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickAddWindow.swift; sourceTree = "<group>"; };
+		CCDDEE001122334455660002 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -199,6 +201,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				CCDDEE001122334455660002 /* SplashView.swift */,
 				AABBCC001122334455660002 /* StickyNoteManager.swift */,
 				AABBCC001122334455660004 /* StickyNoteWindowController.swift */,
 				AABBCC001122334455660006 /* StickyNoteContentView.swift */,
@@ -472,6 +475,7 @@
 				BBCCDD001122334455660001 /* NativeWindowProtocol.swift in Sources */,
 				BBCCDD001122334455660003 /* NativeWindowManager.swift in Sources */,
 				BBCCDD001122334455660005 /* QuickAddWindow.swift in Sources */,
+				CCDDEE001122334455660001 /* SplashView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

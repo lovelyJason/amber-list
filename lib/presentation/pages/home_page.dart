@@ -22,6 +22,7 @@ import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
+import '../../core/services/splash_service.dart';
 
 /// 主页面
 class HomePage extends ConsumerStatefulWidget {
@@ -427,6 +428,19 @@ class _HomePageState extends ConsumerState<HomePage> {
                     Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const PrefsEditor()),
                     );
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildDebugOption(
+                  context,
+                  icon: Icons.screen_lock_portrait_rounded,
+                  label: 'Splash 屏幕预览',
+                  description: '显示启动 Splash 屏幕 3 秒',
+                  color: Colors.amber,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    // 调用 SplashService 显示 Splash
+                    await SplashService.showSplash(duration: 3000);
                   },
                 ),
                 const SizedBox(height: 12),
