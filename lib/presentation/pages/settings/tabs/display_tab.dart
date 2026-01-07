@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/constants.dart';
 import '../../../providers/display_settings_provider.dart';
+import '../../../widgets/common/toast/toast_manager.dart';
 import '../widgets/settings_section.dart';
 
 /// 显示设置标签页
@@ -17,6 +20,29 @@ class DisplayTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AmberDimens.spacingLg),
       children: [
+        // Windows 标题栏样式设置（仅 Windows 显示）
+        if (Platform.isWindows)
+          SettingsSection(
+            title: '窗口样式',
+            children: [
+              _buildSwitchTile(
+                icon: Icons.window_outlined,
+                title: '使用 Windows 原生标题栏',
+                subtitle: '关闭则使用 macOS 风格红绿灯按钮，需重启应用生效',
+                value: settings.useNativeTitleBar,
+                onChanged: (value) {
+                  ref.read(displaySettingsProvider.notifier).setUseNativeTitleBar(value);
+                  // 提示用户需要重启
+                  ToastManager().show(
+                    context,
+                    '标题栏样式已更改，重启应用后生效',
+                    type: ToastType.info,
+                  );
+                },
+              ),
+            ],
+          ),
+        if (Platform.isWindows) const SizedBox(height: AmberDimens.spacingMd),
         // 任务列表显示选项
         SettingsSection(
           title: '任务列表',

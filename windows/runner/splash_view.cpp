@@ -19,14 +19,10 @@ bool SplashView::gdiplus_initialized_ = false;
 static const UINT_PTR kBreathingTimerId = 1001;
 static const UINT_PTR kProgressTimerId = 1002;
 static const UINT_PTR kFadeTimerId = 1003;
+static const UINT_PTR kGifTimerId = 1004;
 static const int kAnimationInterval = 16;  // ~60fps
 static const int kProgressInterval = 50;   // Progress update interval
 static const int kFadeInterval = 16;       // Fade animation interval
-
-// Breathing animation parameters
-static const float kMinScale = 0.95f;
-static const float kMaxScale = 1.05f;
-static const float kScaleStep = 0.002f;
 
 SplashView::SplashView(HWND parent_window)
     : parent_window_(parent_window) {
@@ -50,8 +46,17 @@ SplashView::~SplashView() {
         if (fade_timer_id_) {
             KillTimer(splash_window_, fade_timer_id_);
         }
+        if (gif_timer_id_) {
+            KillTimer(splash_window_, gif_timer_id_);
+        }
         DestroyWindow(splash_window_);
         splash_window_ = nullptr;
+    }
+
+    // Free GIF frame delays
+    if (gif_frame_delays_) {
+        delete[] gif_frame_delays_;
+        gif_frame_delays_ = nullptr;
     }
 }
 
@@ -147,36 +152,155 @@ bool SplashView::LoadLogoImage() {
         *last_slash = L'\0';
     }
 
-    // Construct path to logo image (amber_squirrel with transparent background)
+    // Construct path to logo image
     // Flutter assets are stored in data/flutter_assets/assets/images/
     std::wstring logo_path = exe_path;
+    std::wstring loaded_from;
 
-    // Try the removebg version first (transparent background for rolling animation)
-    logo_path += L"\\data\\flutter_assets\\assets\\images\\amber_squirrel-removebg.png";
+    // 1. Try squirrel_walk.gif first (animated GIF)
+    // Note: GDI+ loads GIF but shows only first frame. For full animation,
+    // we would need frame-by-frame rendering, but static first frame is acceptable.
+    logo_path += L"\\data\\flutter_assets\\assets\\images\\squirrel_walk.gif";
+    std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
     logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
 
+    if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+        loaded_from = logo_path;
+    } else {
+        // 2. Try the removebg version (transparent background)
+        logo_path = exe_path;
+        logo_path += L"\\data\\flutter_assets\\assets\\images\\amber_squirrel-removebg.png";
+        std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
+        logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
+        if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+            loaded_from = logo_path;
+        }
+    }
+
     if (logo_bitmap_->GetLastStatus() != Gdiplus::Ok) {
-        // Fall back to regular amber_squirrel
+        // 3. Fall back to regular amber_squirrel
         logo_path = exe_path;
         logo_path += L"\\data\\flutter_assets\\assets\\images\\amber_squirrel.png";
+        std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
         logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
+        if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+            loaded_from = logo_path;
+        }
     }
 
     if (logo_bitmap_->GetLastStatus() != Gdiplus::Ok) {
-        // Try alternate path for debug builds
+        // 4. Try alternate path for debug builds (GIF)
+        logo_path = exe_path;
+        logo_path += L"\\..\\..\\assets\\images\\squirrel_walk.gif";
+        std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
+        logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
+        if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+            loaded_from = logo_path;
+        }
+    }
+
+    if (logo_bitmap_->GetLastStatus() != Gdiplus::Ok) {
+        // 5. Try alternate path for debug builds (PNG)
         logo_path = exe_path;
         logo_path += L"\\..\\..\\assets\\images\\amber_squirrel-removebg.png";
+        std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
         logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
+        if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+            loaded_from = logo_path;
+        }
     }
 
     if (logo_bitmap_->GetLastStatus() != Gdiplus::Ok) {
-        // Last fallback for debug builds
+        // 6. Last fallback for debug builds
         logo_path = exe_path;
         logo_path += L"\\..\\..\\assets\\images\\amber_squirrel.png";
+        std::wcout << L"[SplashView] Trying: " << logo_path << std::endl;
         logo_bitmap_ = std::make_unique<Gdiplus::Bitmap>(logo_path.c_str());
+        if (logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+            loaded_from = logo_path;
+        }
     }
 
-    return logo_bitmap_ && logo_bitmap_->GetLastStatus() == Gdiplus::Ok;
+    if (logo_bitmap_ && logo_bitmap_->GetLastStatus() == Gdiplus::Ok) {
+        std::wcout << L"[SplashView] Loaded logo from: " << loaded_from << std::endl;
+
+        // Check if it's a GIF and initialize animation
+        InitGifAnimation();
+
+        return true;
+    }
+
+    std::cout << "[SplashView] Failed to load any logo image!" << std::endl;
+    return false;
+}
+
+void SplashView::InitGifAnimation() {
+    if (!logo_bitmap_) return;
+
+    // Get frame dimension count
+    UINT dimension_count = logo_bitmap_->GetFrameDimensionsCount();
+    if (dimension_count == 0) {
+        is_gif_ = false;
+        return;
+    }
+
+    // Get the dimension IDs
+    GUID* dimension_ids = new GUID[dimension_count];
+    logo_bitmap_->GetFrameDimensionsList(dimension_ids, dimension_count);
+
+    // Get frame count for the first dimension (time dimension for GIF)
+    gif_frame_count_ = logo_bitmap_->GetFrameCount(&dimension_ids[0]);
+
+    if (gif_frame_count_ > 1) {
+        is_gif_ = true;
+        gif_current_frame_ = 0;
+
+        // Get frame delays from PropertyTagFrameDelay
+        UINT property_size = logo_bitmap_->GetPropertyItemSize(PropertyTagFrameDelay);
+        if (property_size > 0) {
+            Gdiplus::PropertyItem* property_item = (Gdiplus::PropertyItem*)malloc(property_size);
+            if (logo_bitmap_->GetPropertyItem(PropertyTagFrameDelay, property_size, property_item) == Gdiplus::Ok) {
+                // Frame delays are in 1/100 second units
+                gif_frame_delays_ = new UINT[gif_frame_count_];
+                UINT* delays = (UINT*)property_item->value;
+                for (UINT i = 0; i < gif_frame_count_; i++) {
+                    // Convert from 1/100s to milliseconds
+                    gif_frame_delays_[i] = delays[i] * 10;
+                    // Minimum delay of 20ms (browsers use this as minimum too)
+                    if (gif_frame_delays_[i] < 20) gif_frame_delays_[i] = 100;
+                }
+            }
+            free(property_item);
+        }
+
+        std::cout << "[SplashView] GIF detected, frame count: " << gif_frame_count_ << std::endl;
+    } else {
+        is_gif_ = false;
+    }
+
+    delete[] dimension_ids;
+}
+
+void SplashView::UpdateGifFrame() {
+    if (!is_gif_ || gif_frame_count_ <= 1 || !logo_bitmap_) return;
+
+    // Move to next frame
+    gif_current_frame_ = (gif_current_frame_ + 1) % gif_frame_count_;
+
+    // Select the frame in the bitmap
+    GUID page_guid = Gdiplus::FrameDimensionTime;
+    logo_bitmap_->SelectActiveFrame(&page_guid, gif_current_frame_);
+
+    // Redraw
+    InvalidateRect(splash_window_, nullptr, FALSE);
+
+    // Reset timer for next frame's delay
+    if (gif_timer_id_) {
+        KillTimer(splash_window_, gif_timer_id_);
+    }
+    UINT delay = gif_frame_delays_ ? gif_frame_delays_[gif_current_frame_] : 100;
+    if (delay < 20) delay = 100;
+    gif_timer_id_ = SetTimer(splash_window_, kGifTimerId, delay, nullptr);
 }
 
 void SplashView::StartAnimation() {
@@ -186,8 +310,15 @@ void SplashView::StartAnimation() {
 
     is_animating_ = true;
 
-    // Start breathing animation timer
-    animation_timer_id_ = SetTimer(splash_window_, kBreathingTimerId, kAnimationInterval, nullptr);
+    // Initialize and start GIF animation if it's a GIF
+    if (is_gif_ && gif_frame_count_ > 1) {
+        // Start GIF frame timer with first frame's delay
+        UINT delay = gif_frame_delays_ ? gif_frame_delays_[0] : 100;
+        if (delay < 20) delay = 100;  // Minimum delay
+        gif_timer_id_ = SetTimer(splash_window_, kGifTimerId, delay, nullptr);
+        std::cout << "[SplashView] Started GIF animation, frames: " << gif_frame_count_ << std::endl;
+    }
+    // Note: Breathing animation removed - logo stays static (scale = 1.0)
 
     // Start progress animation timer if enabled
     if (show_progress_bar) {
@@ -223,6 +354,10 @@ void SplashView::Hide(std::function<void()> completion) {
     if (progress_timer_id_) {
         KillTimer(splash_window_, progress_timer_id_);
         progress_timer_id_ = 0;
+    }
+    if (gif_timer_id_) {
+        KillTimer(splash_window_, gif_timer_id_);
+        gif_timer_id_ = 0;
     }
 
     // Complete progress bar to 100%
@@ -267,12 +402,14 @@ LRESULT SplashView::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM
 
         case WM_TIMER:
             if (wparam == kBreathingTimerId) {
-                UpdateBreathingAnimation();
+                // Breathing animation disabled
             } else if (wparam == kProgressTimerId) {
                 UpdateProgressAnimation();
             } else if (wparam == kFadeTimerId) {
                 OutputDebugStringW(L"[SplashView] WM_TIMER(kFadeTimerId) received\n");
                 PerformFadeOut();
+            } else if (wparam == kGifTimerId) {
+                UpdateGifFrame();
             }
             return 0;
 
@@ -417,23 +554,8 @@ void SplashView::DrawProgressBar(Gdiplus::Graphics& g) {
 }
 
 void SplashView::UpdateBreathingAnimation() {
-    // Update logo scale for breathing effect
-    if (scale_increasing_) {
-        logo_scale_ += kScaleStep;
-        if (logo_scale_ >= kMaxScale) {
-            logo_scale_ = kMaxScale;
-            scale_increasing_ = false;
-        }
-    } else {
-        logo_scale_ -= kScaleStep;
-        if (logo_scale_ <= kMinScale) {
-            logo_scale_ = kMinScale;
-            scale_increasing_ = true;
-        }
-    }
-
-    // Trigger repaint
-    InvalidateRect(splash_window_, nullptr, FALSE);
+    // Breathing animation disabled - logo stays at scale 1.0
+    // This function is kept for compatibility but does nothing
 }
 
 void SplashView::UpdateProgressAnimation() {

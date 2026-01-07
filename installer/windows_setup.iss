@@ -12,7 +12,8 @@
 #define MyAppName "Amber List"
 #define MyAppNameCN "琥珀清单"
 #define MyAppNameEn "AmberList"
-#define MyAppVersion "1.0.0"
+; Version will be replaced by CI workflow from pubspec.yaml
+#define MyAppVersion "0.0.0"
 #define MyAppPublisher "Amber List Team"
 #define MyAppURL "https://github.com/user/amber-list"
 #define MyAppExeName "amber_list.exe"

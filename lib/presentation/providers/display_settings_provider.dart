@@ -24,12 +24,18 @@ class DisplaySettings {
   /// 默认为 0xFFFF5722 (AmberColors.warning 同色)
   final int overdueLabelColorValue;
 
+  /// 是否使用原生标题栏（仅 Windows 有效）
+  /// true = Windows 原生标题栏，false = macOS 风格红绿灯
+  /// 默认 false（使用 macOS 风格红绿灯）
+  final bool useNativeTitleBar;
+
   const DisplaySettings({
     this.showTags = true,
     this.showDueDate = true,
     this.showPriority = true,
     this.overdueTitleColorValue = 0xFFFF5722,
     this.overdueLabelColorValue = 0xFFFF5722,
+    this.useNativeTitleBar = false,
   });
 
   DisplaySettings copyWith({
@@ -38,6 +44,7 @@ class DisplaySettings {
     bool? showPriority,
     int? overdueTitleColorValue,
     int? overdueLabelColorValue,
+    bool? useNativeTitleBar,
   }) {
     return DisplaySettings(
       showTags: showTags ?? this.showTags,
@@ -45,6 +52,7 @@ class DisplaySettings {
       showPriority: showPriority ?? this.showPriority,
       overdueTitleColorValue: overdueTitleColorValue ?? this.overdueTitleColorValue,
       overdueLabelColorValue: overdueLabelColorValue ?? this.overdueLabelColorValue,
+      useNativeTitleBar: useNativeTitleBar ?? this.useNativeTitleBar,
     );
   }
 
@@ -55,6 +63,7 @@ class DisplaySettings {
         'showPriority': showPriority,
         'overdueTitleColorValue': overdueTitleColorValue,
         'overdueLabelColorValue': overdueLabelColorValue,
+        'useNativeTitleBar': useNativeTitleBar,
       };
 
   /// 从 JSON 创建
@@ -65,6 +74,7 @@ class DisplaySettings {
       showPriority: json['showPriority'] as bool? ?? true,
       overdueTitleColorValue: json['overdueTitleColorValue'] as int? ?? 0xFFFF5722,
       overdueLabelColorValue: json['overdueLabelColorValue'] as int? ?? 0xFFFF5722,
+      useNativeTitleBar: json['useNativeTitleBar'] as bool? ?? false,
     );
   }
 }
@@ -151,6 +161,13 @@ class DisplaySettingsNotifier extends StateNotifier<DisplaySettings> {
   /// 设置过期标签颜色（"已过期"文字）
   void setOverdueLabelColor(int colorValue) {
     state = state.copyWith(overdueLabelColorValue: colorValue);
+    _saveSettings();
+  }
+
+  /// 设置是否使用原生标题栏（仅 Windows 有效）
+  /// 注意：此设置需要重启应用才能生效
+  void setUseNativeTitleBar(bool value) {
+    state = state.copyWith(useNativeTitleBar: value);
     _saveSettings();
   }
 }

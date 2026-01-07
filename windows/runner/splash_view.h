@@ -91,6 +91,13 @@ private:
     float logo_scale_ = 1.0f;
     bool scale_increasing_ = true;
 
+    // GIF animation support
+    bool is_gif_ = false;
+    UINT gif_frame_count_ = 0;
+    UINT gif_current_frame_ = 0;
+    UINT* gif_frame_delays_ = nullptr;  // Frame delays in milliseconds
+    UINT_PTR gif_timer_id_ = 0;
+
     // Progress
     double current_progress_ = 0.0;
 
@@ -100,6 +107,10 @@ private:
     UINT_PTR animation_timer_id_ = 0;
     UINT_PTR progress_timer_id_ = 0;
     UINT_PTR fade_timer_id_ = 0;
+
+    // GIF frame switching
+    void UpdateGifFrame();
+    void InitGifAnimation();
 
     // Fade out state
     BYTE current_alpha_ = 255;

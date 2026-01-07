@@ -60,7 +60,10 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
   @override
   Widget build(BuildContext context) {
     final navState = ref.watch(appNavProvider);
+    final displaySettings = ref.watch(displaySettingsProvider);
     final isWindows = Platform.isWindows;
+    // Windows 下根据用户设置决定是否显示红绿灯
+    final showTrafficLights = isWindows && !displaySettings.useNativeTitleBar;
 
     return Container(
       width: AmberDimens.narrowSidebarWidth,
@@ -68,7 +71,9 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
       child: Column(
         children: [
           // Mac-style window controls (Traffic Lights)
-          if (isWindows)
+          // Windows: 仅在使用 macOS 风格时显示红绿灯
+          // macOS: 系统原生红绿灯，这里只留空间
+          if (showTrafficLights)
             SizedBox(
               height: 40,
               child: DragToMoveArea(
@@ -79,8 +84,11 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
                 ),
               ),
             )
+          else if (isWindows && displaySettings.useNativeTitleBar)
+            // Windows 原生标题栏模式：不需要额外留空间
+            const SizedBox(height: AmberDimens.spacingSm)
           else
-            // 顶部留出macOS窗口控制按钮的空间(红黄绿按钮约22px高)
+            // macOS/Linux：顶部留出系统窗口控制按钮的空间(红黄绿按钮约22px高)
             const SizedBox(
               height: AmberDimens.spacingXl + AmberDimens.spacingXs,
             ),
@@ -316,11 +324,74 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
     return '${diff.inDays}天前';
   }
 
-  /// Logo - 琥珀中封存的昆虫
+  /// Logo/头像 - 显示用户自定义头像或默认的琥珀 Logo
+  /// 点击弹出下拉菜单，包含设置入口
   Widget _buildLogo() {
-    return Tooltip(
-      message: '琥珀清单 - 封存万物,历久弥新',
-      preferBelow: false,
+    final profile = ref.watch(userProfileProvider);
+
+    return PopupMenuButton<String>(
+      tooltip: '',
+      offset: const Offset(50, 0), // 菜单显示在头像右侧
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+      ),
+      color: AmberColors.cardBackground,
+      elevation: 8,
+      onSelected: (value) {
+        if (value == 'settings') {
+          // 打开设置弹窗
+          showDialog(
+            context: context,
+            barrierColor: Colors.black54,
+            builder: (context) => Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(40),
+              child: Container(
+                width: 1000,
+                height: 700,
+                decoration: BoxDecoration(
+                  color: AmberColors.background,
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+                  child: const SettingsPage(windowId: null),
+                ),
+              ),
+            ),
+          );
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          value: 'settings',
+          height: 40,
+          child: Row(
+            children: [
+              Icon(
+                FluentIcons.settings_24_regular,
+                size: 18,
+                color: AmberColors.textPrimary,
+              ),
+              const SizedBox(width: AmberDimens.spacingSm),
+              const Text(
+                '设置',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AmberColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
       child: Container(
         width: 40,
         height: 40,
@@ -336,11 +407,26 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
-          child: const AnimatedLogo(
-            width: 40,
-            height: 40,
-            fit: BoxFit.cover,
-          ),
+          child: profile.hasCustomAvatar
+              ? Image.file(
+                  File(profile.avatarPath!),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    // 图片加载失败，显示默认 Logo
+                    return const AnimatedLogo(
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                    );
+                  },
+                )
+              : const AnimatedLogo(
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                ),
         ),
       ),
     );

@@ -46,8 +46,7 @@ class SplashView: NSView {
 
     // MARK: - UI Components
 
-    private var logoContainer: NSView!
-    private var logoLayer: CALayer!
+    private var logoImageView: NSImageView!
     private var progressContainer: NSView?
 
     // MARK: - State
@@ -83,42 +82,25 @@ class SplashView: NSView {
     // MARK: - Setup
 
     private func setupLogo() {
-        // Container for layout
-        logoContainer = NSView()
-        logoContainer.wantsLayer = true
-        logoContainer.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(logoContainer)
+        logoImageView = NSImageView()
+        logoImageView.imageScaling = .scaleProportionallyUpOrDown
+        logoImageView.translatesAutoresizingMaskIntoConstraints = false
+        logoImageView.animates = true // Enable GIF animation
 
-        // Center logo container with size constraints
-        NSLayoutConstraint.activate([
-            logoContainer.centerXAnchor.constraint(equalTo: centerXAnchor),
-            logoContainer.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -20),
-            logoContainer.widthAnchor.constraint(equalToConstant: 280),
-            logoContainer.heightAnchor.constraint(equalToConstant: 280)
-        ])
-
-        // Create Layer for Image (use CALayer for proper rotation animation)
-        logoLayer = CALayer()
-        logoLayer.contentsGravity = .resizeAspect
-
-        // Load image
+        // Load logo
         if let logoImage = loadLogoImage() {
-            logoLayer.contents = logoImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            logoImageView.image = logoImage
         }
 
-        logoContainer.layer?.addSublayer(logoLayer)
-    }
+        addSubview(logoImageView)
 
-    override func layout() {
-        super.layout()
-        // Keep layer frame updated and centered
-        if let container = logoContainer {
-            let bounds = container.bounds
-            // Ensure precise pivot center for rotation
-            logoLayer.bounds = bounds
-            logoLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-            logoLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        }
+        // Center logo with size constraints
+        NSLayoutConstraint.activate([
+            logoImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            logoImageView.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -20),
+            logoImageView.widthAnchor.constraint(equalToConstant: 280),
+            logoImageView.heightAnchor.constraint(equalToConstant: 280)
+        ])
     }
 
     private func setupProgressBar() {
@@ -136,7 +118,7 @@ class SplashView: NSView {
         // Position below logo
         NSLayoutConstraint.activate([
             progressContainer.centerXAnchor.constraint(equalTo: centerXAnchor),
-            progressContainer.topAnchor.constraint(equalTo: logoContainer.bottomAnchor, constant: 60),
+            progressContainer.topAnchor.constraint(equalTo: logoImageView.bottomAnchor, constant: 60),
             progressContainer.widthAnchor.constraint(equalToConstant: 200),
             progressContainer.heightAnchor.constraint(equalToConstant: 6)
         ])
@@ -160,30 +142,46 @@ class SplashView: NSView {
     }
 
     private func loadLogoImage() -> NSImage? {
-        // 1. Try native asset catalog (Best practice)
+        let bundle = Bundle.main
+
+        // Flutter assets are located in App.framework, not Resources
+        // Path: Contents/Frameworks/App.framework/Versions/A/Resources/flutter_assets/
+        let flutterAssetsPath: String? = {
+            if let bundlePath = bundle.bundlePath as String? {
+                let appFrameworkPath = "\(bundlePath)/Contents/Frameworks/App.framework/Versions/A/Resources/flutter_assets"
+                if FileManager.default.fileExists(atPath: appFrameworkPath) {
+                    return appFrameworkPath
+                }
+                // Fallback: try resourcePath (older Flutter versions)
+                if let resourcePath = bundle.resourcePath {
+                    let legacyPath = "\(resourcePath)/flutter_assets"
+                    if FileManager.default.fileExists(atPath: legacyPath) {
+                        return legacyPath
+                    }
+                }
+            }
+            return nil
+        }()
+
+        // 1. Try Flutter assets GIF first (Asset Catalog doesn't support GIF animation)
+        if let assetsPath = flutterAssetsPath {
+            let gifPath = "\(assetsPath)/assets/images/squirrel_walk.gif"
+            if FileManager.default.fileExists(atPath: gifPath) {
+                return NSImage(contentsOfFile: gifPath)
+            }
+        }
+
+        // 2. Try native asset "AmberSplash" (static PNG fallback)
         if let image = NSImage(named: "AmberSplash") {
             return image
         }
 
-        // 2. Try Flutter assets - amber_squirrel with transparent background
-        let bundle = Bundle.main
-        if let resourcePath = bundle.resourcePath {
-            // Try the removebg version first
-            let removebgPath = "\(resourcePath)/flutter_assets/assets/images/amber_squirrel-removebg.png"
+        // 3. Try Flutter assets static image
+        if let assetsPath = flutterAssetsPath {
+            let removebgPath = "\(assetsPath)/assets/images/amber_squirrel-removebg.png"
             if FileManager.default.fileExists(atPath: removebgPath) {
                 return NSImage(contentsOfFile: removebgPath)
             }
-
-            // Fall back to regular version
-            let assetPath = "\(resourcePath)/flutter_assets/assets/images/amber_squirrel.png"
-            if FileManager.default.fileExists(atPath: assetPath) {
-                return NSImage(contentsOfFile: assetPath)
-            }
-        }
-
-        // 3. Last resort fallback
-        if let image = bundle.image(forResource: "amber_squirrel") {
-            return image
         }
 
         return createPlaceholderLogo()
@@ -220,28 +218,12 @@ class SplashView: NSView {
         guard !isAnimating else { return }
         isAnimating = true
 
-        // Start rolling animation
-        startRollingAnimation()
+        // GIF animates automatically
 
         // Start progress animation if enabled
         if SplashView.showProgressBar {
             startProgressAnimation()
         }
-    }
-
-    private func startRollingAnimation() {
-        // Rotate animation using CoreAnimation
-        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
-        rotation.fromValue = 0
-        rotation.toValue = -2 * Double.pi // Clockwise rotation (like rolling)
-
-        rotation.duration = 4.0 // 4 seconds for full rotation
-        rotation.repeatCount = .infinity
-        rotation.isRemovedOnCompletion = false
-        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
-
-        // Apply to the logo layer (not the container)
-        logoLayer.add(rotation, forKey: "rotationAnimation")
     }
 
     private func startProgressAnimation() {
@@ -290,7 +272,7 @@ class SplashView: NSView {
         progressTimer = nil
 
         // Stop rotation animation
-        logoLayer.removeAllAnimations()
+        // logoLayer.removeAllAnimations()
 
         // Complete progress bar to 100%
         if SplashView.showProgressBar {

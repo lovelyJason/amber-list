@@ -52,8 +52,10 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
     if (Platform.isMacOS || Platform.isWindows) {
       // Windows 启动较快，额外延迟让用户看到 Splash
       if (Platform.isWindows) {
-        debugPrint('[App] Windows platform - waiting 2s before hiding splash...');
-        await Future.delayed(const Duration(milliseconds: 2000));
+        debugPrint(
+          '[App] Windows platform - waiting 3s before hiding splash...',
+        );
+        await Future.delayed(const Duration(milliseconds: 3000));
       }
       debugPrint('[App] Calling SplashService.hideSplash()...');
       await SplashService.hideSplash();

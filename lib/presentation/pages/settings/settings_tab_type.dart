@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 /// 设置页标签类型枚举
 enum SettingsTabType {
+  /// 个人信息（头像等）
+  profile,
+
   /// 显示设置（控制任务列表项的显示选项）
   display,
 
@@ -20,6 +23,8 @@ enum SettingsTabType {
   /// 获取标签显示名称
   String get displayName {
     switch (this) {
+      case SettingsTabType.profile:
+        return '个人信息';
       case SettingsTabType.display:
         return '显示';
       case SettingsTabType.quickAdd:
@@ -36,6 +41,8 @@ enum SettingsTabType {
   /// 获取标签图标
   IconData get icon {
     switch (this) {
+      case SettingsTabType.profile:
+        return Icons.person_outline;
       case SettingsTabType.display:
         return Icons.visibility_outlined;
       case SettingsTabType.quickAdd:

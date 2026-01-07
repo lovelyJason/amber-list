@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
@@ -121,24 +122,45 @@ Future<void> _startApp(List<String> args) async {
   if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
     await windowManager.ensureInitialized();
 
-    // 窗口配置
-    const windowOptions = WindowOptions(
-      size: Size(1080, 720),
-      minimumSize: Size(
+    // 读取用户的标题栏样式偏好（仅 Windows 有效）
+    bool useNativeTitleBar = false;
+    if (Platform.isWindows) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final jsonStr = prefs.getString('display_settings');
+        if (jsonStr != null && jsonStr.isNotEmpty) {
+          final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+          useNativeTitleBar = json['useNativeTitleBar'] as bool? ?? false;
+        }
+      } catch (e) {
+        AppLogger.error('Main', '读取标题栏设置失败', e, null);
+      }
+    }
+
+    // 窗口配置：Windows 根据用户设置选择标题栏样式
+    final windowOptions = WindowOptions(
+      size: const Size(1080, 720),
+      minimumSize: const Size(
         AmberDimens.minWindowWidth,
         AmberDimens.minWindowHeight,
       ),
       center: true,
       backgroundColor: Colors.transparent,
       skipTaskbar: false,
-      titleBarStyle: TitleBarStyle.hidden,
+      // Windows: 根据用户设置选择原生标题栏或隐藏标题栏
+      // macOS/Linux: 始终隐藏标题栏
+      titleBarStyle: (Platform.isWindows && useNativeTitleBar)
+          ? TitleBarStyle.normal
+          : TitleBarStyle.hidden,
       title: '琥珀清单',
     );
 
     await windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();
       await windowManager.focus();
-      if (Platform.isWindows) await windowManager.setHasShadow(false);
+      if (Platform.isWindows && !useNativeTitleBar) {
+        await windowManager.setHasShadow(false);
+      }
     });
   }
 

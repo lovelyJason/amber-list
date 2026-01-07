@@ -2,11 +2,15 @@
 #define RUNNER_STICKY_NOTE_WINDOW_H_
 
 #include <windows.h>
+#include <gdiplus.h>
 #include <commctrl.h>
 #include <string>
 #include <vector>
 #include <map>
 #include <functional>
+#include <memory>
+
+#pragma comment(lib, "gdiplus.lib")
 
 // Task item data structure
 struct TaskItem {
@@ -15,8 +19,12 @@ struct TaskItem {
     bool isCompleted;
 };
 
-// Native sticky note window class
-// Uses Win32 API to bypass Flutter multi-window bugs
+/// Native sticky note window class
+/// Redesigned to match macOS implementation:
+/// - Borderless window with rounded corners and shadow
+/// - Custom header with icon buttons (color picker, pin, close)
+/// - Task list with checkboxes and strikethrough for completed items
+/// - Scrollable content area
 class StickyNoteWindow {
 public:
     // Constructor
@@ -76,85 +84,100 @@ private:
     // Register window class
     static bool RegisterWindowClass();
 
-    // Create controls
-    void CreateControls();
+    // Initialize GDI+
+    static void InitGdiPlus();
 
-    // Rebuild task list
-    void RebuildTaskList();
-
-    // Paint background
+    // Drawing methods
     void OnPaint();
+    void DrawHeader(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
+    void DrawContent(Gdiplus::Graphics& g, const Gdiplus::RectF& rect);
+    void DrawTaskItem(Gdiplus::Graphics& g, const TaskItem& task, float y, bool isCompleted);
+    void DrawIconButton(Gdiplus::Graphics& g, int buttonId, float x, float y, float size);
+    void DrawColorPicker(Gdiplus::Graphics& g, float y);
 
-    // Handle checkbox click
-    void OnCheckboxClicked(int checkboxId);
+    // Hit testing for custom buttons
+    int HitTestButton(int x, int y);
+    int HitTestTask(int y);
+    int HitTestColorPicker(int x, int y);
 
-    // Handle button click
-    void OnButtonClicked(int buttonId);
+    // Event handlers
+    void OnMouseDown(int x, int y);
+    void OnMouseUp(int x, int y);
+    void OnMouseMove(int x, int y);
+    void OnMouseLeave();
 
-    // Toggle pin state
+    // Actions
     void TogglePin();
+    void ToggleColorPicker();
+    void SelectColor(int colorIndex);
+    void ToggleTask(int taskIndex);
 
-    // Show color picker
-    void ShowColorPicker();
-
-    // Hide color picker
-    void HideColorPicker();
+    // Scroll handling
+    void OnMouseWheel(int delta);
+    void UpdateScrollBounds();
 
     // ===== Member variables =====
 
-    // Note ID
+    // Note data
     std::wstring note_id_;
-
-    // Note title
     std::wstring note_title_;
-
-    // Theme color
     COLORREF theme_color_;
-
-    // Is pinned (always on top)
     bool is_pinned_ = true;
 
     // Window handle
     HWND window_handle_ = nullptr;
 
-    // Header background brush
-    HBRUSH header_brush_ = nullptr;
-
-    // Background brush
-    HBRUSH bg_brush_ = nullptr;
-
     // Task lists
     std::vector<TaskItem> active_tasks_;
     std::vector<TaskItem> completed_tasks_;
 
-    // Checkbox ID to TaskId mapping
-    std::map<int, std::wstring> checkbox_task_map_;
-
-    // Control ID counter
-    int next_control_id_ = 100;
-
-    // Is color picker visible
+    // UI state
     bool color_picker_visible_ = false;
+    int hovered_button_ = -1;        // -1: none, 0: color, 1: pin, 2: close
+    int pressed_button_ = -1;
+    int hovered_task_ = -1;
+    int hovered_color_ = -1;
 
-    // Control handles
-    HWND title_label_ = nullptr;
-    HWND scroll_container_ = nullptr;
-    HWND pin_button_ = nullptr;
-    HWND color_button_ = nullptr;
-    HWND close_button_ = nullptr;
+    // Scroll state
+    float scroll_offset_ = 0.0f;
+    float max_scroll_ = 0.0f;
+    bool is_scrolling_ = false;
+    int scroll_start_y_ = 0;
+    float scroll_start_offset_ = 0.0f;
 
-    // Button IDs
-    static const int ID_BTN_PIN = 1001;
-    static const int ID_BTN_COLOR = 1002;
-    static const int ID_BTN_CLOSE = 1003;
-    static const int ID_BTN_COLOR_1 = 1011;
-    static const int ID_BTN_COLOR_2 = 1012;
-    static const int ID_BTN_COLOR_3 = 1013;
-    static const int ID_BTN_COLOR_4 = 1014;
+    // Layout constants
+    static const int kWindowWidth = 320;
+    static const int kWindowHeight = 400;
+    static const int kCornerRadius = 12;
+    static const int kHeaderHeight = 32;
+    static const int kTitleHeight = 40;
+    static const int kPadding = 16;
+    static const int kTaskItemHeight = 32;
+    static const int kCheckboxSize = 18;
+    static const int kButtonSize = 24;
+    static const int kColorDotSize = 16;
 
-    // Window class name
+    // Button IDs for hit testing
+    static const int kButtonColor = 0;
+    static const int kButtonPin = 1;
+    static const int kButtonClose = 2;
+
+    // Predefined theme colors (ARGB for GDI+)
+    static const DWORD kThemeColors[];
+    static const int kThemeColorCount = 4;
+
+    // Window class
     static const wchar_t* kWindowClassName;
     static bool class_registered_;
+
+    // GDI+ token
+    static ULONG_PTR gdiplus_token_;
+    static bool gdiplus_initialized_;
+
+    // Cached fonts
+    std::unique_ptr<Gdiplus::Font> header_font_;
+    std::unique_ptr<Gdiplus::Font> title_font_;
+    std::unique_ptr<Gdiplus::Font> task_font_;
 };
 
 #endif  // RUNNER_STICKY_NOTE_WINDOW_H_
