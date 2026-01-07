@@ -99,3 +99,4 @@ remove_bg.py
 # .env
 # .env.example 应该提交，作为配置模板
 update.json
+index.html

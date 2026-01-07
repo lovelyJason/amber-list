@@ -6,7 +6,10 @@ import 'widgets/settings_tab_navigator.dart';
 
 /// 设置页面 - 支持多种显示模式(Dialog/独立窗口/页面跳转)
 class SettingsPage extends StatelessWidget {
-  final int? windowId;
+  /// 窗口唯一标识符
+  /// desktop_multi_window 0.3.0 使用 String UUID
+  /// 为 null 时表示在 Dialog 中显示
+  final String? windowId;
 
   const SettingsPage({super.key, this.windowId});
 

@@ -7,8 +7,22 @@ import 'dart:io';
 
 import '../../../core/constants/constants.dart';
 
+/// 便签通道名称常量
+/// 用于主窗口与便签窗口之间的消息通信
+class StickyNoteChannel {
+  /// 便签事件通道（便签 -> 主窗口）
+  /// 用于通知主窗口便签关闭、任务切换等事件
+  static const String events = 'amber.sticky_note.events';
+
+  /// 便签命令通道（主窗口 -> 便签）
+  /// 用于向便签发送更新任务状态等命令
+  static const String commands = 'amber.sticky_note.commands';
+}
+
 class StickyNotePage extends StatefulWidget {
-  final int windowId;
+  /// 窗口唯一标识符
+  /// desktop_multi_window 0.3.0 使用 String UUID
+  final String windowId;
   final Map<String, dynamic> args;
 
   const StickyNotePage({
@@ -21,12 +35,11 @@ class StickyNotePage extends StatefulWidget {
   State<StickyNotePage> createState() => _StickyNotePageState();
 }
 
-class _StickyNotePageState extends State<StickyNotePage> {
+class _StickyNotePageState extends State<StickyNotePage> with WindowListener {
   bool _isPinned = true;
   late Color _backgroundColor;
   bool _showColorPicker = false;
-  // _isClosing is no longer needed if we don't intercept 'X'
-  
+  bool _isClosing = false; // 防止重复通知
 
   final List<Color> _colors = const [
     Color(0xFFFFF7D1), // Yellow (Default)
@@ -35,74 +48,108 @@ class _StickyNotePageState extends State<StickyNotePage> {
     Color(0xFFE8F5E9), // Green
   ];
 
-  // Helper to manually notify main (e.g. if we add a custom close button later)
+  /// 事件通道（便签 -> 主窗口）
+  /// 使用单向模式，只有主窗口注册处理器，所有便签都可以发送消息
+  late final WindowMethodChannel _eventChannel;
+
+  /// 命令通道（主窗口 -> 便签）
+  /// 使用单向模式，便签注册处理器接收来自主窗口的命令
+  late final WindowMethodChannel _commandChannel;
+
+  /// 通知主窗口便签已关闭
   Future<void> _notifyClose() async {
     final contentId = widget.args['id'] as String?;
     if (contentId != null) {
       try {
-        await DesktopMultiWindow.invokeMethod(0, 'stickyNoteClosed', contentId);
+        await _eventChannel.invokeMethod('stickyNoteClosed', contentId);
+        debugPrint('[StickyNote] 已通知主窗口便签关闭: $contentId');
       } catch (e) {
-        debugPrint('Failed to notify close: $e');
+        debugPrint('[StickyNote] 通知关闭失败: $e');
       }
     }
   }
-  
-  // Custom close method (if invoked by UI button)
+
+  /// 关闭窗口（UI 按钮触发）
   void _closeWindow() async {
-    // 1. Notify
+    if (_isClosing) return;
+    _isClosing = true;
+    // 1. 通知主窗口
     await _notifyClose();
-    // 2. Close
+    // 2. 关闭窗口
     await WindowManager.instance.close();
   }
 
   @override
   void initState() {
     super.initState();
-    // Initialize color from args or default to yellow
+
+    // 初始化通信通道
+    _eventChannel = const WindowMethodChannel(
+      StickyNoteChannel.events,
+      mode: ChannelMode.unidirectional,
+    );
+    _commandChannel = const WindowMethodChannel(
+      StickyNoteChannel.commands,
+      mode: ChannelMode.unidirectional,
+    );
+
+    // 初始化背景颜色
     if (widget.args['themeColor'] != null) {
-        _backgroundColor = Color(int.parse(widget.args['themeColor']));
+      _backgroundColor = Color(int.parse(widget.args['themeColor']));
     } else {
       _backgroundColor = _colors[0];
     }
-    
-    // Default always on top
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      WindowManager.instance.setAlwaysOnTop(true);
-    });
 
-    // Listen for updates from Main Window
-    DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
-      if (call.method == 'updateTask') {
-        final args = call.arguments as Map;
-        final taskId = args['id'] as String;
-        final isCompleted = args['isCompleted'] as bool;
-        _handleTaskUpdate(taskId, isCompleted);
-        return 'ok';
-      } else if (call.method == 'ping') {
-        return 'pong';
-      }
-      return null;
+    // 窗口初始化
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 设置默认置顶
+      await WindowManager.instance.setAlwaysOnTop(true);
+      // 监听窗口关闭事件（用户点击系统 X 按钮时）
+      WindowManager.instance.addListener(this);
+
+      // 注册命令处理器，接收来自主窗口的命令
+      await _commandChannel.setMethodCallHandler((call) async {
+        debugPrint('[StickyNote] 收到命令: ${call.method}');
+        if (call.method == 'updateTask') {
+          final args = call.arguments as Map;
+          final taskId = args['id'] as String;
+          final isCompleted = args['isCompleted'] as bool;
+          _handleTaskUpdate(taskId, isCompleted);
+          return 'ok';
+        } else if (call.method == 'ping') {
+          return 'pong';
+        }
+        return null;
+      });
     });
-    
-    // NO WindowListener
-    // NO setPreventClose
   }
 
   @override
   void dispose() {
+    WindowManager.instance.removeListener(this);
+    // 移除命令处理器
+    _commandChannel.setMethodCallHandler(null);
     super.dispose();
   }
 
+  // ========== WindowListener 回调 ==========
 
-  
+  @override
+  void onWindowClose() async {
+    // 用户点击系统 X 按钮关闭窗口时触发
+    if (_isClosing) return;
+    _isClosing = true;
+    debugPrint('[StickyNote] 窗口即将关闭，通知主窗口');
+    await _notifyClose();
+    // 不需要手动关闭，系统会处理
+  }
+
   void _togglePin() async {
     setState(() {
       _isPinned = !_isPinned;
     });
     await WindowManager.instance.setAlwaysOnTop(_isPinned);
   }
-
-
 
   void _handleTaskUpdate(String taskId, bool isCompleted) {
     if (!mounted) return;
@@ -144,7 +191,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
       }
     });
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final title = widget.args['title'] ?? '便签';
@@ -157,13 +204,13 @@ class _StickyNotePageState extends State<StickyNotePage> {
       body: Container(
         decoration: BoxDecoration(
           color: _backgroundColor,
-          borderRadius: BorderRadius.zero, 
+          borderRadius: BorderRadius.zero,
           boxShadow: [
-             BoxShadow(
-               color: Colors.black.withOpacity(0.2),
-               blurRadius: 10,
-               offset: const Offset(0, 4),
-             )
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
           ],
           border: Border.all(color: Colors.black.withOpacity(0.05), width: 1),
         ),
@@ -171,18 +218,21 @@ class _StickyNotePageState extends State<StickyNotePage> {
           children: [
             // === Drag Header ===
             GestureDetector(
-                onPanStart: (_) {
-                     WindowManager.instance.startDragging();
-                },
-                behavior: HitTestBehavior.translucent, // Allow dragging on empty space
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  color: Colors.black.withOpacity(0.02), // Slight tint for header area
-                  child: Row(
-                    children: [
-                        const Icon(FluentIcons.note_24_regular, size: 16, color: AmberColors.textSecondary),
-                        const SizedBox(width: 8),
+              onPanStart: (_) {
+                WindowManager.instance.startDragging();
+              },
+              behavior:
+                  HitTestBehavior.translucent, // Allow dragging on empty space
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                color: Colors.black
+                    .withOpacity(0.02), // Slight tint for header area
+                child: Row(
+                  children: [
+                    const Icon(FluentIcons.note_24_regular,
+                        size: 16, color: AmberColors.textSecondary),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '琥珀便签',
@@ -192,38 +242,39 @@ class _StickyNotePageState extends State<StickyNotePage> {
                           fontWeight: Platform.isMacOS ? null : FontWeight.w500,
                         ),
                         maxLines: Platform.isMacOS ? null : 1,
-                        overflow: Platform.isMacOS
-                            ? null
-                            : TextOverflow.ellipsis,
+                        overflow:
+                            Platform.isMacOS ? null : TextOverflow.ellipsis,
                       ),
                     ),
-                        
                     if (_showColorPicker)
                       ..._buildColorPicker()
                     else
                       ..._buildStandardActions(),
-                    ],
-                  ),
+                  ],
                 ),
+              ),
             ),
-            
+
             // === Content ===
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                        Text(
-                            title,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-                        ),
-                        const SizedBox(height: 8),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87),
+                    ),
+                    const SizedBox(height: 8),
                     // Scenario A: Single Item Note (Legacy/String content)
                     if (content != null &&
                         content is String &&
                         content.isNotEmpty)
-                      Expanded( 
+                      Expanded(
                         child: SingleChildScrollView(
                           child: Text(
                             content,
@@ -246,7 +297,6 @@ class _StickyNotePageState extends State<StickyNotePage> {
                               ...activeList
                                   .map((item) => _buildCheckItem(item, false))
                                   .toList(),
-
                             if (activeList != null &&
                                 activeList.isNotEmpty &&
                                 completedList != null &&
@@ -260,7 +310,6 @@ class _StickyNotePageState extends State<StickyNotePage> {
                                   height: 1,
                                 ),
                               ),
-
                             if (completedList != null)
                               ...completedList
                                   .map((item) => _buildCheckItem(item, true))
@@ -280,7 +329,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
                           style: TextStyle(color: Colors.black54, fontSize: 14),
                         ),
                       ),
-                    ],
+                  ],
                 ),
               ),
             ),
@@ -378,7 +427,6 @@ class _StickyNotePageState extends State<StickyNotePage> {
     ];
   }
 
-
   Widget _buildCheckItem(dynamic itemMap, bool completed) {
     // Handle both pure string (legacy mock) vs Map
     final String title;
@@ -391,9 +439,9 @@ class _StickyNotePageState extends State<StickyNotePage> {
       title = itemMap['title'];
       id = itemMap['id'];
     }
-      
-      return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
       child: GestureDetector(
         onTap: () async {
           if (id.isEmpty) return; // Cannot toggle legacy items
@@ -419,11 +467,11 @@ class _StickyNotePageState extends State<StickyNotePage> {
             }
           });
 
-          // 2. Send Message to Main Window
+          // 2. 通过事件通道通知主窗口
           try {
-            await DesktopMultiWindow.invokeMethod(0, 'toggleTask', id);
+            await _eventChannel.invokeMethod('toggleTask', id);
           } catch (e) {
-            debugPrint('Failed to toggle task: $e');
+            debugPrint('[StickyNote] 切换任务失败: $e');
           }
         },
         child: Row(
@@ -448,7 +496,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
             ),
           ],
         ),
-          ),
-      );
+      ),
+    );
   }
 }

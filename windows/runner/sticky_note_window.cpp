@@ -20,6 +20,16 @@ const DWORD StickyNoteWindow::kThemeColors[] = {
     0xFFE8F5E9,  // Green
 };
 
+// Font size presets: small, medium, large, extra large
+const float StickyNoteWindow::kTitleFontSizes[] = { 16.0f, 20.0f, 24.0f, 28.0f };
+const float StickyNoteWindow::kTaskFontSizes[] = { 12.0f, 15.0f, 18.0f, 22.0f };
+const wchar_t* StickyNoteWindow::kFontSizeLabels[] = {
+    L"\x5C0F",      // Small
+    L"\x4E2D",      // Medium
+    L"\x5927",      // Large
+    L"\x7279\x5927" // Extra Large
+};
+
 // Helper: Convert COLORREF (BGR) to GDI+ ARGB
 static Gdiplus::Color ColorRefToGdiPlus(COLORREF cr, BYTE alpha = 255) {
     return Gdiplus::Color(alpha, GetRValue(cr), GetGValue(cr), GetBValue(cr));
@@ -115,8 +125,9 @@ bool StickyNoteWindow::Create() {
     int y = (screenHeight - kWindowHeight) / 2;
 
     // Create popup window (no border, no title bar)
+    // Use WS_EX_TOOLWINDOW to hide from taskbar
     window_handle_ = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOOLWINDOW | (is_pinned_ ? WS_EX_TOPMOST : 0),
+        WS_EX_TOOLWINDOW | (is_pinned_ ? WS_EX_TOPMOST : 0),
         kWindowClassName,
         L"",
         WS_POPUP,
@@ -131,14 +142,16 @@ bool StickyNoteWindow::Create() {
         return false;
     }
 
-    // Enable layered window for per-pixel alpha (rounded corners)
-    SetLayeredWindowAttributes(window_handle_, 0, 255, LWA_ALPHA);
+    // Set rounded corners using window region (clip corners)
+    HRGN hRgn = CreateRoundRectRgn(0, 0, kWindowWidth + 1, kWindowHeight + 1,
+                                    kCornerRadius * 2, kCornerRadius * 2);
+    SetWindowRgn(window_handle_, hRgn, TRUE);
 
-    // Create fonts (use float literals to avoid MSVC C4244 warning)
+    // Create fonts (larger sizes for better readability)
     Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
-    header_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 11.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-    title_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 18.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
-    task_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 14.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    header_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 13.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    title_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 20.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    task_font_ = std::make_unique<Gdiplus::Font>(&fontFamily, 15.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 
     // Enable mouse tracking
     TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, window_handle_, 0 };
@@ -157,11 +170,23 @@ void StickyNoteWindow::Show() {
 
 void StickyNoteWindow::Close() {
     if (window_handle_) {
-        if (onWindowClosed) {
-            onWindowClosed(note_id_);
+        // Copy callback and noteId before destroying anything
+        // because the callback may delete 'this'
+        auto callback = std::move(onWindowClosed);
+        std::wstring noteId = note_id_;
+
+        // Clear callback to prevent double-call
+        onWindowClosed = nullptr;
+
+        // Destroy the window
+        HWND hwnd = window_handle_;
+        window_handle_ = nullptr;  // Prevent destructor from double-destroying
+        DestroyWindow(hwnd);
+
+        // Finally notify (this may delete 'this', so do it last and use local copies)
+        if (callback) {
+            callback(noteId);
         }
-        DestroyWindow(window_handle_);
-        window_handle_ = nullptr;
     }
 }
 
@@ -261,7 +286,8 @@ LRESULT StickyNoteWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, 
 
             // Header area is draggable (except buttons)
             if (pt.y < kHeaderHeight) {
-                int buttonArea = kWindowWidth - kPadding - kButtonSize * 3 - 8;
+                // 4 buttons: color, fontsize, pin, close
+                int buttonArea = kWindowWidth - kPadding - kButtonSize * 4 - 12;
                 if (pt.x < buttonArea) {
                     return HTCAPTION;
                 }
@@ -270,6 +296,11 @@ LRESULT StickyNoteWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, 
         }
 
         case WM_DESTROY:
+            return 0;
+
+        case WM_USER + 100:
+            // Async close request from button click
+            Close();
             return 0;
     }
 
@@ -296,19 +327,8 @@ void StickyNoteWindow::OnPaint() {
     g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     g.SetTextRenderingHint(Gdiplus::TextRenderingHintClearTypeGridFit);
 
-    // Clear background (transparent for rounded corners)
-    g.Clear(Gdiplus::Color(0, 0, 0, 0));
-
-    // Draw rounded rectangle background
-    Gdiplus::GraphicsPath bgPath;
-    Gdiplus::RectF bgRect(0, 0, (float)width, (float)height);
-    AddRoundedRect(bgPath, bgRect, (float)kCornerRadius);
-
-    Gdiplus::SolidBrush bgBrush(ColorRefToGdiPlus(theme_color_));
-    g.FillPath(&bgBrush, &bgPath);
-
-    // Set clip to rounded rect
-    g.SetClip(&bgPath);
+    // Fill background with theme color (window region handles rounded corners)
+    g.Clear(ColorRefToGdiPlus(theme_color_));
 
     // Draw header
     Gdiplus::RectF headerRect(0, 0, (float)width, (float)kHeaderHeight);
@@ -317,6 +337,11 @@ void StickyNoteWindow::OnPaint() {
     // Draw content
     Gdiplus::RectF contentRect(0, (float)kHeaderHeight, (float)width, (float)(height - kHeaderHeight));
     DrawContent(g, contentRect);
+
+    // Draw font menu on top of everything if visible
+    if (font_menu_visible_) {
+        DrawFontMenu(g);
+    }
 
     // Copy to screen
     BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
@@ -341,34 +366,43 @@ void StickyNoteWindow::DrawHeader(Gdiplus::Graphics& g, const Gdiplus::RectF& re
     Gdiplus::SolidBrush headerBrush(headerColor);
     g.FillRectangle(&headerBrush, rect);
 
-    // Icon emoji
-    Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, 100, 100, 100));
-    Gdiplus::PointF iconPos(12, 8);
+    // Draw emoji icon using Segoe UI Emoji font
+    Gdiplus::FontFamily emojiFamily(L"Segoe UI Emoji");
+    Gdiplus::Font emojiFont(&emojiFamily, 14.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush emojiBrush(Gdiplus::Color(255, 80, 80, 80));
+    Gdiplus::PointF emojiPos(10.0f, 8.0f);
+    g.DrawString(L"\U0001F4DD", -1, &emojiFont, emojiPos, &emojiBrush);
 
-    // Draw header title
+    // Draw header title text
     Gdiplus::SolidBrush labelBrush(Gdiplus::Color(180, 80, 80, 80));
-    Gdiplus::PointF titlePos(32, 9);
-    g.DrawString(L"\U0001F4DD \x7425\x73C0\x4FBF\x7B7E", -1, header_font_.get(), titlePos, &labelBrush);
+    Gdiplus::PointF titlePos(30.0f, 9.0f);
+    g.DrawString(L"\x7425\x73C0\x4FBF\x7B7E", -1, header_font_.get(), titlePos, &labelBrush);
 
-    // Draw buttons (right side)
+    // Draw buttons (right side): Close, Pin, FontSize, Color
     float buttonY = (kHeaderHeight - kButtonSize) / 2.0f;
     float buttonX = (float)(kWindowWidth - kPadding - kButtonSize);
 
-    if (!color_picker_visible_) {
-        // Close button
+    if (color_picker_visible_) {
+        // Draw color picker (replaces all buttons)
+        DrawColorPicker(g, buttonY);
+    } else {
+        // Always draw buttons (even when font menu is visible)
+        // Close button (rightmost)
         DrawIconButton(g, kButtonClose, buttonX, buttonY, (float)kButtonSize);
 
         // Pin button
         buttonX -= kButtonSize + 4;
         DrawIconButton(g, kButtonPin, buttonX, buttonY, (float)kButtonSize);
 
-        // Color button
+        // Font size button
+        buttonX -= kButtonSize + 4;
+        DrawIconButton(g, kButtonFontSize, buttonX, buttonY, (float)kButtonSize);
+
+        // Color button (leftmost)
         buttonX -= kButtonSize + 4;
         DrawIconButton(g, kButtonColor, buttonX, buttonY, (float)kButtonSize);
-    } else {
-        // Draw color picker
-        DrawColorPicker(g, buttonY);
     }
+    // Note: Font menu is drawn in OnPaint after content, so it appears on top
 }
 
 void StickyNoteWindow::DrawIconButton(Gdiplus::Graphics& g, int buttonId, float x, float y, float size) {
@@ -395,43 +429,93 @@ void StickyNoteWindow::DrawIconButton(Gdiplus::Graphics& g, int buttonId, float 
     Gdiplus::SolidBrush iconBrush(iconColor);
     Gdiplus::Pen iconPen(iconColor, 1.5f);
 
-    float cx = x + size / 2;
-    float cy = y + size / 2;
-    float r = 5;
+    float cx = x + size / 2.0f;
+    float cy = y + size / 2.0f;
 
     switch (buttonId) {
         case kButtonColor: {
-            // Palette icon (simple circle grid)
-            Gdiplus::RectF mainCircle(cx - r, cy - r, r * 2, r * 2);
-            g.FillEllipse(&iconBrush, mainCircle);
-            Gdiplus::SolidBrush dotBrush(Gdiplus::Color(255, 255, 200, 200));
-            Gdiplus::RectF dot1(cx - 2.0f, cy - 4.0f, 3.0f, 3.0f);
-            g.FillEllipse(&dotBrush, dot1);
-            Gdiplus::SolidBrush dotBrush2(Gdiplus::Color(255, 200, 255, 200));
-            Gdiplus::RectF dot2(cx + 1.0f, cy, 3.0f, 3.0f);
-            g.FillEllipse(&dotBrush2, dot2);
-            Gdiplus::SolidBrush dotBrush3(Gdiplus::Color(255, 200, 200, 255));
-            Gdiplus::RectF dot3(cx - 3.0f, cy + 1.0f, 3.0f, 3.0f);
-            g.FillEllipse(&dotBrush3, dot3);
+            // Paintpalette icon (like SF Symbol paintpalette) - ENLARGED
+            // Draw palette base shape (bean shape)
+            Gdiplus::GraphicsPath palettePath;
+            palettePath.AddEllipse(cx - 9.0f, cy - 6.0f, 18.0f, 12.0f);
+            Gdiplus::Pen thickPen(iconColor, 1.8f);
+            g.DrawPath(&thickPen, &palettePath);
+
+            // Draw 3 color dots inside - larger dots
+            Gdiplus::SolidBrush redDot(Gdiplus::Color(255, 220, 80, 80));
+            Gdiplus::SolidBrush greenDot(Gdiplus::Color(255, 80, 180, 80));
+            Gdiplus::SolidBrush blueDot(Gdiplus::Color(255, 80, 120, 200));
+
+            Gdiplus::RectF dot1(cx - 6.5f, cy - 2.5f, 5.0f, 5.0f);
+            Gdiplus::RectF dot2(cx - 1.0f, cy - 2.5f, 5.0f, 5.0f);
+            Gdiplus::RectF dot3(cx + 3.5f, cy - 2.5f, 5.0f, 5.0f);
+            g.FillEllipse(&redDot, dot1);
+            g.FillEllipse(&greenDot, dot2);
+            g.FillEllipse(&blueDot, dot3);
+            break;
+        }
+        case kButtonFontSize: {
+            // Font size icon - "Aa" text style (like macOS text size control) - ENLARGED
+            Gdiplus::FontFamily fontFamily(L"Segoe UI");
+
+            // Small "A" (representing smaller font)
+            Gdiplus::Font smallFont(&fontFamily, 11.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            Gdiplus::PointF smallPos(cx - 9.0f, cy - 5.0f);
+            g.DrawString(L"A", -1, &smallFont, smallPos, &iconBrush);
+
+            // Large "a" (representing larger font)
+            Gdiplus::Font largeFont(&fontFamily, 15.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            Gdiplus::PointF largePos(cx - 1.0f, cy - 8.0f);
+            g.DrawString(L"a", -1, &largeFont, largePos, &iconBrush);
+
+            // Draw small down arrow indicator (shows it's a dropdown)
+            Gdiplus::PointF arrowPoints[3] = {
+                Gdiplus::PointF(cx + 6.0f, cy + 3.0f),
+                Gdiplus::PointF(cx + 10.0f, cy + 3.0f),
+                Gdiplus::PointF(cx + 8.0f, cy + 6.0f)
+            };
+            g.FillPolygon(&iconBrush, arrowPoints, 3);
             break;
         }
         case kButtonPin: {
-            // Pin icon
-            Gdiplus::PointF points[] = {
-                {cx, cy - r},
-                {cx + 3, cy - 2},
-                {cx + 2, cy + 1},
-                {cx, cy + r},
-                {cx - 2, cy + 1},
-                {cx - 3, cy - 2}
+            // macOS style diagonal pin icon (tilted at 45 degrees) - ENLARGED
+            // Pin consists of: oval head + shaft + needle tip
+
+            // Save current transform
+            Gdiplus::Matrix originalMatrix;
+            g.GetTransform(&originalMatrix);
+
+            // Rotate 45 degrees around center
+            g.TranslateTransform(cx, cy);
+            g.RotateTransform(-45.0f);
+            g.TranslateTransform(-cx, -cy);
+
+            // Draw pin head (rounded rectangle / oval) - larger
+            Gdiplus::RectF pinHead(cx - 4.5f, cy - 9.0f, 9.0f, 7.0f);
+            g.FillEllipse(&iconBrush, pinHead);
+
+            // Draw pin shaft (rectangle) - larger
+            Gdiplus::RectF pinShaft(cx - 2.0f, cy - 3.0f, 4.0f, 6.0f);
+            g.FillRectangle(&iconBrush, pinShaft);
+
+            // Draw pin needle (triangle pointing down) - larger
+            Gdiplus::PointF needlePoints[3] = {
+                Gdiplus::PointF(cx - 2.0f, cy + 3.0f),
+                Gdiplus::PointF(cx + 2.0f, cy + 3.0f),
+                Gdiplus::PointF(cx, cy + 10.0f)
             };
-            g.FillPolygon(&iconBrush, points, 6);
+            g.FillPolygon(&iconBrush, needlePoints, 3);
+
+            // Restore transform
+            g.SetTransform(&originalMatrix);
             break;
         }
         case kButtonClose: {
-            // X icon
-            g.DrawLine(&iconPen, cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2);
-            g.DrawLine(&iconPen, cx + r - 2, cy - r + 2, cx - r + 2, cy + r - 2);
+            // X icon (like SF Symbol xmark) - ENLARGED
+            Gdiplus::Pen closePen(iconColor, 2.2f);
+            closePen.SetLineCap(Gdiplus::LineCapRound, Gdiplus::LineCapRound, Gdiplus::DashCapRound);
+            g.DrawLine(&closePen, cx - 5.0f, cy - 5.0f, cx + 5.0f, cy + 5.0f);
+            g.DrawLine(&closePen, cx + 5.0f, cy - 5.0f, cx - 5.0f, cy + 5.0f);
             break;
         }
     }
@@ -487,14 +571,21 @@ void StickyNoteWindow::DrawColorPicker(Gdiplus::Graphics& g, float y) {
 }
 
 void StickyNoteWindow::DrawContent(Gdiplus::Graphics& g, const Gdiplus::RectF& rect) {
-    // Title
+    // Get actual title font height for dynamic spacing
+    float titleFontHeight = title_font_->GetHeight(&g);
+
+    // Title - with dynamic top padding
     Gdiplus::SolidBrush titleBrush(Gdiplus::Color(220, 50, 50, 50));
-    Gdiplus::PointF titlePos((float)kPadding, rect.Y + 12);
+    Gdiplus::PointF titlePos((float)kPadding, rect.Y + 10);
     g.DrawString(note_title_.c_str(), -1, title_font_.get(), titlePos, &titleBrush);
 
-    // Task list area
-    float taskAreaTop = rect.Y + kTitleHeight;
-    float taskAreaHeight = rect.Height - kTitleHeight - kPadding;
+    // Calculate dynamic title area height based on font size
+    // Base padding (10) + font height + bottom margin (12)
+    float dynamicTitleHeight = 10 + titleFontHeight + 12;
+
+    // Task list area - uses dynamic title height
+    float taskAreaTop = rect.Y + dynamicTitleHeight;
+    float taskAreaHeight = rect.Height - dynamicTitleHeight - kPadding;
 
     // Create clipping region for scroll
     Gdiplus::RectF clipRect((float)kPadding, taskAreaTop,
@@ -542,8 +633,12 @@ void StickyNoteWindow::DrawContent(Gdiplus::Graphics& g, const Gdiplus::RectF& r
 void StickyNoteWindow::DrawTaskItem(Gdiplus::Graphics& g, const TaskItem& task, float y, bool isCompleted) {
     float x = (float)kPadding;
 
-    // Checkbox
-    Gdiplus::RectF checkRect(x, y + (kTaskItemHeight - kCheckboxSize) / 2,
+    // Get actual font height for proper vertical centering
+    float fontHeight = task_font_->GetHeight(&g);
+    float itemCenterY = y + kTaskItemHeight / 2.0f;
+
+    // Checkbox - vertically centered
+    Gdiplus::RectF checkRect(x, itemCenterY - kCheckboxSize / 2.0f,
                             (float)kCheckboxSize, (float)kCheckboxSize);
 
     // Checkbox border
@@ -565,9 +660,9 @@ void StickyNoteWindow::DrawTaskItem(Gdiplus::Graphics& g, const TaskItem& task, 
         g.DrawLine(&checkmarkPen, cx - 1, cy + 3, cx + 4, cy - 3);
     }
 
-    // Task title
+    // Task title - vertically centered with font height
     float textX = x + kCheckboxSize + 10;
-    float textY = y + (kTaskItemHeight - 16) / 2;
+    float textY = itemCenterY - fontHeight / 2.0f;
     Gdiplus::PointF textPos(textX, textY);
 
     if (isCompleted) {
@@ -575,10 +670,10 @@ void StickyNoteWindow::DrawTaskItem(Gdiplus::Graphics& g, const TaskItem& task, 
         Gdiplus::SolidBrush textBrush(Gdiplus::Color(150, 120, 120, 120));
         g.DrawString(task.title.c_str(), -1, task_font_.get(), textPos, &textBrush);
 
-        // Draw strikethrough line
+        // Draw strikethrough line at text center
         Gdiplus::RectF textBounds;
         g.MeasureString(task.title.c_str(), -1, task_font_.get(), textPos, &textBounds);
-        float lineY = textY + 8;
+        float lineY = itemCenterY;
         Gdiplus::Pen strikePen(Gdiplus::Color(150, 120, 120, 120), 1);
         g.DrawLine(&strikePen, textX, lineY, textX + textBounds.Width, lineY);
     } else {
@@ -593,12 +688,15 @@ int StickyNoteWindow::HitTestButton(int x, int y) {
     float buttonY = (kHeaderHeight - kButtonSize) / 2.0f;
     if (y < buttonY || y > buttonY + kButtonSize) return -1;
 
+    // Button layout from right to left: Close, Pin, FontSize, Color
     float closeX = (float)(kWindowWidth - kPadding - kButtonSize);
     float pinX = closeX - kButtonSize - 4;
-    float colorX = pinX - kButtonSize - 4;
+    float fontSizeX = pinX - kButtonSize - 4;
+    float colorX = fontSizeX - kButtonSize - 4;
 
     if (x >= closeX && x < closeX + kButtonSize) return kButtonClose;
     if (x >= pinX && x < pinX + kButtonSize) return kButtonPin;
+    if (x >= fontSizeX && x < fontSizeX + kButtonSize) return kButtonFontSize;
     if (x >= colorX && x < colorX + kButtonSize) return kButtonColor;
 
     return -1;
@@ -656,7 +754,21 @@ int StickyNoteWindow::HitTestColorPicker(int x, int y) {
 }
 
 void StickyNoteWindow::OnMouseDown(int x, int y) {
-    // Check color picker first
+    // Check font menu first (it's on top)
+    if (font_menu_visible_) {
+        int fontItem = HitTestFontMenu(x, y);
+        if (fontItem >= 0) {
+            SelectFontSize(fontItem);
+            return;
+        } else {
+            // Click outside menu closes it
+            font_menu_visible_ = false;
+            InvalidateRect(window_handle_, nullptr, FALSE);
+            return;
+        }
+    }
+
+    // Check color picker
     if (color_picker_visible_) {
         int colorIndex = HitTestColorPicker(x, y);
         if (colorIndex >= 0) {
@@ -694,11 +806,16 @@ void StickyNoteWindow::OnMouseUp(int x, int y) {
                 case kButtonColor:
                     ToggleColorPicker();
                     break;
+                case kButtonFontSize:
+                    ToggleFontMenu();
+                    break;
                 case kButtonPin:
                     TogglePin();
                     break;
                 case kButtonClose:
-                    Close();
+                    // Use PostMessage to close asynchronously, avoiding issues
+                    // with destroying the window while handling mouse events
+                    PostMessage(window_handle_, WM_USER + 100, 0, 0);
                     return;
             }
         }
@@ -714,9 +831,16 @@ void StickyNoteWindow::OnMouseMove(int x, int y) {
 
     int oldHovered = hovered_button_;
     int oldColor = hovered_color_;
+    int oldFontItem = hovered_font_item_;
 
-    if (color_picker_visible_) {
+    // Check font menu first
+    if (font_menu_visible_) {
+        hovered_font_item_ = HitTestFontMenu(x, y);
+        hovered_button_ = -1;
+        hovered_color_ = -1;
+    } else if (color_picker_visible_) {
         hovered_color_ = HitTestColorPicker(x, y);
+        hovered_font_item_ = -1;
         if (hovered_color_ == -2) {
             hovered_button_ = kButtonClose;
             hovered_color_ = -1;
@@ -726,17 +850,19 @@ void StickyNoteWindow::OnMouseMove(int x, int y) {
     } else {
         hovered_button_ = HitTestButton(x, y);
         hovered_color_ = -1;
+        hovered_font_item_ = -1;
     }
 
-    if (hovered_button_ != oldHovered || hovered_color_ != oldColor) {
+    if (hovered_button_ != oldHovered || hovered_color_ != oldColor || hovered_font_item_ != oldFontItem) {
         InvalidateRect(window_handle_, nullptr, FALSE);
     }
 }
 
 void StickyNoteWindow::OnMouseLeave() {
-    if (hovered_button_ >= 0 || hovered_color_ >= 0) {
+    if (hovered_button_ >= 0 || hovered_color_ >= 0 || hovered_font_item_ >= 0) {
         hovered_button_ = -1;
         hovered_color_ = -1;
+        hovered_font_item_ = -1;
         InvalidateRect(window_handle_, nullptr, FALSE);
     }
 }
@@ -764,6 +890,118 @@ void StickyNoteWindow::ToggleColorPicker() {
     color_picker_visible_ = !color_picker_visible_;
     hovered_color_ = -1;
     InvalidateRect(window_handle_, nullptr, FALSE);
+}
+
+void StickyNoteWindow::ToggleFontMenu() {
+    font_menu_visible_ = !font_menu_visible_;
+    hovered_font_item_ = -1;
+    InvalidateRect(window_handle_, nullptr, FALSE);
+}
+
+void StickyNoteWindow::SelectFontSize(int index) {
+    if (index >= 0 && index < kFontSizeCount) {
+        current_font_size_index_ = index;
+        UpdateFonts();
+        font_menu_visible_ = false;
+        InvalidateRect(window_handle_, nullptr, FALSE);
+    }
+}
+
+void StickyNoteWindow::DrawFontMenu(Gdiplus::Graphics& g) {
+    // Calculate menu position (below the font size button)
+    float buttonX = (float)(kWindowWidth - kPadding - kButtonSize * 3 - 8);
+    float menuX = buttonX - 40;  // Offset to center menu
+    float menuY = (float)kHeaderHeight + 4;
+    float menuWidth = 100;
+    float menuHeight = (float)(kFontSizeCount * kFontMenuItemHeight + 8);
+
+    // Draw menu background with shadow
+    Gdiplus::SolidBrush shadowBrush(Gdiplus::Color(40, 0, 0, 0));
+    Gdiplus::RectF shadowRect(menuX + 2, menuY + 2, menuWidth, menuHeight);
+    g.FillRectangle(&shadowBrush, shadowRect);
+
+    // Menu background
+    Gdiplus::SolidBrush bgBrush(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::RectF menuRect(menuX, menuY, menuWidth, menuHeight);
+    g.FillRectangle(&bgBrush, menuRect);
+
+    // Menu border
+    Gdiplus::Pen borderPen(Gdiplus::Color(60, 0, 0, 0), 1);
+    g.DrawRectangle(&borderPen, menuRect);
+
+    // Draw menu items
+    Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
+    Gdiplus::Font menuFont(&fontFamily, 13.0f, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+    Gdiplus::StringFormat sf;
+    sf.SetAlignment(Gdiplus::StringAlignmentNear);
+    sf.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+
+    for (int i = 0; i < kFontSizeCount; i++) {
+        float itemY = menuY + 4 + i * kFontMenuItemHeight;
+        Gdiplus::RectF itemRect(menuX + 4, itemY, menuWidth - 8, (float)kFontMenuItemHeight);
+
+        // Hover highlight
+        if (hovered_font_item_ == i) {
+            Gdiplus::SolidBrush hoverBrush(Gdiplus::Color(30, 0, 0, 0));
+            g.FillRectangle(&hoverBrush, itemRect);
+        }
+
+        // Checkmark for selected item
+        if (i == current_font_size_index_) {
+            Gdiplus::SolidBrush checkBrush(Gdiplus::Color(255, 245, 166, 35));
+            Gdiplus::PointF checkPos(menuX + 8, itemY + kFontMenuItemHeight / 2 - 6);
+            Gdiplus::Font checkFont(&fontFamily, 12.0f, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+            g.DrawString(L"\x2713", -1, &checkFont, checkPos, &checkBrush);
+        }
+
+        // Item text
+        Gdiplus::SolidBrush textBrush(Gdiplus::Color(220, 50, 50, 50));
+        Gdiplus::RectF textRect(menuX + 26, itemY, menuWidth - 30, (float)kFontMenuItemHeight);
+        g.DrawString(kFontSizeLabels[i], -1, &menuFont, textRect, &sf, &textBrush);
+
+        // Sample size indicator (shows actual font size)
+        Gdiplus::SolidBrush sizeBrush(Gdiplus::Color(150, 100, 100, 100));
+        wchar_t sizeText[16];
+        swprintf(sizeText, 16, L"%.0f", kTaskFontSizes[i]);
+        Gdiplus::RectF sizeRect(menuX + 60, itemY, 36, (float)kFontMenuItemHeight);
+        sf.SetAlignment(Gdiplus::StringAlignmentFar);
+        g.DrawString(sizeText, -1, &menuFont, sizeRect, &sf, &sizeBrush);
+        sf.SetAlignment(Gdiplus::StringAlignmentNear);
+    }
+}
+
+int StickyNoteWindow::HitTestFontMenu(int x, int y) {
+    if (!font_menu_visible_) return -1;
+
+    float buttonX = (float)(kWindowWidth - kPadding - kButtonSize * 3 - 8);
+    float menuX = buttonX - 40;
+    float menuY = (float)kHeaderHeight + 4;
+    float menuWidth = 100;
+
+    if (x < menuX || x > menuX + menuWidth) return -1;
+    if (y < menuY + 4) return -1;
+
+    int itemIndex = (int)((y - menuY - 4) / kFontMenuItemHeight);
+    if (itemIndex >= 0 && itemIndex < kFontSizeCount) {
+        return itemIndex;
+    }
+    return -1;
+}
+
+void StickyNoteWindow::UpdateFonts() {
+    Gdiplus::FontFamily fontFamily(L"Microsoft YaHei");
+    title_font_ = std::make_unique<Gdiplus::Font>(
+        &fontFamily,
+        kTitleFontSizes[current_font_size_index_],
+        Gdiplus::FontStyleBold,
+        Gdiplus::UnitPixel
+    );
+    task_font_ = std::make_unique<Gdiplus::Font>(
+        &fontFamily,
+        kTaskFontSizes[current_font_size_index_],
+        Gdiplus::FontStyleRegular,
+        Gdiplus::UnitPixel
+    );
 }
 
 void StickyNoteWindow::SelectColor(int colorIndex) {

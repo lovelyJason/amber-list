@@ -89,6 +89,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
             listId: listId,
             tags: tags,
           );
+      // 注意：清单选择已在 onListSelected 回调中实时持久化，无需在此重复保存
       debugPrint(
           '[App] 闪念胶囊创建任务: $title, 优先级: $priority, 标签: $tags, 列表: $listId');
     };
@@ -116,6 +117,13 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
       // 暂时直接使用当前日期，后续可以弹出 Flutter 日期选择器
       debugPrint('[App] 日期选择器请求: $currentDate');
       // onDateSelected(currentDate);
+    };
+
+    // 设置清单选中回调（立即持久化清单选择偏好）
+    _quickAddService!.onListSelected = (listId) {
+      // 立即保存到 SharedPreferences
+      ref.read(quickAddSettingsProvider.notifier).setLastSelectedListId(listId);
+      debugPrint('[App] 闪念胶囊清单选中: ${listId ?? "收集箱"}');
     };
 
     // 设置热键触发回调，获取最新数据后显示窗口
@@ -146,9 +154,14 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
         .map((l) => {'id': l.id, 'name': l.name})
         .toList();
 
+    // 获取上次选中的清单 ID（用于展开模式默认选中）
+    final quickAddSettings = ref.read(quickAddSettingsProvider);
+    final lastSelectedListId = quickAddSettings.lastSelectedListId;
+
     _quickAddService!.showQuickAdd(
       tags: tagNames,
       taskLists: taskListData,
+      selectedListId: lastSelectedListId,
     );
   }
 

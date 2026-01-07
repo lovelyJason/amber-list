@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../pages/sticky_note/sticky_note_registry.dart';
 
+/// 便签调试器
+/// 用于监控便签窗口的注册状态和系统进程状态
+/// 仅在调试模式下使用
 class StickyNoteDebugger extends ConsumerStatefulWidget {
   const StickyNoteDebugger({super.key});
 
@@ -10,9 +13,12 @@ class StickyNoteDebugger extends ConsumerStatefulWidget {
   ConsumerState<StickyNoteDebugger> createState() => _StickyNoteDebuggerState();
 }
 
-class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with SingleTickerProviderStateMixin {
-  List<int> _osWindowIds = [];
-  Map<int, String> _pingResults = {};
+class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger>
+    with SingleTickerProviderStateMixin {
+  /// 系统中实际运行的窗口 ID 列表
+  /// desktop_multi_window 0.3.0 使用 String UUID
+  List<WindowController> _osWindows = [];
+  Map<String, String> _pingResults = {};
   bool _isLoading = false;
 
   @override
@@ -21,12 +27,13 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
     _refresh();
   }
 
+  /// 刷新系统窗口列表
   Future<void> _refresh() async {
     setState(() => _isLoading = true);
     try {
-      final ids = await DesktopMultiWindow.getAllSubWindowIds();
+      final windows = await WindowController.getAll();
       setState(() {
-        _osWindowIds = ids;
+        _osWindows = windows;
         _pingResults.clear();
       });
     } catch (e) {
@@ -36,14 +43,16 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
     }
   }
 
-  Future<void> _ping(int windowId) async {
-    setState(() => _pingResults[windowId] = 'Pinging...');
+  /// Ping 指定窗口检测是否存活
+  /// 注: 0.3.0 版本的通信方式改变，这里只是简单检测窗口是否在列表中
+  Future<void> _ping(String windowId) async {
+    setState(() => _pingResults[windowId] = 'Checking...');
     try {
-      await DesktopMultiWindow.invokeMethod(windowId, 'ping', null)
-          .timeout(const Duration(milliseconds: 500));
-      setState(() => _pingResults[windowId] = 'Alive (Pong)');
+      final windows = await WindowController.getAll();
+      final exists = windows.any((w) => w.windowId == windowId);
+      setState(() => _pingResults[windowId] = exists ? 'Alive' : 'Dead');
     } catch (e) {
-      setState(() => _pingResults[windowId] = 'Dead (Timeout)');
+      setState(() => _pingResults[windowId] = 'Error: $e');
     }
   }
 
@@ -60,7 +69,7 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 24,
             offset: const Offset(0, 8),
           )
@@ -76,7 +85,8 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
             ),
             child: Row(
               children: [
-                const Icon(Icons.bug_report_rounded, color: Colors.white, size: 28),
+                const Icon(Icons.bug_report_rounded,
+                    color: Colors.white, size: 28),
                 const SizedBox(width: 12),
                 const Text(
                   '便签状态监控',
@@ -90,8 +100,12 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
                 Tooltip(
                   message: '刷新状态',
                   child: IconButton(
-                    icon: _isLoading 
-                        ? const SizedBox(width:16, height:16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
                         : const Icon(Icons.refresh_rounded, color: Colors.white),
                     onPressed: _isLoading ? null : _refresh,
                   ),
@@ -114,12 +128,14 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
                 Expanded(
                   child: Container(
                     decoration: const BoxDecoration(
-                      border: Border(right: BorderSide(color: Color(0xFFEEEEEE))),
+                      border:
+                          Border(right: BorderSide(color: Color(0xFFEEEEEE))),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildSectionHeader('应用注册表 (Registry)', Icons.list_alt, Colors.blue),
+                        _buildSectionHeader(
+                            '应用注册表 (Registry)', Icons.list_alt, Colors.blue),
                         Expanded(
                           child: registry.isEmpty
                               ? _buildEmptyState('注册表为空')
@@ -127,8 +143,10 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
                                   padding: const EdgeInsets.all(12),
                                   itemCount: registry.entries.length,
                                   itemBuilder: (context, index) {
-                                    final entry = registry.entries.elementAt(index);
-                                    return _buildRegistryCard(entry.key, entry.value);
+                                    final entry =
+                                        registry.entries.elementAt(index);
+                                    return _buildRegistryCard(
+                                        entry.key, entry.value);
                                   },
                                 ),
                         ),
@@ -142,17 +160,20 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionHeader('系统窗口进程 (OS)', Icons.desktop_mac, Colors.orange),
+                      _buildSectionHeader(
+                          '系统窗口进程 (OS)', Icons.desktop_mac, Colors.orange),
                       Expanded(
-                        child: _osWindowIds.isEmpty
+                        child: _osWindows.isEmpty
                             ? _buildEmptyState('无子窗口运行')
                             : ListView.builder(
                                 padding: const EdgeInsets.all(12),
-                                itemCount: _osWindowIds.length,
+                                itemCount: _osWindows.length,
                                 itemBuilder: (context, index) {
-                                  final id = _osWindowIds[index];
-                                  final isRegistered = registry.containsValue(id);
-                                  return _buildWindowCard(id, isRegistered);
+                                  final window = _osWindows[index];
+                                  final isRegistered =
+                                      registry.containsValue(window.windowId);
+                                  return _buildWindowCard(
+                                      window.windowId, isRegistered);
                                 },
                               ),
                       ),
@@ -171,8 +192,8 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        border: Border(bottom: BorderSide(color: color.withOpacity(0.1))),
+        color: color.withValues(alpha: 0.05),
+        border: Border(bottom: BorderSide(color: color.withValues(alpha: 0.1))),
       ),
       child: Row(
         children: [
@@ -182,7 +203,7 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
             title,
             style: TextStyle(
               fontWeight: FontWeight.bold,
-              color: color.withOpacity(0.8),
+              color: color.withValues(alpha: 0.8),
               fontSize: 14,
             ),
           ),
@@ -204,10 +225,13 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
     );
   }
 
-  Widget _buildRegistryCard(String listId, int windowId) {
+  /// 构建注册表卡片
+  /// [listId] 清单 ID
+  /// [windowId] 窗口 UUID
+  Widget _buildRegistryCard(String listId, String windowId) {
     return Card(
       elevation: 0,
-      color: Colors.blue.shade50.withOpacity(0.5),
+      color: Colors.blue.shade50.withValues(alpha: 0.5),
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
@@ -215,12 +239,14 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        title: Text('List: $listId', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
-        subtitle: Text('Mapped ID: $windowId', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        title: Text('List: $listId',
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+        subtitle: Text('Window: ${windowId.substring(0, 8)}...',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
           onPressed: () {
-             ref.read(stickyNoteRegistryProvider.notifier).unregister(listId);
+            ref.read(stickyNoteRegistryProvider.notifier).unregister(listId);
           },
           tooltip: '移除记录',
         ),
@@ -228,16 +254,20 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
     );
   }
 
-  Widget _buildWindowCard(int windowId, bool isRegistered) {
+  /// 构建窗口卡片
+  /// [windowId] 窗口 UUID
+  /// [isRegistered] 是否已在注册表中注册
+  Widget _buildWindowCard(String windowId, bool isRegistered) {
     final pingStatus = _pingResults[windowId];
     Color statusColor = Colors.grey;
     IconData statusIcon = Icons.help_outline;
-    
+
     if (pingStatus != null) {
       if (pingStatus.startsWith('Alive')) {
         statusColor = Colors.green;
         statusIcon = Icons.check_circle;
-      } else if (pingStatus.startsWith('Dead')) {
+      } else if (pingStatus.startsWith('Dead') ||
+          pingStatus.startsWith('Error')) {
         statusColor = Colors.red;
         statusIcon = Icons.error;
       } else {
@@ -248,83 +278,76 @@ class _StickyNoteDebuggerState extends ConsumerState<StickyNoteDebugger> with Si
 
     return Card(
       elevation: 0,
-      color: isRegistered ? Colors.green.shade50.withOpacity(0.3) : Colors.orange.shade50.withOpacity(0.3),
+      color: isRegistered
+          ? Colors.green.shade50.withValues(alpha: 0.3)
+          : Colors.orange.shade50.withValues(alpha: 0.3),
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: isRegistered ? Colors.green.shade200 : Colors.orange.shade200),
+        side: BorderSide(
+            color:
+                isRegistered ? Colors.green.shade200 : Colors.orange.shade200),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-             Row(
-               children: [
-                 Icon(Icons.window, size: 16, color: Colors.grey.shade700),
-                 const SizedBox(width: 8),
-                 Text('Window #$windowId', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                 const Spacer(),
-                 if (isRegistered)
-                   Container(
-                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                     decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(4)),
-                     child: const Text('已注册', style: TextStyle(color: Colors.white, fontSize: 10)),
-                   )
-                 else
-                   Container(
-                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                     decoration: BoxDecoration(color: Colors.orange, borderRadius: BorderRadius.circular(4)),
-                     child: const Text('未注册', style: TextStyle(color: Colors.white, fontSize: 10)),
-                   ),
-               ],
-             ),
-             const SizedBox(height: 8),
-             Row(
-               children: [
-                 Icon(statusIcon, size: 14, color: statusColor),
-                 const SizedBox(width: 4),
-                 Text(pingStatus ?? '未知状态', style: TextStyle(color: statusColor, fontSize: 12)),
-                 const Spacer(),
-                 SizedBox(
-                   height: 24,
-                   child: ElevatedButton(
-                     style: ElevatedButton.styleFrom(
-                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                       backgroundColor: Colors.white,
-                       foregroundColor: Colors.black87,
-                       elevation: 0,
-                       side: BorderSide(color: Colors.grey.shade300),
-                     ),
-                     onPressed: () => _ping(windowId),
-                     child: const Text('Ping', style: TextStyle(fontSize: 12)),
-                   ),
-                 ),
+            Row(
+              children: [
+                Icon(Icons.window, size: 16, color: Colors.grey.shade700),
                 const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Window: ${windowId.substring(0, 8)}...',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+                if (isRegistered)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: Colors.green,
+                        borderRadius: BorderRadius.circular(4)),
+                    child: const Text('已注册',
+                        style: TextStyle(color: Colors.white, fontSize: 10)),
+                  )
+                else
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(4)),
+                    child: const Text('未注册',
+                        style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(statusIcon, size: 14, color: statusColor),
+                const SizedBox(width: 4),
+                Text(pingStatus ?? '未知状态',
+                    style: TextStyle(color: statusColor, fontSize: 12)),
+                const Spacer(),
                 SizedBox(
                   height: 24,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      backgroundColor: Colors.red.shade50,
-                      foregroundColor: Colors.red,
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black87,
                       elevation: 0,
-                      side: BorderSide(color: Colors.red.shade200),
+                      side: BorderSide(color: Colors.grey.shade300),
                     ),
-                    onPressed: () async {
-                      await DesktopMultiWindow.invokeMethod(
-                        windowId,
-                        'close',
-                        null,
-                      ); // Soft close
-                      await Future.delayed(const Duration(milliseconds: 200));
-                      _refresh();
-                    },
-                    child: const Text('Close', style: TextStyle(fontSize: 12)),
+                    onPressed: () => _ping(windowId),
+                    child: const Text('Check', style: TextStyle(fontSize: 12)),
                   ),
                 ),
-               ],
-             ),
+              ],
+            ),
           ],
         ),
       ),

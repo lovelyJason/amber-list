@@ -87,6 +87,7 @@ private:
     // Actions
     void SubmitTask();
     void CancelInput();
+    void NotifyListSelected();  // Notify Flutter when list selection changes (for persistence)
 
     // Menu handling (expanded mode)
     void ShowDateMenu();

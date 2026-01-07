@@ -109,8 +109,15 @@ private:
     // Actions
     void TogglePin();
     void ToggleColorPicker();
+    void ToggleFontMenu();
+    void SelectFontSize(int index);
     void SelectColor(int colorIndex);
     void ToggleTask(int taskIndex);
+    void UpdateFonts();
+
+    // Font menu drawing and hit testing
+    void DrawFontMenu(Gdiplus::Graphics& g);
+    int HitTestFontMenu(int x, int y);
 
     // Scroll handling
     void OnMouseWheel(int delta);
@@ -133,10 +140,13 @@ private:
 
     // UI state
     bool color_picker_visible_ = false;
-    int hovered_button_ = -1;        // -1: none, 0: color, 1: pin, 2: close
+    bool font_menu_visible_ = false;     // Font size dropdown menu visible
+    int hovered_button_ = -1;            // -1: none, 0: color, 1: fontsize, 2: pin, 3: close
     int pressed_button_ = -1;
     int hovered_task_ = -1;
     int hovered_color_ = -1;
+    int hovered_font_item_ = -1;         // Hovered item in font size menu
+    int current_font_size_index_ = 1;    // 0: small, 1: medium (default), 2: large
 
     // Scroll state
     float scroll_offset_ = 0.0f;
@@ -145,22 +155,30 @@ private:
     int scroll_start_y_ = 0;
     float scroll_start_offset_ = 0.0f;
 
-    // Layout constants
-    static const int kWindowWidth = 320;
-    static const int kWindowHeight = 400;
+    // Layout constants (larger size to match macOS)
+    static const int kWindowWidth = 380;
+    static const int kWindowHeight = 480;
     static const int kCornerRadius = 12;
-    static const int kHeaderHeight = 32;
+    static const int kHeaderHeight = 36;   // Increased for larger buttons
     static const int kTitleHeight = 40;
     static const int kPadding = 16;
     static const int kTaskItemHeight = 32;
     static const int kCheckboxSize = 18;
-    static const int kButtonSize = 24;
-    static const int kColorDotSize = 16;
+    static const int kButtonSize = 28;     // Increased from 24 to 28
+    static const int kColorDotSize = 18;   // Increased from 16 to 18
+    static const int kFontMenuItemHeight = 32;  // Height of each font size menu item
 
     // Button IDs for hit testing
     static const int kButtonColor = 0;
-    static const int kButtonPin = 1;
-    static const int kButtonClose = 2;
+    static const int kButtonFontSize = 1;
+    static const int kButtonPin = 2;
+    static const int kButtonClose = 3;
+
+    // Font size presets (small, medium, large, extra large)
+    static const int kFontSizeCount = 4;
+    static const float kTitleFontSizes[kFontSizeCount];
+    static const float kTaskFontSizes[kFontSizeCount];
+    static const wchar_t* kFontSizeLabels[kFontSizeCount];
 
     // Predefined theme colors (ARGB for GDI+)
     static const DWORD kThemeColors[];

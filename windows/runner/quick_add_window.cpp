@@ -74,6 +74,29 @@ QuickAddWindow::QuickAddWindow(const std::wstring& windowId, const flutter::Enco
                 }
             }
         }
+
+        // Parse selected list ID (expanded mode persistent preference)
+        auto listIdIt = arguments->find(flutter::EncodableValue("selectedListId"));
+        if (listIdIt != arguments->end()) {
+            if (auto* str = std::get_if<std::string>(&listIdIt->second)) {
+                std::wstring listId = NativeWindowManager::Utf8ToWString(*str);
+                // Find matching list name
+                bool found = false;
+                for (const auto& list : available_task_lists_) {
+                    if (list.first == listId) {
+                        selected_list_id_ = listId;
+                        selected_list_name_ = list.second;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // List not found, reset to Inbox
+                    selected_list_id_.clear();
+                    selected_list_name_ = L"Inbox";
+                }
+            }
+        }
     }
 
     if (selected_date_ms_ == 0) {
@@ -533,6 +556,8 @@ LRESULT QuickAddWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LP
 
             // Menu commands
             if (id >= ID_MENU_TODAY && id <= ID_MENU_LIST_BASE + 100) {
+                std::wstring debugMsg = L"[QuickAddWindow] WM_COMMAND menu id: " + std::to_wstring(id) + L"\n";
+                OutputDebugStringW(debugMsg.c_str());
                 OnMenuCommand(id);
             }
             return 0;
@@ -643,6 +668,14 @@ void QuickAddWindow::OnDrawItem(DRAWITEMSTRUCT* dis) {
     wchar_t text[64] = {};
     GetWindowTextW(dis->hwndItem, text, 64);
 
+    // Debug output for list selector button
+    if (dis->CtlID == ID_LIST_SELECTOR) {
+        std::wstring debugMsg = L"[QuickAddWindow] OnDrawItem ID_LIST_SELECTOR: text='";
+        debugMsg += text;
+        debugMsg += L"'\n";
+        OutputDebugStringW(debugMsg.c_str());
+    }
+
     // Determine highlight color based on selection state
     // 0 = gray (default), 1 = amber, 2 = green, 3 = orange, 4 = red
     int highlightColor = 0;
@@ -661,6 +694,10 @@ void QuickAddWindow::OnDrawItem(DRAWITEMSTRUCT* dis) {
             else if (selected_priority_ == 2) highlightColor = 3;  // Orange for medium
             else if (selected_priority_ == 3) highlightColor = 4;  // Red for high
             break;
+        case ID_LIST_SELECTOR:
+            // Amber highlight when a custom list (not Inbox) is selected
+            if (!selected_list_id_.empty() && !is_note_mode_) highlightColor = 1;
+            break;
     }
 
     // Determine icon type based on control ID
@@ -672,7 +709,16 @@ void QuickAddWindow::OnDrawItem(DRAWITEMSTRUCT* dis) {
         case ID_TAG_BUTTON: iconType = 3; break;
         case ID_DATE_BUTTON: iconType = 4; break;
         case ID_PRIORITY_BUTTON: iconType = 5; break;
-        case ID_LIST_SELECTOR: iconType = is_note_mode_ ? 6 : 7; break;  // Note or Inbox icon
+        case ID_LIST_SELECTOR:
+            // Note mode: note icon (6), Custom list: list icon (2), Inbox: inbox icon (7)
+            if (is_note_mode_) {
+                iconType = 6;  // Note icon
+            } else if (!selected_list_id_.empty()) {
+                iconType = 2;  // List icon for custom lists
+            } else {
+                iconType = 7;  // Inbox icon
+            }
+            break;
     }
 
     DrawRoundedButton(dis->hDC, dis->rcItem, text, isAmber, isHovered, iconType, highlightColor);
@@ -1081,6 +1127,10 @@ void QuickAddWindow::CreateExpandedControls() {
 
     // Initial layout with dynamic widths
     RelayoutToolbarButtons();
+
+    // Update list selector button text based on current selection
+    // (important when expanded mode is entered with a pre-selected list from persistence)
+    UpdateListSelectorText();
 }
 
 void QuickAddWindow::DestroyExpandedControls() {
@@ -1177,6 +1227,11 @@ void QuickAddWindow::SubmitTask() {
         args[flutter::EncodableValue("isNote")] = flutter::EncodableValue(false);
         args[flutter::EncodableValue("priority")] = flutter::EncodableValue(0);
         args[flutter::EncodableValue("tags")] = flutter::EncodableValue(flutter::EncodableList());
+
+        // Use persisted list preference from expanded mode (empty = Inbox)
+        if (!selected_list_id_.empty()) {
+            args[flutter::EncodableValue("listId")] = flutter::EncodableValue(NativeWindowManager::WStringToUtf8(selected_list_id_));
+        }
     }
 
     // Notify Flutter
@@ -1193,6 +1248,31 @@ void QuickAddWindow::CancelInput() {
         {flutter::EncodableValue("windowType"), flutter::EncodableValue("quick_add")},
         {flutter::EncodableValue("windowId"), flutter::EncodableValue(NativeWindowManager::WStringToUtf8(window_id_))}
     });
+}
+
+void QuickAddWindow::NotifyListSelected() {
+    // Notify Flutter to persist list selection preference (expanded mode)
+    flutter::EncodableMap args;
+    args[flutter::EncodableValue("windowType")] = flutter::EncodableValue("quick_add");
+    args[flutter::EncodableValue("windowId")] = flutter::EncodableValue(NativeWindowManager::WStringToUtf8(window_id_));
+
+    // listId: empty string means Inbox (null in Flutter)
+    if (selected_list_id_.empty()) {
+        // Pass null for Inbox
+        args[flutter::EncodableValue("listId")] = flutter::EncodableValue();
+    } else {
+        args[flutter::EncodableValue("listId")] = flutter::EncodableValue(NativeWindowManager::WStringToUtf8(selected_list_id_));
+    }
+
+    NativeWindowManager::GetInstance().NotifyFlutter("onQuickAddListSelected", args);
+
+    // Debug output (visible in debugger output window)
+    std::wstring debugMsg = L"[QuickAddWindow] NotifyListSelected called - listId: ";
+    debugMsg += selected_list_id_.empty() ? L"(empty/Inbox)" : selected_list_id_;
+    debugMsg += L", name: ";
+    debugMsg += selected_list_name_;
+    debugMsg += L"\n";
+    OutputDebugStringW(debugMsg.c_str());
 }
 
 // ============================================================================
@@ -1395,10 +1475,13 @@ void QuickAddWindow::OnMenuCommand(int id) {
             UpdateTagButtonText();
             break;
         case ID_MENU_LIST_INBOX:
+            OutputDebugStringW(L"[QuickAddWindow] ID_MENU_LIST_INBOX selected\n");
             selected_list_id_.clear();
             selected_list_name_ = L"Inbox";
             is_note_mode_ = false;
             UpdateListSelectorText();
+            // Notify Flutter immediately to persist list selection
+            NotifyListSelected();
             break;
         default:
             if (id >= ID_MENU_TAG_BASE && id < ID_MENU_TAG_CLEAR) {
@@ -1419,11 +1502,30 @@ void QuickAddWindow::OnMenuCommand(int id) {
                 }
             } else if (id >= ID_MENU_LIST_BASE && id < ID_MENU_LIST_BASE + 100) {
                 int idx = id - ID_MENU_LIST_BASE;
+                std::wstring debugMsg = L"[QuickAddWindow] ID_MENU_LIST_BASE+ selected, idx=";
+                debugMsg += std::to_wstring(idx);
+                debugMsg += L", available_task_lists_.size()=";
+                debugMsg += std::to_wstring(available_task_lists_.size());
+                debugMsg += L"\n";
+                OutputDebugStringW(debugMsg.c_str());
+
                 if (idx < static_cast<int>(available_task_lists_.size())) {
                     selected_list_id_ = available_task_lists_[idx].first;
                     selected_list_name_ = available_task_lists_[idx].second;
                     is_note_mode_ = false;
+
+                    std::wstring debugMsg2 = L"[QuickAddWindow] Setting list: id='";
+                    debugMsg2 += selected_list_id_;
+                    debugMsg2 += L"', name='";
+                    debugMsg2 += selected_list_name_;
+                    debugMsg2 += L"'\n";
+                    OutputDebugStringW(debugMsg2.c_str());
+
                     UpdateListSelectorText();
+                    // Notify Flutter immediately to persist list selection
+                    NotifyListSelected();
+                } else {
+                    OutputDebugStringW(L"[QuickAddWindow] idx out of range!\n");
                 }
             }
             break;
@@ -1492,17 +1594,46 @@ void QuickAddWindow::UpdateTagButtonText() {
 }
 
 void QuickAddWindow::UpdateListSelectorText() {
-    if (!list_selector_button_) return;
+    if (!list_selector_button_) {
+        OutputDebugStringW(L"[QuickAddWindow] UpdateListSelectorText: button is null\n");
+        return;
+    }
+
+    std::wstring newText;
     if (is_note_mode_) {
         // Chinese: "Note"
-        SetWindowTextW(list_selector_button_, L"\x7B14\x8BB0");
+        newText = L"\x7B14\x8BB0";
     } else if (selected_list_id_.empty()) {
         // Chinese: "Inbox"
-        SetWindowTextW(list_selector_button_, L"\x6536\x96C6\x7BB1");
+        newText = L"\x6536\x96C6\x7BB1";
     } else {
-        SetWindowTextW(list_selector_button_, selected_list_name_.c_str());
+        newText = selected_list_name_;
     }
+
+    // Debug output
+    std::wstring debugMsg = L"[QuickAddWindow] UpdateListSelectorText: setting text to '";
+    debugMsg += newText;
+    debugMsg += L"', selected_list_id_='";
+    debugMsg += selected_list_id_.empty() ? L"(empty)" : selected_list_id_;
+    debugMsg += L"'\n";
+    OutputDebugStringW(debugMsg.c_str());
+
+    // Set button text first
+    SetWindowTextW(list_selector_button_, newText.c_str());
+
+    // Recalculate button width based on new text
+    int newWidth = CalculateButtonWidth(list_selector_button_);
+    int listBtnH = static_cast<int>(28 * dpi_scale_);
+    int smallMargin = static_cast<int>(16 * dpi_scale_);
+    int expandedHeight = static_cast<int>(kExpandedHeight * dpi_scale_);
+    int footerY = expandedHeight - static_cast<int>(44 * dpi_scale_);
+
+    // Resize button to fit new text
+    SetWindowPos(list_selector_button_, nullptr, smallMargin, footerY, newWidth, listBtnH, SWP_NOZORDER);
+
+    // Force redraw of the button
     InvalidateRect(list_selector_button_, nullptr, TRUE);
+    UpdateWindow(list_selector_button_);
 }
 
 std::wstring QuickAddWindow::FormatDateShort(double timestamp) {
@@ -1594,6 +1725,11 @@ void QuickAddWindow::RelayoutToolbarButtons() {
 // ============================================================================
 
 void QuickAddWindow::Show(const flutter::EncodableMap* arguments) {
+    // Store selectedListId for applying after CollapseToCompactMode (which resets state)
+    std::wstring pendingListId;
+    std::wstring pendingListName = L"Inbox";
+    bool hasPendingListId = false;
+
     // Update arguments if provided
     if (arguments) {
         auto dateIt = arguments->find(flutter::EncodableValue("selectedDate"));
@@ -1643,6 +1779,24 @@ void QuickAddWindow::Show(const flutter::EncodableMap* arguments) {
                 }
             }
         }
+
+        // Parse selected list ID (expanded mode persistent preference)
+        // Store in pending variables to apply after CollapseToCompactMode
+        auto listIdIt = arguments->find(flutter::EncodableValue("selectedListId"));
+        if (listIdIt != arguments->end()) {
+            if (auto* str = std::get_if<std::string>(&listIdIt->second)) {
+                std::wstring listId = NativeWindowManager::Utf8ToWString(*str);
+                // Find matching list name
+                for (const auto& list : available_task_lists_) {
+                    if (list.first == listId) {
+                        pendingListId = listId;
+                        pendingListName = list.second;
+                        hasPendingListId = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // Create window if needed
@@ -1653,9 +1807,18 @@ void QuickAddWindow::Show(const flutter::EncodableMap* arguments) {
         }
     }
 
-    // Reset to compact mode if expanded
+    // Reset to compact mode if expanded (this also resets selected_list_id_)
     if (is_expanded_) {
         CollapseToCompactMode();
+    }
+
+    // Apply pending list selection AFTER CollapseToCompactMode (which resets state)
+    if (hasPendingListId) {
+        selected_list_id_ = pendingListId;
+        selected_list_name_ = pendingListName;
+    } else {
+        selected_list_id_.clear();
+        selected_list_name_ = L"Inbox";
     }
 
     // Clear input

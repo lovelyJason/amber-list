@@ -8,7 +8,7 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 闪念胶囊设置状态
-/// 存储快捷键配置
+/// 存储快捷键配置和展开模式的持久化状态
 class QuickAddSettings {
   /// 主键（如 A、Q、Space 等）
   final String keyLabel;
@@ -25,12 +25,17 @@ class QuickAddSettings {
   /// 是否使用 Meta（Windows）/ Command（macOS）
   final bool useMeta;
 
+  /// 展开模式下上次选中的清单 ID（null 表示收集箱）
+  /// 用于持久化用户的清单选择偏好
+  final String? lastSelectedListId;
+
   const QuickAddSettings({
     this.keyLabel = 'A',
     this.useCtrl = true,
     this.useShift = true,
     this.useAlt = false,
     this.useMeta = false,
+    this.lastSelectedListId,
   });
 
   QuickAddSettings copyWith({
@@ -39,6 +44,8 @@ class QuickAddSettings {
     bool? useShift,
     bool? useAlt,
     bool? useMeta,
+    String? lastSelectedListId,
+    bool clearLastSelectedListId = false,
   }) {
     return QuickAddSettings(
       keyLabel: keyLabel ?? this.keyLabel,
@@ -46,6 +53,9 @@ class QuickAddSettings {
       useShift: useShift ?? this.useShift,
       useAlt: useAlt ?? this.useAlt,
       useMeta: useMeta ?? this.useMeta,
+      lastSelectedListId: clearLastSelectedListId
+          ? null
+          : (lastSelectedListId ?? this.lastSelectedListId),
     );
   }
 
@@ -56,6 +66,7 @@ class QuickAddSettings {
         'useShift': useShift,
         'useAlt': useAlt,
         'useMeta': useMeta,
+        'lastSelectedListId': lastSelectedListId,
       };
 
   /// 从 JSON 创建
@@ -66,6 +77,7 @@ class QuickAddSettings {
       useShift: json['useShift'] as bool? ?? true,
       useAlt: json['useAlt'] as bool? ?? false,
       useMeta: json['useMeta'] as bool? ?? false,
+      lastSelectedListId: json['lastSelectedListId'] as String?,
     );
   }
 
@@ -268,6 +280,18 @@ class QuickAddSettingsNotifier extends StateNotifier<QuickAddSettings> {
   Future<void> setUseMeta(bool value) async {
     state = state.copyWith(useMeta: value);
     await _saveSettings();
+  }
+
+  /// 设置上次选中的清单 ID（展开模式持久化）
+  /// [listId] 清单 ID，null 表示收集箱
+  Future<void> setLastSelectedListId(String? listId) async {
+    if (listId == null) {
+      state = state.copyWith(clearLastSelectedListId: true);
+    } else {
+      state = state.copyWith(lastSelectedListId: listId);
+    }
+    await _saveSettings();
+    debugPrint('[QuickAddSettings] 已保存上次选中清单: ${listId ?? "收集箱"}');
   }
 }
 

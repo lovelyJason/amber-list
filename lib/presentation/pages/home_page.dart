@@ -20,6 +20,7 @@ import 'notes/notes_page.dart';
 import 'pomodoro/pomodoro_page.dart';
 import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
+import '../pages/sticky_note/sticky_note_page.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
 import '../../core/services/splash_service.dart';
@@ -37,45 +38,50 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 初始值为 (16, 16)，表示距离右下角 16px
   Offset _debugButtonOffset = const Offset(16, 16);
 
+  /// 便签事件通道（便签 -> 主窗口）
+  /// 用于接收便签窗口发来的关闭通知、任务切换等事件
+  late final WindowMethodChannel _stickyNoteEventChannel;
+
   @override
   void initState() {
     super.initState();
-    // Register method call handler from other windows globally here
-    DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
-      debugPrint(
-        '[Main Window] Received method: ${call.method} from $fromWindowId',
-      );
+
+    // 初始化便签事件通道（单向模式：主窗口注册处理器，所有便签都可以发送消息）
+    _stickyNoteEventChannel = const WindowMethodChannel(
+      StickyNoteChannel.events,
+      mode: ChannelMode.unidirectional,
+    );
+
+    // 注册便签事件处理器
+    _registerStickyNoteEventHandler();
+  }
+
+  /// 注册便签事件处理器
+  /// 接收来自便签窗口的消息（关闭通知、任务切换等）
+  Future<void> _registerStickyNoteEventHandler() async {
+    await _stickyNoteEventChannel.setMethodCallHandler((call) async {
+      debugPrint('[Main Window] 收到便签事件: ${call.method}');
 
       if (call.method == 'toggleTask') {
         final taskId = call.arguments as String;
-        // 使用 ref 读取 provider
         ref.read(taskProvider.notifier).toggleTaskComplete(taskId);
         return 'ok';
       } else if (call.method == 'stickyNoteClosed') {
         final contentId = call.arguments as String;
-        final windowId = ref
-            .read(stickyNoteRegistryProvider.notifier)
-            .getWindowId(contentId);
+        debugPrint('[Main Window] 便签窗口已关闭，取消注册: $contentId');
+        // 只需从注册表中移除，窗口自己已经关闭了
         ref.read(stickyNoteRegistryProvider.notifier).unregister(contentId);
-        
-        // Explicitly ensure the window is closed from the main side
-        if (windowId != null) {
-          try {
-            await DesktopMultiWindow.invokeMethod(
-              windowId,
-              'close',
-              null,
-            ); // use invoke to signal if needed, or controller
-            // Actually the plugin exposes WindowController
-            await WindowController.fromWindowId(windowId).close();
-          } catch (e) {
-            debugPrint('Error closing window $windowId from main: $e');
-          }
-        }
         return 'ok';
       }
       return null;
     });
+  }
+
+  @override
+  void dispose() {
+    // 移除事件处理器
+    _stickyNoteEventChannel.setMethodCallHandler(null);
+    super.dispose();
   }
 
   @override

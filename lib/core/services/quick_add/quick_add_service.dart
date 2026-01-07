@@ -64,6 +64,10 @@ class QuickAddService {
   /// 如果设置了此回调，热键触发时会调用此回调而不是直接显示窗口
   void Function()? onHotKeyTriggered;
 
+  /// 清单选中回调（由外部设置，用于持久化清单选择偏好）
+  /// 参数：清单 ID（null 表示收集箱）
+  void Function(String? listId)? onListSelected;
+
   /// 初始化服务
   ///
   /// 注册全局热键和原生窗口回调
@@ -133,22 +137,31 @@ class QuickAddService {
   /// [selectedDate] 默认选中的日期
   /// [tags] 可选的标签列表（名称）
   /// [taskLists] 可选的任务列表（id, name）
+  /// [selectedListId] 展开模式下默认选中的清单 ID（null 表示收集箱）
   Future<void> showQuickAdd({
     DateTime? selectedDate,
     List<String>? tags,
     List<Map<String, String>>? taskLists,
+    String? selectedListId,
   }) async {
     _selectedDate = selectedDate ?? DateTime.now();
 
+    final arguments = <String, dynamic>{
+      'selectedDate': _selectedDate.millisecondsSinceEpoch.toDouble(),
+      'tags': tags ?? <String>[],
+      'taskLists': taskLists ?? <Map<String, String>>[],
+    };
+
+    // 如果有上次选中的清单 ID，传递给原生端
+    if (selectedListId != null) {
+      arguments['selectedListId'] = selectedListId;
+    }
+
     await _windowService.createOrShowWindow(
       type: _windowType,
-      arguments: {
-        'selectedDate': _selectedDate.millisecondsSinceEpoch.toDouble(),
-        'tags': tags ?? <String>[],
-        'taskLists': taskLists ?? <Map<String, String>>[],
-      },
+      arguments: arguments,
     );
-    debugPrint('[QuickAddService] QuickAdd 窗口已显示');
+    debugPrint('[QuickAddService] QuickAdd 窗口已显示，默认清单: ${selectedListId ?? "收集箱"}');
   }
 
   /// 隐藏 QuickAdd 窗口
@@ -215,6 +228,13 @@ class QuickAddService {
       _handleDatePickerRequested,
     );
 
+    // 清单选中回调（用于立即持久化）
+    _windowService.registerCallback(
+      _windowType,
+      'onQuickAddListSelected',
+      _handleListSelected,
+    );
+
     debugPrint('[QuickAddService] 原生窗口回调已注册');
   }
 
@@ -224,6 +244,7 @@ class QuickAddService {
     _windowService.unregisterCallback(_windowType, 'onQuickAddNoteCreated');
     _windowService.unregisterCallback(_windowType, 'onQuickAddCancelled');
     _windowService.unregisterCallback(_windowType, 'onDatePickerRequested');
+    _windowService.unregisterCallback(_windowType, 'onQuickAddListSelected');
 
     debugPrint('[QuickAddService] 原生窗口回调已注销');
   }
@@ -288,6 +309,16 @@ class QuickAddService {
     onDatePickerRequested?.call(currentDate, (newDate) {
       updateSelectedDate(newDate);
     });
+  }
+
+  /// 处理清单选中（立即持久化）
+  void _handleListSelected(Map<String, dynamic> arguments) {
+    final listId = arguments['listId'] as String?;
+
+    debugPrint('[QuickAddService] 清单选中: ${listId ?? "收集箱"}');
+
+    // 调用外部回调保存清单选择偏好
+    onListSelected?.call(listId);
   }
 
   /// 格式化热键显示

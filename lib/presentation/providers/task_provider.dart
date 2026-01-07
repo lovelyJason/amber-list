@@ -10,6 +10,7 @@ import '../../data/models/models.dart';
 import '../../data/datasources/local/database.dart' as db;
 import 'database_provider.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
+import '../pages/sticky_note/sticky_note_page.dart';
 
 const _uuid = Uuid();
 
@@ -312,12 +313,18 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     }
 
     // ========== Fallback: 同步到 Flutter 多窗口 ==========
+    // desktop_multi_window 0.3.0 使用 WindowMethodChannel 进行窗口间通信
     try {
       final registry = ref.read(stickyNoteRegistryProvider);
       if (task.listId != null && registry.containsKey(task.listId!)) {
         final windowId = registry[task.listId!];
-        if (windowId != null) {
-          await DesktopMultiWindow.invokeMethod(windowId, 'updateTask', {
+        if (windowId != null && windowId.isNotEmpty) {
+          // 使用命令通道向便签窗口发送更新
+          const commandChannel = WindowMethodChannel(
+            StickyNoteChannel.commands,
+            mode: ChannelMode.unidirectional,
+          );
+          await commandChannel.invokeMethod('updateTask', {
             'id': id,
             'isCompleted': isCompleted,
           });

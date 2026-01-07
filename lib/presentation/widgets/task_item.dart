@@ -1346,7 +1346,7 @@ class TaskItem extends ConsumerWidget {
       }
     }
 
-    // ========== Fallback: Flutter 多窗口实现 ==========
+    // ========== Fallback: Flutter 多窗口实现 (desktop_multi_window 0.3.0) ==========
     // 用于不支持原生便签的平台或原生创建失败时
 
     // Check registry
@@ -1355,56 +1355,55 @@ class TaskItem extends ConsumerWidget {
       final existingWindowId =
           ref.read(stickyNoteRegistryProvider.notifier).getWindowId(task.id);
 
-      if (existingWindowId != null) {
-        // 验证窗口是否真的还活着
+      if (existingWindowId != null && existingWindowId.isNotEmpty) {
+        // 验证窗口是否真的还活着（通过 WindowController.getAll 检查）
         bool isAlive = false;
         try {
-          await DesktopMultiWindow.invokeMethod(
-            existingWindowId,
-            'ping',
-          ).timeout(const Duration(milliseconds: 500));
-          isAlive = true;
+          final allWindows = await WindowController.getAll();
+          isAlive = allWindows.any((w) => w.windowId == existingWindowId);
         } catch (e) {
-          // 窗口已死,清理注册表
-          debugPrint('[TaskItem] 窗口$existingWindowId已失效,清理注册表');
-          ref.read(stickyNoteRegistryProvider.notifier).unregister(task.id);
+          debugPrint('[TaskItem] 检查窗口失败: $e');
           isAlive = false;
         }
 
-        if (isAlive) {
+        if (!isAlive) {
+          // 窗口已死,清理注册表
+          debugPrint('[TaskItem] 窗口$existingWindowId已失效,清理注册表');
+          ref.read(stickyNoteRegistryProvider.notifier).unregister(task.id);
+        } else {
           // 窗口还活着,显示警告
           if (context.mounted) {
             ToastManager().show(context, '当前已打开便签', type: ToastType.warning);
           }
           return;
         }
-        // 窗口已死,继续创建新窗口
       }
     }
 
-    // 创建独立窗口
-    final window = await DesktopMultiWindow.createWindow(
-      jsonEncode({
-        'id': task.id, // Add ID for registry
-        'type': 'sticky_note',
-        'title': task.title,
-        'content': task.description ?? '', // Include description if available
-        'themeColor':
-            '0xFFE1F5FE', // Default Blue for tasks to distinguish from lists
-      }),
+    // 创建独立窗口 (0.3.0 新 API)
+    final windowController = await WindowController.create(
+      WindowConfiguration(
+        arguments: jsonEncode({
+          'id': task.id, // Add ID for registry
+          'type': 'sticky_note',
+          'title': task.title,
+          'content': task.description ?? '', // Include description if available
+          'themeColor':
+              '0xFFE1F5FE', // Default Blue for tasks to distinguish from lists
+        }),
+        hiddenAtLaunch: true,
+      ),
     );
 
     // Register window
     ref
         .read(stickyNoteRegistryProvider.notifier)
-        .register(task.id, window.windowId);
+        .register(task.id, windowController.windowId);
 
-    // 设置窗口大小和位置
-    window
-      ..setFrame(const Offset(0, 0) & const Size(300, 300))
-      ..center()
-      ..setTitle('便签: ${task.title}')
-      ..show();
+    debugPrint('[TaskItem] 创建 Flutter 便签窗口: ${windowController.windowId}');
+
+    // 显示窗口
+    await windowController.show();
   }
 
   Widget _buildCheckbox(WidgetRef ref) {

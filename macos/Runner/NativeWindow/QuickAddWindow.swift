@@ -39,6 +39,9 @@ class QuickAddWindow: NSObject, NativeWindowProtocol {
     /// 从 Flutter 传来的清单列表 [{id: String, name: String}]
     private var taskLists: [[String: String]] = []
 
+    /// 上次选中的清单 ID（展开模式持久化偏好）
+    private var selectedListId: String?
+
     // MARK: - Initialization
 
     init(windowId: String?, manager: NativeWindowManager?, arguments: [String: Any]?) {
@@ -59,6 +62,10 @@ class QuickAddWindow: NSObject, NativeWindowProtocol {
             if let lists = args["taskLists"] as? [[String: String]] {
                 taskLists = lists
             }
+            // 解析上次选中的清单 ID（展开模式持久化）
+            if let listId = args["selectedListId"] as? String {
+                selectedListId = listId
+            }
         }
     }
 
@@ -78,17 +85,23 @@ class QuickAddWindow: NSObject, NativeWindowProtocol {
             if let lists = args["taskLists"] as? [[String: String]] {
                 taskLists = lists
             }
+            // 更新上次选中的清单 ID
+            if let listId = args["selectedListId"] as? String {
+                selectedListId = listId
+            } else {
+                selectedListId = nil  // 没有传递则重置为收集箱
+            }
         }
 
         // 如果窗口已存在，更新数据后显示
         if windowController != nil {
-            windowController?.updateData(tags: tags, taskLists: taskLists)
+            windowController?.updateData(tags: tags, taskLists: taskLists, selectedListId: selectedListId)
             windowController?.showWindow()
             return
         }
 
         // 创建新窗口
-        windowController = QuickAddWindowController(selectedDate: selectedDate, tags: tags, taskLists: taskLists)
+        windowController = QuickAddWindowController(selectedDate: selectedDate, tags: tags, taskLists: taskLists, selectedListId: selectedListId)
         window = windowController?.window
 
         // 设置回调
@@ -98,6 +111,10 @@ class QuickAddWindow: NSObject, NativeWindowProtocol {
 
         windowController?.onCancelled = { [weak self] in
             self?.handleCancelled()
+        }
+
+        windowController?.onListSelected = { [weak self] listId in
+            self?.handleListSelected(listId: listId)
         }
 
         windowController?.showWindow()
@@ -168,6 +185,17 @@ class QuickAddWindow: NSObject, NativeWindowProtocol {
         // 隐藏窗口
         hide()
     }
+
+    /// 处理清单选中（立即通知 Flutter 持久化）
+    private func handleListSelected(listId: String?) {
+        // 通知 Flutter 保存清单选择偏好
+        manager?.notifyFlutter(method: "onQuickAddListSelected", arguments: [
+            "listId": listId as Any,
+            "windowType": windowType,
+            "windowId": windowId as Any
+        ])
+        print("[QuickAddWindow] 清单选中: \(listId ?? "收集箱")")
+    }
 }
 
 // MARK: - QuickAddPanel（自定义面板，支持键盘输入但不激活主应用）
@@ -209,6 +237,9 @@ class QuickAddWindowController: NSObject, NSWindowDelegate {
     /// 从 Flutter 传来的清单列表 [{id: String, name: String}]
     private var taskLists: [[String: String]]
 
+    /// 上次选中的清单 ID（展开模式持久化偏好）
+    private var selectedListId: String?
+
     /// 全局鼠标事件监听器（用于检测点击窗口外部）
     private var globalMouseMonitor: Any?
 
@@ -220,22 +251,26 @@ class QuickAddWindowController: NSObject, NSWindowDelegate {
     /// 任务/笔记创建回调（标题, 日期, 是否选择了日期, 是否笔记, 优先级, 标签, 清单ID）
     var onTaskCreated: ((String, Date, Bool, Bool, Int, [String], String?) -> Void)?
     var onCancelled: (() -> Void)?
+    /// 清单选中回调（用于立即持久化，参数为清单ID，nil表示收集箱）
+    var onListSelected: ((String?) -> Void)?
 
     // MARK: - Initialization
 
-    init(selectedDate: Date, tags: [String] = [], taskLists: [[String: String]] = []) {
+    init(selectedDate: Date, tags: [String] = [], taskLists: [[String: String]] = [], selectedListId: String? = nil) {
         self.selectedDate = selectedDate
         self.tags = tags
         self.taskLists = taskLists
+        self.selectedListId = selectedListId
         super.init()
         setupWindow()
     }
 
     /// 更新数据（热键再次触发时调用）
-    func updateData(tags: [String], taskLists: [[String: String]]) {
+    func updateData(tags: [String], taskLists: [[String: String]], selectedListId: String? = nil) {
         self.tags = tags
         self.taskLists = taskLists
-        contentView?.updateData(tags: tags, taskLists: taskLists)
+        self.selectedListId = selectedListId
+        contentView?.updateData(tags: tags, taskLists: taskLists, selectedListId: selectedListId)
     }
 
     // MARK: - Setup
@@ -274,8 +309,8 @@ class QuickAddWindowController: NSObject, NSWindowDelegate {
 
         let window = panel
 
-        // 创建内容视图（传递标签和清单数据）
-        contentView = QuickAddContentView(selectedDate: selectedDate, tags: tags, taskLists: taskLists)
+        // 创建内容视图（传递标签、清单数据和上次选中的清单）
+        contentView = QuickAddContentView(selectedDate: selectedDate, tags: tags, taskLists: taskLists, selectedListId: selectedListId)
         contentView?.onSubmit = { [weak self] title, date, hasDate, isNote, priority, tags, listId in
             guard let self = self else { return }
             self.onTaskCreated?(title, date, hasDate, isNote, priority, tags, listId)
@@ -285,6 +320,9 @@ class QuickAddWindowController: NSObject, NSWindowDelegate {
         }
         contentView?.onSizeChange = { [weak self] newHeight in
             self?.resizeWindow(to: newHeight)
+        }
+        contentView?.onListSelected = { [weak self] listId in
+            self?.onListSelected?(listId)
         }
 
         window.contentView = contentView
@@ -569,6 +607,9 @@ class QuickAddContentView: NSView {
     /// 窗口大小变化回调
     var onSizeChange: ((CGFloat) -> Void)?
 
+    /// 清单选中回调（用于立即持久化，参数为清单ID，nil表示收集箱）
+    var onListSelected: ((String?) -> Void)?
+
     // MARK: - UI Components（基础模式）
 
     private var containerView: NSView!
@@ -595,18 +636,42 @@ class QuickAddContentView: NSView {
 
     // MARK: - Initialization
 
-    init(selectedDate: Date, tags: [String] = [], taskLists: [[String: String]] = []) {
+    init(selectedDate: Date, tags: [String] = [], taskLists: [[String: String]] = [], selectedListId: String? = nil) {
         self.selectedDate = selectedDate
         self.availableTags = tags
         self.availableTaskLists = taskLists
         super.init(frame: NSRect(x: 0, y: 0, width: 600, height: 60))
+        // 设置上次选中的清单（展开模式持久化偏好）
+        applySelectedListId(selectedListId)
         setupCompactUI()
     }
 
     /// 更新数据（热键再次触发时调用）
-    func updateData(tags: [String], taskLists: [[String: String]]) {
+    func updateData(tags: [String], taskLists: [[String: String]], selectedListId: String? = nil) {
         self.availableTags = tags
         self.availableTaskLists = taskLists
+        // 更新上次选中的清单
+        applySelectedListId(selectedListId)
+    }
+
+    /// 应用上次选中的清单 ID
+    /// 根据传入的 listId 查找对应的清单名称并设置
+    private func applySelectedListId(_ listId: String?) {
+        if let listId = listId {
+            // 在清单列表中查找匹配的清单
+            if let matchedList = availableTaskLists.first(where: { $0["id"] == listId }) {
+                self.selectedListId = listId
+                self.selectedListName = matchedList["name"] ?? "清单"
+            } else {
+                // 找不到匹配的清单，重置为收集箱
+                self.selectedListId = nil
+                self.selectedListName = "收集箱"
+            }
+        } else {
+            // 没有传入 listId，使用收集箱
+            self.selectedListId = nil
+            self.selectedListName = "收集箱"
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -996,6 +1061,9 @@ class QuickAddContentView: NSView {
         // hasSelectedDate 默认已为 true，这里确保日期显示更新
         updateDateDisplay()
 
+        // 更新清单选择器显示（应用持久化的选择偏好）
+        updateListSelectorDisplay()
+
         // 通知窗口大小变化
         onSizeChange?(expandedHeight)
 
@@ -1195,6 +1263,9 @@ class QuickAddContentView: NSView {
             isNoteMode = false
         }
         updateListSelectorDisplay()
+
+        // 立即通知 Flutter 保存清单选择（展开模式持久化）
+        onListSelected?(selectedListId)
     }
 
     /// 更新清单选择器显示
@@ -1517,9 +1588,10 @@ class QuickAddContentView: NSView {
     private func submitTask() {
         let title = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        // 基础模式：标题 + 默认今天日期，其他都是默认值，listId 为 nil（收集箱）
+        // 基础模式：标题 + 默认今天日期，其他都是默认值
         // 紧凑模式默认设置截止日期为当天（hasDate=true）
-        onSubmit?(title, selectedDate, true, false, 0, [], nil)
+        // 使用 selectedListId 以复用展开模式持久化的清单偏好（nil 表示收集箱）
+        onSubmit?(title, selectedDate, true, false, 0, [], selectedListId)
     }
 
     private func submitExpandedTask() {
