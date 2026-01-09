@@ -387,6 +387,10 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
           lastError: config.lastSyncError,
           clearError: config.lastSyncSuccess == true,
         );
+      } else if (type == SyncType.amberCloud) {
+        // 琥珀云：启动自动同步（默认 10 分钟间隔）
+        await _startAutoSync(const Duration(minutes: 10));
+        state = state.copyWith(clearError: true);
       }
 
       debugPrint('[SyncProvider] 已切换到 ${type.displayName}');
@@ -394,6 +398,15 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
       debugPrint('[SyncProvider] 切换同步类型失败: $e');
       state = state.copyWith(lastError: '切换失败: $e');
     }
+  }
+
+  /// 启用琥珀云同步
+  ///
+  /// 前提条件：已通过 AmberCloudRepository.getToken() 获取了 Token
+  /// 此方法只负责切换同步类型，不负责获取 Token
+  Future<void> enableAmberCloud() async {
+    await switchSyncType(SyncType.amberCloud);
+    debugPrint('[SyncProvider] 琥珀云同步已启用');
   }
 
   /// 手动触发同步
@@ -409,6 +422,9 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     } else if (syncType == SyncType.qiniuOss) {
       final config = _ref.read(qiniuConfigProvider);
       isConfigured = config != null && config.isConfigured;
+    } else if (syncType == SyncType.amberCloud) {
+      // 琥珀云：通过 SyncManager._createProvider 检查是否已登录
+      isConfigured = true; // 让 SyncManager 去判断
     }
 
     if (!isConfigured) {
@@ -455,6 +471,9 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
         } else if (syncType == SyncType.qiniuOss) {
           final updatedConfig = await SyncConfigService.loadQiniuConfig();
           lastSyncTime = updatedConfig.lastSyncTime;
+        } else if (syncType == SyncType.amberCloud) {
+          // 琥珀云：直接使用当前时间作为同步时间
+          lastSyncTime = DateTime.now();
         }
 
         state = state.copyWith(

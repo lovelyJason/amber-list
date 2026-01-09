@@ -18,6 +18,8 @@ import 'providers/sync_storage_provider.dart';
 import 'providers/webdav_sync_provider.dart';
 import 'providers/oss/oss_sync_provider.dart';
 import 'providers/oss/qiniu_oss_client.dart';
+import 'providers/amber_cloud_sync_provider.dart';
+import '../../repositories/amber_cloud_repository.dart';
 
 /// ============================================================
 /// 同步管理器
@@ -223,9 +225,18 @@ class SyncManager {
         );
         return OssSyncProvider.qiniu(ossClient);
 
+      case SyncType.amberCloud:
+        // 琥珀云托管服务：检查是否已登录
+        final repository = AmberCloudRepository();
+        final isLoggedIn = await repository.isLoggedIn();
+        if (!isLoggedIn) {
+          debugPrint('[SyncManager] 琥珀云未登录，请先获取 Token');
+          return null;
+        }
+        return AmberCloudSyncProvider(repository);
+
       case SyncType.aliOss:
       case SyncType.tencentCos:
-      case SyncType.amberCloud:
         // 预留：暂未实现
         debugPrint('[SyncManager] 同步类型 $syncType 暂未实现');
         return null;

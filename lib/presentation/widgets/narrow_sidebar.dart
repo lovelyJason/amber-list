@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -22,33 +21,22 @@ class NarrowSidebar extends ConsumerStatefulWidget {
 }
 
 class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
-  Timer? _hoverTimer;
-  bool _showRefresh = false;
+  /// 鼠标是否悬浮在同步指示器上
+  bool _isSyncHovered = false;
 
   @override
   void dispose() {
-    _hoverTimer?.cancel();
     super.dispose();
   }
 
+  /// 同步指示器悬浮进入
   void _handleHoverEnter(PointerEnterEvent event) {
-    _hoverTimer?.cancel();
-    _hoverTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() {
-          _showRefresh = true;
-        });
-      }
-    });
+    setState(() => _isSyncHovered = true);
   }
 
+  /// 同步指示器悬浮离开
   void _handleHoverExit(PointerExitEvent event) {
-    _hoverTimer?.cancel();
-    if (_showRefresh) {
-      setState(() {
-        _showRefresh = false;
-      });
-    }
+    setState(() => _isSyncHovered = false);
   }
 
   /// 处理日历点击 - 直接跳转到日历页面
@@ -214,85 +202,81 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
 
 
   /// 同步状态指示器 - 显示在侧边栏底部
+  ///
+  /// 交互设计：
+  /// - 右下角始终显示小刷新角标，提示用户可点击同步
+  /// - 悬浮时背景高亮，鼠标变成手型
+  /// - 点击触发同步
   Widget _buildSyncIndicator(WidgetRef ref) {
     final syncState = ref.watch(syncStateProvider);
-    final isConfigured =
-        ref.watch(syncConfigProvider) != null ||
-        ref.watch(qiniuConfigProvider) != null;
+    final syncType = ref.watch(syncTypeProvider);
 
     // 未配置同步 - 不显示
-    if (!isConfigured) {
+    if (syncType == null) {
       return const SizedBox.shrink();
     }
 
-    // 确定图标和颜色
+    // 确定主图标和颜色
     IconData icon;
     Color color;
     String tooltip;
-    VoidCallback? onTap;
 
     if (syncState.isSyncing) {
-      // 正在同步：显示加载圈
-      icon = FluentIcons.arrow_sync_circle_24_regular;
+      icon = FluentIcons.cloud_sync_24_regular;
       color = AmberColors.info;
       tooltip = '正在同步...';
-    } else if (_showRefresh) {
-      // 悬停显示刷新：显示刷新图标
-      icon = FluentIcons.arrow_sync_24_regular; // 使用普通的刷新箭头
-      color = AmberColors.textPrimary; // 颜色稍微深一点表示可点击
-      tooltip = '点击立即同步';
-      onTap = () async {
-        // 点击后立即重置刷新图标状态（因为马上会变成 isSyncing）
-        setState(() => _showRefresh = false);
-
-        // 设置冲突决策回调（在同步过程中弹窗让用户选择）
-        ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
-          if (!mounted) return null;
-          // 弹出冲突决策弹窗
-          return showSyncConflictDialog(context, conflicts: conflicts);
-        };
-
-        final success = await ref.read(syncStateProvider.notifier).manualSync();
-
-        // 同步成功播放音效
-        if (success && mounted) {
-          ref.read(soundServiceProvider).playSuccess();
-        }
-      };
     } else if (syncState.lastError != null) {
-      icon = FluentIcons.warning_24_regular;
+      icon = FluentIcons.cloud_dismiss_24_regular;
       color = AmberColors.warning;
-      tooltip = '同步失败: ${syncState.lastError}';
+      tooltip = '同步失败: ${syncState.lastError}\n点击重试';
     } else if (syncState.lastSyncTime != null) {
       icon = FluentIcons.cloud_checkmark_24_regular;
       color = AmberColors.success;
       final timeAgo = _formatTimeAgo(syncState.lastSyncTime!);
-      tooltip = '上次同步: $timeAgo';
+      tooltip = '上次同步: $timeAgo\n点击立即同步';
     } else {
       icon = FluentIcons.cloud_24_regular;
       color = AmberColors.textSecondary;
-      tooltip = '等待同步';
+      tooltip = '等待同步\n点击立即同步';
+    }
+
+    // 点击同步的回调
+    Future<void> handleSync() async {
+      if (syncState.isSyncing) return;
+
+      // 设置冲突决策回调
+      ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+        if (!mounted) return null;
+        return showSyncConflictDialog(context, conflicts: conflicts);
+      };
+
+      final success = await ref.read(syncStateProvider.notifier).manualSync();
+
+      // 同步成功播放音效
+      if (success && mounted) {
+        ref.read(soundServiceProvider).playSuccess();
+      }
     }
 
     return MouseRegion(
       onEnter: _handleHoverEnter,
       onExit: _handleHoverExit,
-      cursor: _showRefresh
-          ? SystemMouseCursors.click
-          : SystemMouseCursors.basic,
+      cursor: syncState.isSyncing
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       child: Tooltip(
         message: tooltip,
         preferBelow: false,
         child: GestureDetector(
-          onTap: onTap,
+          onTap: handleSync,
           child: Container(
             width: 40,
             height: 40,
             margin: const EdgeInsets.symmetric(vertical: AmberDimens.spacingXs),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
-              color: _showRefresh && !syncState.isSyncing
-                  ? Colors.black.withValues(alpha: 0.05) // 悬停刷新时加个淡背景
+              color: _isSyncHovered && !syncState.isSyncing
+                  ? Colors.black.withValues(alpha: 0.08)
                   : Colors.transparent,
             ),
             child: syncState.isSyncing
@@ -308,10 +292,42 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
                       ),
                     ),
                   )
-                : Icon(icon, size: AmberDimens.iconSizeLg, color: color),
+                : _buildSyncIconWithBadge(icon, color),
           ),
         ),
       ),
+    );
+  }
+
+  /// 构建带刷新角标的云图标
+  ///
+  /// 悬浮时右下角显示小刷新图标，提示用户可以点击同步
+  Widget _buildSyncIconWithBadge(IconData mainIcon, Color mainColor) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 主图标（云）
+        Icon(mainIcon, size: AmberDimens.iconSizeLg, color: mainColor),
+        // 悬浮时显示右下角刷新角标
+        if (_isSyncHovered)
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AmberColors.sidebarBackground,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: const Icon(
+                FluentIcons.arrow_sync_12_regular,
+                size: 10,
+                color: AmberColors.primary,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

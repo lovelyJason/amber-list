@@ -48,7 +48,9 @@ enum SyncType {
                     this == SyncType.tencentCos;
 
   /// 是否已实现（可用）
-  bool get isAvailable => this == SyncType.webdav || this == SyncType.qiniuOss;
+  bool get isAvailable => this == SyncType.webdav ||
+                          this == SyncType.qiniuOss ||
+                          this == SyncType.amberCloud;
 }
 
 /// WebDAV 服务商预设配置

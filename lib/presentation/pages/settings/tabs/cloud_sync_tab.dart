@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/constants.dart';
 import '../../../../data/services/sync/sync_config.dart';
+import '../../../providers/activation_provider.dart';
 import '../../../providers/sync_provider.dart';
 import '../../../widgets/webdav_config_section.dart';
 import '../../../widgets/qiniu_oss_config_section.dart';
+import '../../../widgets/amber_cloud_config_section.dart';
 import '../../../widgets/common/toast/toast_manager.dart';
 
 /// ============================================================
@@ -31,16 +33,26 @@ class CloudSyncTab extends ConsumerWidget {
     final syncType = ref.watch(syncTypeProvider);
     final webdavConfig = ref.watch(syncConfigProvider);
     final qiniuConfig = ref.watch(qiniuConfigProvider);
+    final activationState = ref.watch(activationProvider);
 
     // 判断各平台是否已配置（有账密信息）
     final webdavConfigured = webdavConfig != null && webdavConfig.isConfigured;
     final qiniuConfigured = qiniuConfig != null && qiniuConfig.isConfigured;
+    // 琥珀云需要已激活 App 才能使用
+    final amberCloudConfigured = activationState.isActivated;
 
     return ListView(
       padding: const EdgeInsets.all(AmberDimens.spacingLg),
       children: [
         // 同步方式选择器
-        _buildSyncSelector(context, ref, syncType, webdavConfigured, qiniuConfigured),
+        _buildSyncSelector(
+          context,
+          ref,
+          syncType,
+          webdavConfigured,
+          qiniuConfigured,
+          amberCloudConfigured,
+        ),
         const SizedBox(height: AmberDimens.spacingMd),
 
         // WebDAV 配置区域
@@ -67,8 +79,15 @@ class CloudSyncTab extends ConsumerWidget {
 
         const SizedBox(height: AmberDimens.spacingMd),
 
-        // 预留：琥珀云托管服务入口
-        _buildAmberCloudPlaceholder(context),
+        // 琥珀云托管服务
+        _buildSyncSection(
+          context: context,
+          ref: ref,
+          type: SyncType.amberCloud,
+          currentType: syncType,
+          isConfigured: true, // 琥珀云无需额外配置，只要激活了 App 就行
+          child: const AmberCloudConfigSection(),
+        ),
       ],
     );
   }
@@ -80,6 +99,7 @@ class CloudSyncTab extends ConsumerWidget {
     SyncType? currentType,
     bool webdavConfigured,
     bool qiniuConfigured,
+    bool amberCloudConfigured,
   ) {
     return Container(
       padding: const EdgeInsets.all(AmberDimens.spacingMd),
@@ -128,6 +148,15 @@ class CloudSyncTab extends ConsumerWidget {
             isConfigured: qiniuConfigured,
             title: '七牛云 OSS',
             subtitle: qiniuConfigured ? '已配置' : '未配置',
+          ),
+          _buildSyncOption(
+            context: context,
+            ref: ref,
+            type: SyncType.amberCloud,
+            currentType: currentType,
+            isConfigured: amberCloudConfigured,
+            title: '琥珀云托管',
+            subtitle: amberCloudConfigured ? '官方服务，开箱即用' : '需先激活 App',
           ),
           _buildSyncOption(
             context: context,
@@ -302,45 +331,4 @@ class CloudSyncTab extends ConsumerWidget {
     );
   }
 
-  /// 构建琥珀云托管服务占位入口
-  Widget _buildAmberCloudPlaceholder(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
-        border: Border.all(color: AmberColors.divider),
-      ),
-      child: ListTile(
-        leading: Icon(
-          Icons.cloud_queue_outlined,
-          color: Colors.grey.shade400,
-        ),
-        title: Text(
-          '琥珀云托管服务',
-          style: TextStyle(color: Colors.grey.shade600),
-        ),
-        subtitle: Text(
-          '即将推出 - 无需配置，开箱即用的云同步服务',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AmberDimens.spacingSm,
-            vertical: 2,
-          ),
-          decoration: BoxDecoration(
-            color: AmberColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(AmberDimens.radiusSm),
-          ),
-          child: const Text(
-            '敬请期待',
-            style: TextStyle(
-              color: AmberColors.primary,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
