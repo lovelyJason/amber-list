@@ -15,7 +15,7 @@ import 'widgets/calendar_header.dart';
 import 'widgets/calendar_grid.dart';
 import 'widgets/calendar_day_view.dart';
 import 'widgets/calendar_filter_menu.dart';
-import 'widgets/calendar_dialogs.dart';
+import 'widgets/dialogs/calendar_dialogs.dart';
 
 /// 日历视图模式
 enum CalendarViewMode { month, week, day }
@@ -123,23 +123,20 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
         return Stack(
           children: [
             // 日历主体内容
+            // 遮罩层在各自的 Layout 方法内部处理，避免覆盖底部导航栏
             LayoutBuilder(
               builder: (context, constraints) {
                 final isMobile =
                     constraints.maxWidth < ResponsiveHelper.mobileBreakpoint;
+                final showOverlay = activationState.isInitialized && !isActivated;
 
                 if (isMobile) {
-                  return _buildMobileLayout(context, tasks);
+                  return _buildMobileLayout(context, tasks, showOverlay: showOverlay);
                 } else {
-                  return _buildDesktopLayout(context, tasks);
+                  return _buildDesktopLayout(context, tasks, showOverlay: showOverlay);
                 }
               },
             ),
-
-            // 未激活时覆盖遮罩，禁止操作
-            // 必须等初始化完成后再判断，否则会在校验期间闪现遮罩
-            if (activationState.isInitialized && !isActivated)
-              _buildActivationOverlay(context),
           ],
         );
       },
@@ -530,66 +527,72 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   // ===== 响应式布局 =====
 
   /// 构建桌面端布局（原有布局）
-  Widget _buildDesktopLayout(BuildContext context, List<Task> tasks) {
+  Widget _buildDesktopLayout(BuildContext context, List<Task> tasks, {bool showOverlay = false}) {
     return Scaffold(
       backgroundColor: AmberColors.background,
-      body: Row(
+      body: Stack(
         children: [
-          // 左侧边栏
-          Container(
-            width: 260,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                right: BorderSide(color: AmberColors.divider),
-              ),
-            ),
-            child: CalendarLeftSidebar(
-              focusedDay: _focusedDay,
-              selectedDay: _selectedDay,
-              viewMode: _viewMode,
-              tasks: tasks,
-              addKey: _addKey,
-              viewModeKey: _viewModeKey,
-              onDaySelected: _onDaySelected,
-              onPageChanged: _onPageChanged,
-              onViewModeChanged: _onViewModeChanged,
-              onAddPressed: () => _showSpotlightSearch(context),
-            ),
-          ),
-
-          // 中间日历主体
-          Expanded(
-            child: Column(
-              children: [
-                // 顶部导航栏
-                CalendarHeader(
-                  focusedDay: _focusedDay,
-                  viewMode: _viewMode,
-                  searchQuery: _searchQuery,
-                  filterPriorities: _filterPriorities,
-                  filterIsCompleted: _filterIsCompleted,
-                  navKey: _navKey,
-                  todayKey: _todayKey,
-                  onSearchChanged: (val) => setState(() => _searchQuery = val),
-                  onPreviousPage: _onPreviousPage,
-                  onNextPage: _onNextPage,
-                  onGoToToday: _onGoToToday,
-                  onFilterPressed: _showFilterMenu,
-                ),
-
-                // 日历网格或日视图
-                Expanded(
-                  child: Showcase(
-                    key: _gridKey,
-                    title: '任务管理',
-                    description: '双击有任务的日期，快速查看和管理当天任务',
-                    child: _buildCalendarContent(tasks),
+          Row(
+            children: [
+              // 左侧边栏
+              Container(
+                width: 260,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    right: BorderSide(color: AmberColors.divider),
                   ),
                 ),
-              ],
-            ),
+                child: CalendarLeftSidebar(
+                  focusedDay: _focusedDay,
+                  selectedDay: _selectedDay,
+                  viewMode: _viewMode,
+                  tasks: tasks,
+                  addKey: _addKey,
+                  viewModeKey: _viewModeKey,
+                  onDaySelected: _onDaySelected,
+                  onPageChanged: _onPageChanged,
+                  onViewModeChanged: _onViewModeChanged,
+                  onAddPressed: () => _showSpotlightSearch(context),
+                ),
+              ),
+
+              // 中间日历主体
+              Expanded(
+                child: Column(
+                  children: [
+                    // 顶部导航栏
+                    CalendarHeader(
+                      focusedDay: _focusedDay,
+                      viewMode: _viewMode,
+                      searchQuery: _searchQuery,
+                      filterPriorities: _filterPriorities,
+                      filterIsCompleted: _filterIsCompleted,
+                      navKey: _navKey,
+                      todayKey: _todayKey,
+                      onSearchChanged: (val) => setState(() => _searchQuery = val),
+                      onPreviousPage: _onPreviousPage,
+                      onNextPage: _onNextPage,
+                      onGoToToday: _onGoToToday,
+                      onFilterPressed: _showFilterMenu,
+                    ),
+
+                    // 日历网格或日视图
+                    Expanded(
+                      child: Showcase(
+                        key: _gridKey,
+                        title: '任务管理',
+                        description: '双击有任务的日期，快速查看和管理当天任务',
+                        child: _buildCalendarContent(tasks),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          // 激活遮罩层（桌面端也需要）
+          if (showOverlay) _buildActivationOverlay(context),
         ],
       ),
     );
@@ -597,7 +600,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 
   /// 构建移动端布局
   /// 隐藏左侧边栏，只显示日历主体，底部添加导航栏
-  Widget _buildMobileLayout(BuildContext context, List<Task> tasks) {
+  Widget _buildMobileLayout(BuildContext context, List<Task> tasks, {bool showOverlay = false}) {
     return Scaffold(
       backgroundColor: AmberColors.background,
       appBar: AppBar(
@@ -626,67 +629,74 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           ),
         ],
       ),
-      body: Column(
+      // body 用 Stack 包裹，遮罩只覆盖 body 区域，不影响底部导航栏
+      body: Stack(
         children: [
-          // 视图模式切换
-          Container(
-            color: AmberColors.cardBackground,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AmberDimens.spacingMd,
-              vertical: AmberDimens.spacingSm,
-            ),
-            child: Row(
-              children: [
-                // 上一页
-                IconButton(
-                  onPressed: _onPreviousPage,
-                  icon: const Icon(Icons.chevron_left),
-                  iconSize: 20,
+          Column(
+            children: [
+              // 视图模式切换
+              Container(
+                color: AmberColors.cardBackground,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AmberDimens.spacingMd,
+                  vertical: AmberDimens.spacingSm,
                 ),
-                // 下一页
-                IconButton(
-                  onPressed: _onNextPage,
-                  icon: const Icon(Icons.chevron_right),
-                  iconSize: 20,
-                ),
-                const Spacer(),
-                // 视图模式切换
-                SegmentedButton<CalendarViewMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: CalendarViewMode.month,
-                      label: Text('月'),
+                child: Row(
+                  children: [
+                    // 上一页
+                    IconButton(
+                      onPressed: _onPreviousPage,
+                      icon: const Icon(Icons.chevron_left),
+                      iconSize: 20,
                     ),
-                    ButtonSegment(
-                      value: CalendarViewMode.week,
-                      label: Text('周'),
+                    // 下一页
+                    IconButton(
+                      onPressed: _onNextPage,
+                      icon: const Icon(Icons.chevron_right),
+                      iconSize: 20,
                     ),
-                    ButtonSegment(
-                      value: CalendarViewMode.day,
-                      label: Text('日'),
+                    const Spacer(),
+                    // 视图模式切换
+                    SegmentedButton<CalendarViewMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: CalendarViewMode.month,
+                          label: Text('月'),
+                        ),
+                        ButtonSegment(
+                          value: CalendarViewMode.week,
+                          label: Text('周'),
+                        ),
+                        ButtonSegment(
+                          value: CalendarViewMode.day,
+                          label: Text('日'),
+                        ),
+                      ],
+                      selected: {_viewMode},
+                      onSelectionChanged: (modes) {
+                        if (modes.isNotEmpty) {
+                          _onViewModeChanged(modes.first);
+                        }
+                      },
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        textStyle: WidgetStateProperty.all(
+                          const TextStyle(fontSize: 12),
+                        ),
+                      ),
                     ),
                   ],
-                  selected: {_viewMode},
-                  onSelectionChanged: (modes) {
-                    if (modes.isNotEmpty) {
-                      _onViewModeChanged(modes.first);
-                    }
-                  },
-                  style: ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: WidgetStateProperty.all(
-                      const TextStyle(fontSize: 12),
-                    ),
-                  ),
                 ),
-              ],
-            ),
+              ),
+              const Divider(height: 1),
+              // 日历内容
+              Expanded(
+                child: _buildCalendarContent(tasks),
+              ),
+            ],
           ),
-          const Divider(height: 1),
-          // 日历内容
-          Expanded(
-            child: _buildCalendarContent(tasks),
-          ),
+          // 激活遮罩层（只覆盖 body，不影响底部导航栏）
+          if (showOverlay) _buildActivationOverlay(context),
         ],
       ),
       bottomNavigationBar: const MobileBottomNavBar(),

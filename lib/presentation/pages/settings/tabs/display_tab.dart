@@ -20,29 +20,57 @@ class DisplayTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AmberDimens.spacingLg),
       children: [
-        // Windows 标题栏样式设置（仅 Windows 显示）
-        if (Platform.isWindows)
+        // 窗口行为设置（桌面端显示）
+        if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
           SettingsSection(
-            title: '窗口样式',
+            title: '窗口行为',
             children: [
+              // Windows 标题栏样式设置（仅 Windows 显示）
+              if (Platform.isWindows) ...[
+                _buildSwitchTile(
+                  icon: Icons.window_outlined,
+                  title: '使用 Windows 原生标题栏',
+                  subtitle: '关闭则使用 macOS 风格红绿灯按钮，需重启应用生效',
+                  value: settings.useNativeTitleBar,
+                  onChanged: (value) {
+                    ref.read(displaySettingsProvider.notifier).setUseNativeTitleBar(value);
+                    // 提示用户需要重启
+                    ToastManager().show(
+                      context,
+                      '标题栏样式已更改，重启应用后生效',
+                      type: ToastType.info,
+                    );
+                  },
+                ),
+                const Divider(height: 1, indent: 56),
+              ],
+              // 最小化到托盘
               _buildSwitchTile(
-                icon: Icons.window_outlined,
-                title: '使用 Windows 原生标题栏',
-                subtitle: '关闭则使用 macOS 风格红绿灯按钮，需重启应用生效',
-                value: settings.useNativeTitleBar,
+                icon: Icons.minimize_outlined,
+                title: '最小化到托盘',
+                subtitle: '关闭窗口时隐藏到系统托盘而非退出。',
+                value: settings.minimizeToTray,
                 onChanged: (value) {
-                  ref.read(displaySettingsProvider.notifier).setUseNativeTitleBar(value);
-                  // 提示用户需要重启
-                  ToastManager().show(
-                    context,
-                    '标题栏样式已更改，重启应用后生效',
-                    type: ToastType.info,
-                  );
+                  ref.read(displaySettingsProvider.notifier).setMinimizeToTray(value);
                 },
               ),
+              // Dock 显示设置（仅 macOS，且最小化到托盘开启时显示）
+              if (Platform.isMacOS && settings.minimizeToTray) ...[
+                const Divider(height: 1, indent: 56),
+                _buildSwitchTile(
+                  icon: Icons.dock_outlined,
+                  title: '在 Dock 中保持显示',
+                  subtitle: '关闭后，最小化时 Dock 图标会完全隐藏，仅通过托盘图标操作。',
+                  value: settings.showInDockWhenMinimized,
+                  onChanged: (value) {
+                    ref.read(displaySettingsProvider.notifier).setShowInDockWhenMinimized(value);
+                  },
+                ),
+              ],
             ],
           ),
-        if (Platform.isWindows) const SizedBox(height: AmberDimens.spacingMd),
+        if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
+          const SizedBox(height: AmberDimens.spacingMd),
         // 任务列表显示选项
         SettingsSection(
           title: '任务列表',
@@ -66,6 +94,17 @@ class DisplayTab extends ConsumerWidget {
               value: settings.showDueDate,
               onChanged: (value) {
                 ref.read(displaySettingsProvider.notifier).setShowDueDate(value);
+              },
+            ),
+            const Divider(height: 1, indent: 56),
+            // 显示优先级
+            _buildSwitchTile(
+              icon: Icons.flag_outlined,
+              title: '显示优先级',
+              subtitle: '在任务项左侧显示优先级旗帜图标',
+              value: settings.showPriority,
+              onChanged: (value) {
+                ref.read(displaySettingsProvider.notifier).setShowPriority(value);
               },
             ),
             const Divider(height: 1, indent: 56),

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Small widget background - Dark skin
+    Deep space gray gradient for dark mode enthusiasts
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#424242"
+        android:centerColor="#303030"
+        android:endColor="#212121"
+        android:type="linear" />
+    <corners android:radius="24dp" />
+</shape>

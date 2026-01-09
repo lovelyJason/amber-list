@@ -1,9 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:tray_manager/tray_manager.dart';
+import 'package:window_manager/window_manager.dart';
 
+import 'core/services/dock_service.dart';
 import 'core/services/quick_add/quick_add_service.dart';
 import 'core/services/splash_service.dart';
 import 'core/theme/amber_theme.dart';
@@ -25,7 +30,8 @@ class AmberListApp extends ConsumerStatefulWidget {
   ConsumerState<AmberListApp> createState() => _AmberListAppState();
 }
 
-class _AmberListAppState extends ConsumerState<AmberListApp> {
+class _AmberListAppState extends ConsumerState<AmberListApp>
+    with WindowListener, TrayListener {
   /// 闪念胶囊服务
   QuickAddService? _quickAddService;
 
@@ -33,6 +39,17 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
   void initState() {
     super.initState();
     debugPrint('[App] initState() called');
+
+    // 桌面端添加窗口关闭监听（用于最小化到托盘功能）
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      windowManager.addListener(this);
+      trayManager.addListener(this);
+      // 开启关闭前拦截，允许我们在关闭前决定是否最小化到托盘
+      windowManager.setPreventClose(true);
+      // 初始化托盘图标
+      _initTray();
+    }
+
     // 延迟初始化，避免阻塞启动流程
     WidgetsBinding.instance.addPostFrameCallback((_) {
       debugPrint('[App] addPostFrameCallback triggered - first frame rendered');
@@ -40,7 +57,101 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
       _hideSplash();
       _checkForUpdatesOnStartup();
       _initializeQuickAddService();
+      // 执行自动顺延（将过期任务移动到今天）
+      _performAutoPostpone();
     });
+  }
+
+  /// 初始化系统托盘
+  ///
+  /// 设置托盘图标、菜单，支持点击恢复窗口
+  Future<void> _initTray() async {
+    try {
+      debugPrint('[App] 初始化托盘...');
+
+      // 从 assets 提取图标到临时目录
+      final iconPath = await _extractTrayIcon();
+      if (iconPath != null) {
+        await trayManager.setIcon(iconPath);
+        debugPrint('[App] 托盘图标已设置: $iconPath');
+      }
+
+      // 设置托盘右键菜单
+      final menu = Menu(
+        items: [
+          MenuItem(key: 'show_window', label: '显示琥珀清单'),
+          MenuItem.separator(),
+          MenuItem(key: 'exit_app', label: '退出'),
+        ],
+      );
+      await trayManager.setContextMenu(menu);
+      debugPrint('[App] 托盘菜单已设置');
+    } catch (e) {
+      debugPrint('[App] 初始化托盘失败: $e');
+    }
+  }
+
+  /// 从 assets 提取托盘图标到临时目录
+  ///
+  /// tray_manager 需要文件路径，不能直接用 asset
+  Future<String?> _extractTrayIcon() async {
+    try {
+      final byteData = await rootBundle.load('assets/images/logo_transparent.png');
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/amber_tray_icon.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      return file.path;
+    } catch (e) {
+      debugPrint('[App] 提取托盘图标失败: $e');
+      return null;
+    }
+  }
+
+  /// 托盘图标左键单击（TrayListener 回调）
+  ///
+  /// 显示并聚焦主窗口，同时恢复 Dock 显示（如果之前隐藏了）
+  @override
+  void onTrayIconMouseDown() {
+    _showWindowFromTray();
+  }
+
+  /// 托盘图标右键单击（TrayListener 回调）
+  ///
+  /// 弹出右键菜单
+  @override
+  void onTrayIconRightMouseDown() {
+    trayManager.popUpContextMenu();
+  }
+
+  /// 托盘菜单项点击（TrayListener 回调）
+  @override
+  void onTrayMenuItemClick(MenuItem menuItem) {
+    if (menuItem.key == 'show_window') {
+      _showWindowFromTray();
+    } else if (menuItem.key == 'exit_app') {
+      _exitApp();
+    }
+  }
+
+  /// 从托盘恢复窗口显示
+  ///
+  /// 显示并聚焦主窗口，同时恢复 Dock 显示（如果之前隐藏了）
+  Future<void> _showWindowFromTray() async {
+    // macOS: 先恢复 Dock 显示（如果之前隐藏了）
+    if (Platform.isMacOS) {
+      await DockService.showInDock();
+    }
+    // 显示并聚焦窗口
+    await windowManager.show();
+    await windowManager.focus();
+    debugPrint('[App] 从托盘恢复窗口显示');
+  }
+
+  /// 退出应用
+  Future<void> _exitApp() async {
+    await windowManager.setPreventClose(false);
+    await windowManager.destroy();
+    debugPrint('[App] 应用已退出');
   }
 
   /// 隐藏原生 Splash 屏幕
@@ -67,8 +178,45 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
 
   @override
   void dispose() {
+    // 桌面端移除窗口和托盘监听
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      windowManager.removeListener(this);
+      trayManager.removeListener(this);
+    }
     _quickAddService?.dispose();
     super.dispose();
+  }
+
+  /// 窗口关闭事件处理（WindowListener 回调）
+  ///
+  /// 根据用户设置决定：
+  /// - minimizeToTray = true: 隐藏窗口到托盘，应用继续在后台运行
+  /// - minimizeToTray = false: 直接退出应用
+  @override
+  void onWindowClose() async {
+    // 读取用户设置
+    final displaySettings = ref.read(displaySettingsProvider);
+    final minimizeToTray = displaySettings.minimizeToTray;
+    final showInDockWhenMinimized = displaySettings.showInDockWhenMinimized;
+
+    debugPrint('[App] onWindowClose: minimizeToTray=$minimizeToTray, showInDock=$showInDockWhenMinimized');
+
+    if (minimizeToTray) {
+      // 最小化到托盘：隐藏窗口，应用继续运行
+      await windowManager.hide();
+      debugPrint('[App] 窗口已隐藏到托盘');
+
+      // macOS: 根据用户设置决定是否从 Dock 隐藏
+      if (Platform.isMacOS && !showInDockWhenMinimized) {
+        await DockService.hideFromDock();
+        debugPrint('[App] 已从 Dock 隐藏');
+      }
+    } else {
+      // 直接退出：先取消关闭拦截，再销毁窗口
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
+      debugPrint('[App] 应用已退出');
+    }
   }
 
   /// 初始化闪念胶囊服务（仅桌面端）
@@ -163,6 +311,23 @@ class _AmberListAppState extends ConsumerState<AmberListApp> {
       taskLists: taskListData,
       selectedListId: lastSelectedListId,
     );
+  }
+
+  /// 执行自动顺延
+  ///
+  /// 在 App 启动时调用，将符合条件的过期任务自动顺延到今天
+  /// 条件：autoPostpone=true AND 已过期 AND 全局开关开启
+  Future<void> _performAutoPostpone() async {
+    // 等待 TaskManagementSettings 加载完成（确保读取到用户的真实设置）
+    await ref.read(taskManagementSettingsProvider.notifier).waitForLoad();
+
+    // 稍微延迟，确保 TaskNotifier 已经从数据库加载完数据
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    final count = await ref.read(taskProvider.notifier).performAutoPostpone();
+    if (count > 0) {
+      debugPrint('[App] 自动顺延完成，已顺延 $count 个任务到今天');
+    }
   }
 
   /// 应用启动时自动检查更新

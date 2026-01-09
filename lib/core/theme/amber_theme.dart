@@ -198,6 +198,23 @@ class AmberTheme {
         ),
       ),
 
+      // 日期选择器主题
+      datePickerTheme: DatePickerThemeData(
+        backgroundColor: AmberColors.cardBackground,
+        headerBackgroundColor: AmberColors.primary,
+        headerForegroundColor: Colors.white,
+        // 调小头部日期文字（默认太大）
+        headerHeadlineStyle: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w500,
+        ),
+        dayStyle: const TextStyle(fontSize: 14),
+        yearStyle: const TextStyle(fontSize: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+        ),
+      ),
+
       // 菜单主题
       popupMenuTheme: PopupMenuThemeData(
         color: AmberColors.cardBackground,

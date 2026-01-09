@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +26,7 @@ import '../pages/sticky_note/sticky_note_page.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
 import '../../core/services/splash_service.dart';
+import '../widgets/common/kept_alive_wrapper.dart';
 
 /// 主页面
 class HomePage extends ConsumerStatefulWidget {
@@ -40,26 +43,58 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   /// 便签事件通道（便签 -> 主窗口）
   /// 用于接收便签窗口发来的关闭通知、任务切换等事件
-  late final WindowMethodChannel _stickyNoteEventChannel;
+  /// 仅桌面端使用，移动端为 null
+  WindowMethodChannel? _stickyNoteEventChannel;
+
+  /// PageView 控制器，用于切换页面时保持状态
+  /// 与 AutomaticKeepAliveClientMixin 配合，避免页面切换时重建 Widget
+  late final PageController _pageController;
+
+  /// 需要保持状态的 NavView 列表
+  /// 注意：NavView.list 不在此列表中，因为它依赖 selectedListId，每次都不同
+  static const List<NavView> _keepAliveViews = [
+    NavView.inbox,
+    NavView.today,
+    NavView.upcoming,
+    NavView.all,
+    NavView.calendar,
+    NavView.notes,
+    NavView.pomodoro,
+    NavView.completed,
+    NavView.trash,
+  ];
+
+  /// NavView 到 PageView index 的映射
+  /// 用于在导航状态变化时，将 NavView 转换为 PageView 的页面索引
+  int _navViewToPageIndex(NavView view) {
+    final index = _keepAliveViews.indexOf(view);
+    return index >= 0 ? index : 0; // 如果是 list 等不在列表中的，返回 0
+  }
 
   @override
   void initState() {
     super.initState();
 
-    // 初始化便签事件通道（单向模式：主窗口注册处理器，所有便签都可以发送消息）
-    _stickyNoteEventChannel = const WindowMethodChannel(
-      StickyNoteChannel.events,
-      mode: ChannelMode.unidirectional,
-    );
+    // 初始化 PageController，默认显示第一页（inbox）
+    _pageController = PageController(initialPage: 0);
 
-    // 注册便签事件处理器
-    _registerStickyNoteEventHandler();
+    // 桌面端：初始化便签事件通道（单向模式：主窗口注册处理器，所有便签都可以发送消息）
+    // 移动端不支持 desktop_multi_window，跳过
+    if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      _stickyNoteEventChannel = const WindowMethodChannel(
+        StickyNoteChannel.events,
+        mode: ChannelMode.unidirectional,
+      );
+
+      // 注册便签事件处理器
+      _registerStickyNoteEventHandler();
+    }
   }
 
   /// 注册便签事件处理器
   /// 接收来自便签窗口的消息（关闭通知、任务切换等）
   Future<void> _registerStickyNoteEventHandler() async {
-    await _stickyNoteEventChannel.setMethodCallHandler((call) async {
+    await _stickyNoteEventChannel?.setMethodCallHandler((call) async {
       debugPrint('[Main Window] 收到便签事件: ${call.method}');
 
       if (call.method == 'toggleTask') {
@@ -79,8 +114,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   void dispose() {
-    // 移除事件处理器
-    _stickyNoteEventChannel.setMethodCallHandler(null);
+    // 移除事件处理器（桌面端）
+    _stickyNoteEventChannel?.setMethodCallHandler(null);
+    // 释放 PageController
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -92,6 +129,21 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (ResponsiveHelper.isDesktopOS()) {
       ref.watch(nativeStickyNoteProvider);
     }
+
+    // 监听导航状态变化，同步更新 PageView
+    // 只有当 currentView 是 _keepAliveViews 中的视图时才跳转页面
+    ref.listen<AppNavState>(appNavProvider, (previous, next) {
+      if (previous?.currentView != next.currentView) {
+        final targetIndex = _navViewToPageIndex(next.currentView);
+        // 只有目标是 keepAlive 页面时才跳转
+        if (_keepAliveViews.contains(next.currentView)) {
+          // 使用 jumpToPage 而不是 animateToPage，避免中间页面被构建
+          if (_pageController.hasClients) {
+            _pageController.jumpToPage(targetIndex);
+          }
+        }
+      }
+    });
 
     // ref is available in build
     final navState = ref.watch(appNavProvider);
@@ -186,14 +238,24 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// - 任务列表页面（清单、今天等）使用 HomePage 的 Scaffold 容器
   /// - 这样避免嵌套 Scaffold 导致双重底部导航栏的问题
   Widget _buildMobileLayout(BuildContext context, AppNavState navState, List<Task> tasks) {
-    // 日历、笔记、番茄钟页面有自己的完整布局（含 Scaffold 和 BottomNavigationBar）
-    // 直接返回它们，不再套 HomePage 的 Scaffold
+    // 日历、笔记、番茄钟页面自带完整的 Scaffold（含 AppBar 和 BottomNavigationBar）
+    // 直接返回它们，不再套 HomePage 的 Scaffold，避免双重底部导航栏
     final isFullScreenView = navState.currentView == NavView.calendar ||
         navState.currentView == NavView.notes ||
         navState.currentView == NavView.pomodoro;
 
     if (isFullScreenView) {
-      return _buildMainContent(ref, navState, tasks, isMobile: true);
+      // 这些页面自己有 Scaffold，直接返回对应的页面组件
+      switch (navState.currentView) {
+        case NavView.calendar:
+          return const CalendarPage();
+        case NavView.notes:
+          return const NotesPage();
+        case NavView.pomodoro:
+          return const PomodoroPage();
+        default:
+          break;
+      }
     }
 
     // 任务列表页面使用 HomePage 的 Scaffold 容器
@@ -693,7 +755,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  /// 构建主内容区
+  /// 构建主内容区（使用 PageView + KeptAliveWrapper 保持页面状态）
+  ///
+  /// 设计说明：
+  /// - 使用 PageView 包裹所有需要保持状态的页面（_keepAliveViews 中定义）
+  /// - 每个页面用 KeptAliveWrapper 包裹，配合 AutomaticKeepAliveClientMixin 保持状态
+  /// - NavView.list 因为依赖 selectedListId，每次都是新内容，所以单独用条件渲染
+  /// - PageView 禁用滑动手势，只通过 _pageController 程序化切换
+  ///
   /// [isMobile] 是否为移动端，移动端会隐藏 TaskListView 的 header
   Widget _buildMainContent(
     WidgetRef ref,
@@ -701,17 +770,48 @@ class _HomePageState extends ConsumerState<HomePage> {
     List<Task> tasks, {
     bool isMobile = false,
   }) {
-    switch (navState.currentView) {
-      case NavView.all:
-        // 显示所有任务（包括已完成），但不包括已删除
-        final allTasks = tasks.where((t) => !t.isDeleted).toList();
+    // NavView.list 使用条件渲染（因为依赖 selectedListId，每次内容不同）
+    if (navState.currentView == NavView.list) {
+      if (navState.selectedListId != null) {
+        final listTasks = ref.watch(tasksByListProvider(navState.selectedListId!));
+        final taskLists = ref.watch(taskListProvider);
+        final currentList = taskLists.where((l) => l.id == navState.selectedListId).firstOrNull;
         return TaskListView(
-          title: '全部',
-          tasks: allTasks,
+          title: currentList?.name ?? '清单',
+          tasks: listTasks,
+          listId: navState.selectedListId,
           showHeader: !isMobile,
         );
+      }
+      return const Center(child: Text('请选择清单'));
+    }
+
+    // 其他页面使用 PageView + KeptAliveWrapper 保持状态
+    // PageView 会保持所有子页面的状态，切换时不会销毁和重建
+    return PageView(
+      controller: _pageController,
+      physics: const NeverScrollableScrollPhysics(), // 禁用滑动手势，只通过 controller 切换
+      children: _keepAliveViews.map((view) {
+        return KeptAliveWrapper(
+          child: _buildPageForView(ref, view, tasks, isMobile: isMobile),
+        );
+      }).toList(),
+    );
+  }
+
+  /// 根据 NavView 构建对应的页面 Widget
+  ///
+  /// 此方法只被 PageView 的 children 调用，每个页面只会构建一次
+  /// KeptAliveWrapper 会保持这些页面的状态，切换时不会重建
+  Widget _buildPageForView(
+    WidgetRef ref,
+    NavView view,
+    List<Task> tasks, {
+    bool isMobile = false,
+  }) {
+    switch (view) {
       case NavView.inbox:
-        // Inbox now shows ALL tasks as per user request (excluding deleted)
+        // Inbox 显示所有任务（不含已删除）
         final allTasks = tasks.where((t) => !t.isDeleted).toList();
         return TaskListView(
           title: '收集箱',
@@ -720,10 +820,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           showHeader: !isMobile,
         );
       case NavView.today:
-        final todayTasks = ref.watch(todayTasksProvider);
-        return TaskListView(
-          title: '今天',
-          tasks: todayTasks,
+        // 今天视图使用专门的 TodayView 组件，包含过期任务区域
+        return TodayView(
           showHeader: !isMobile,
         );
       case NavView.upcoming:
@@ -734,25 +832,20 @@ class _HomePageState extends ConsumerState<HomePage> {
           showInput: false,
           showHeader: !isMobile,
         );
+      case NavView.all:
+        // 显示所有任务（包括已完成），但不包括已删除
+        final allTasks = tasks.where((t) => !t.isDeleted).toList();
+        return TaskListView(
+          title: '全部',
+          tasks: allTasks,
+          showHeader: !isMobile,
+        );
       case NavView.calendar:
         return const CalendarPage();
       case NavView.notes:
         return const NotesPage();
       case NavView.pomodoro:
         return const PomodoroPage();
-      case NavView.list:
-        if (navState.selectedListId != null) {
-          final listTasks = ref.watch(tasksByListProvider(navState.selectedListId!));
-          final taskLists = ref.watch(taskListProvider);
-          final currentList = taskLists.where((l) => l.id == navState.selectedListId).firstOrNull;
-          return TaskListView(
-            title: currentList?.name ?? '清单',
-            tasks: listTasks,
-            listId: navState.selectedListId,
-            showHeader: !isMobile,
-          );
-        }
-        return const Center(child: Text('请选择清单'));
       case NavView.completed:
         final completedTasks = ref.watch(completedTasksProvider);
         return TaskListView(
@@ -774,6 +867,10 @@ class _HomePageState extends ConsumerState<HomePage> {
           showFilterSort: false, // 垃圾桶页面不需要筛选排序
           isTrash: true, // 标记为垃圾桶视图，显示清空按钮
         );
+      case NavView.list:
+        // list 视图在 _buildMainContent 中单独处理，这里不应该被调用
+        // 但为了类型安全，返回一个占位 Widget
+        return const Center(child: Text('请选择清单'));
     }
   }
 

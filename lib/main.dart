@@ -12,6 +12,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
 import 'core/constants/dimensions.dart';
+import 'core/services/home_widget_service.dart';
 import 'core/services/logger_service.dart';
 import 'core/theme/amber_theme.dart';
 import 'core/utils/startup_logger.dart';
@@ -67,11 +68,25 @@ void main(List<String> args) async {
 /// desktop_multi_window 0.3.0 使用统一的入口
 /// 所有窗口（主窗口和子窗口）都通过 WindowController.fromCurrentEngine() 获取信息
 Future<void> _startApp(List<String> args) async {
-  // 初始化窗口管理器
-  await windowManager.ensureInitialized();
-
   // 初始化日期格式化数据
   await initializeDateFormatting(null, null);
+
+  // 移动端直接启动主应用，不需要窗口管理
+  if (Platform.isAndroid || Platform.isIOS) {
+    // 初始化桌面小组件服务（Android/iOS Home Screen Widget）
+    await HomeWidgetService().init();
+
+    runApp(
+      const ProviderScope(
+        child: AmberListApp(),
+      ),
+    );
+    return;
+  }
+
+  // ==================== 桌面端专用逻辑 ====================
+  // 初始化窗口管理器（仅桌面端支持）
+  await windowManager.ensureInitialized();
 
   // 🔧 desktop_multi_window 0.3.0 新 API
   // 从当前 Flutter 引擎获取窗口控制器，包含 windowId 和 arguments

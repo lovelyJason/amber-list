@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Single task item for StackView rotation -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingVertical="2dp">
+
+    <ImageView
+        android:id="@+id/task_checkbox"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:src="@drawable/ic_checkbox_unchecked"
+        android:contentDescription="Checkbox" />
+
+    <TextView
+        android:id="@+id/task_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="6dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text=""
+        android:textColor="#5C3D1E"
+        android:textSize="14sp" />
+
+</LinearLayout>

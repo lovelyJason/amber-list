@@ -44,6 +44,10 @@ class Task {
   final List<String> tags;
   final int sortOrder;
   final String? parentId; // 父任务ID（子任务用）
+  /// 是否自动顺延过期任务到今天
+  /// - 新任务默认为 true（自动顺延）
+  /// - 旧数据迁移后为 false（不自动顺延，显示在已过期区域）
+  final bool autoPostpone;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -61,6 +65,7 @@ class Task {
     this.tags = const [],
     this.sortOrder = 0,
     this.parentId,
+    this.autoPostpone = true, // 新任务默认开启自动顺延
     required this.createdAt,
     required this.updatedAt,
   });
@@ -79,6 +84,7 @@ class Task {
     List<String>? tags,
     int? sortOrder,
     String? parentId,
+    bool? autoPostpone,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -96,6 +102,7 @@ class Task {
       tags: tags ?? this.tags,
       sortOrder: sortOrder ?? this.sortOrder,
       parentId: parentId ?? this.parentId,
+      autoPostpone: autoPostpone ?? this.autoPostpone,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -120,6 +127,7 @@ class Task {
         tags: tags,
         sortOrder: sortOrder,
         parentId: parentId,
+        autoPostpone: autoPostpone, // 保留自动顺延设置
         createdAt: createdAt,
         updatedAt: now,
       );

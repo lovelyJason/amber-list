@@ -3,96 +3,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-import '../../../../core/constants/constants.dart';
-import '../../../../core/utils/date_utils.dart';
-import '../../../../data/models/models.dart';
-import '../../../providers/providers.dart';
-import '../../../widgets/task_item.dart';
-import 'spotlight_dialog.dart';
-
-/// 日历相关对话框
-/// 包含任务列表弹窗、Spotlight 搜索等
-class CalendarDialogs {
-  /// 显示当天任务列表对话框
-  /// 包含任务输入框和任务列表
-  static void showDayTaskListDialog(
-    BuildContext context,
-    DateTime day,
-    List<Task> initialTasks,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => _DayTaskListDialog(day: day),
-    );
-  }
-
-  /// 显示 Spotlight 搜索对话框
-  ///
-  /// 双击日历单元格时弹出，支持快速添加任务
-  /// - 紧凑模式：只有标题输入框，回车即可添加
-  /// - 展开模式：点击展开按钮显示截止日期、清单、优先级、标签选项
-  static void showSpotlightSearch(
-    BuildContext context,
-    WidgetRef ref, {
-    required DateTime? selectedDay,
-    required DateTime focusedDay,
-  }) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      transitionDuration: const Duration(milliseconds: 200),
-      pageBuilder: (context, animation, secondaryAnimation) {
-        return Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 100),
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: 600,
-                // SpotlightDialog 内部已经是 ConsumerStatefulWidget
-                // 会直接通过 ref 创建任务，不需要外部回调
-                child: SpotlightDialog(
-                  selectedDate: selectedDay ?? focusedDay,
-                  onTaskCreated: (_) {
-                    // 任务创建已在 SpotlightDialog 内部处理
-                    // 保留此回调仅为 API 兼容性
-                  },
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.95, end: 1.0).animate(
-              CurvedAnimation(parent: animation, curve: Curves.easeOut),
-            ),
-            child: child,
-          ),
-        );
-      },
-    );
-  }
-}
+import '../../../../../core/constants/constants.dart';
+import '../../../../../core/utils/date_utils.dart';
+import '../../../../../data/models/models.dart';
+import '../../../../providers/providers.dart';
+import '../../../../widgets/common/tag_selector_dialog.dart';
+import '../../../../widgets/task_item.dart';
 
 /// 当天任务列表弹窗组件
-/// 包含展开式任务输入框和任务列表（支持双击编辑）
-class _DayTaskListDialog extends ConsumerStatefulWidget {
+/// 包含展开式任务输入框和任务列表
+/// 支持单列/双列两种布局模式：
+/// - 单列模式：任务列表全宽，双击任务弹出编辑对话框
+/// - 双列模式：左侧任务列表 + 右侧详情面板，单击选中任务
+class DayTaskListDialog extends ConsumerStatefulWidget {
   final DateTime day;
 
-  const _DayTaskListDialog({required this.day});
+  const DayTaskListDialog({super.key, required this.day});
 
   @override
-  ConsumerState<_DayTaskListDialog> createState() => _DayTaskListDialogState();
+  ConsumerState<DayTaskListDialog> createState() => _DayTaskListDialogState();
 }
 
-class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
+class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
   final _inputController = TextEditingController();
   final _focusNode = FocusNode();
 
@@ -156,18 +88,34 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
     });
   }
 
-  /// 双击任务打开编辑面板
-  void _onTaskDoubleTap(Task task) {
-    setState(() {
-      _editingTask = task;
-    });
-  }
-
-  /// 关闭编辑面板
-  void _closeEditPanel() {
-    setState(() {
-      _editingTask = null;
-    });
+  /// 构建布局切换按钮
+  Widget _buildLayoutToggleButton({
+    required IconData icon,
+    required String tooltip,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AmberColors.primary.withValues(alpha: 0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: isSelected ? AmberColors.primary : AmberColors.textSecondary,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -180,24 +128,78 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
       return isSameDay(task.dueDate!, widget.day);
     }).toList();
 
+    // 从 Provider 读取布局偏好
+    final calendarPrefs = ref.watch(calendarPreferencesProvider);
+    final isTwoColumnMode =
+        calendarPrefs.dialogLayout == CalendarDialogLayout.twoColumn;
+
     // 如果正在编辑任务，从最新列表中获取更新后的任务数据
     if (_editingTask != null) {
-      final updatedTask = allTasks.where((t) => t.id == _editingTask!.id).firstOrNull;
+      final updatedTask =
+          allTasks.where((t) => t.id == _editingTask!.id).firstOrNull;
       if (updatedTask == null) {
-        // 任务被删除了，关闭编辑面板
-        _editingTask = null;
+        // 任务被删除了，需要在下一帧重置编辑面板
+        // 不能直接在 build 里 setState，用 addPostFrameCallback 延迟处理
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() => _editingTask = null);
+          }
+        });
       } else {
+        // 任务数据有更新，同步到编辑面板（这里直接赋值没问题，因为下次 build 会用新值）
         _editingTask = updatedTask;
       }
     }
 
+    // 双列模式下始终显示右侧面板，单列模式下不显示
+    final showRightPanel = isTwoColumnMode;
+
     return AlertDialog(
-      title: Text(
-        DateFormat('yyyy年MM月dd日 EEEE', 'zh_CN').format(widget.day),
-        style: const TextStyle(fontWeight: FontWeight.bold),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              DateFormat('yyyy年MM月dd日 EEEE', 'zh_CN').format(widget.day),
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          // 布局切换按钮
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 单列模式按钮
+                _buildLayoutToggleButton(
+                  icon: Icons.view_agenda_outlined,
+                  tooltip: '单列模式',
+                  isSelected: !isTwoColumnMode,
+                  onTap: () {
+                    ref
+                        .read(calendarPreferencesProvider.notifier)
+                        .setDialogLayout(CalendarDialogLayout.singleColumn);
+                    setState(() => _editingTask = null);
+                  },
+                ),
+                // 双列模式按钮
+                _buildLayoutToggleButton(
+                  icon: Icons.view_sidebar_outlined,
+                  tooltip: '双列模式',
+                  isSelected: isTwoColumnMode,
+                  onTap: () => ref
+                      .read(calendarPreferencesProvider.notifier)
+                      .setDialogLayout(CalendarDialogLayout.twoColumn),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
       content: SizedBox(
-        width: _editingTask != null ? 900 : 550,
+        width: showRightPanel ? 900 : 550,
         height: MediaQuery.of(context).size.height * 0.65,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,81 +212,127 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                   // 展开式任务输入框
                   _buildExpandableQuickAdd(),
                   const SizedBox(height: AmberDimens.spacingSm),
-                  // 任务列表
+                  // 任务列表（与输入框保持相同宽度和样式）
                   Expanded(
-                    child: currentDayTasks.isEmpty
-                        ? Center(
-                            child: Text(
-                              '暂无任务',
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFEEEEEE),
+                          width: 1,
+                        ),
+                      ),
+                      child: currentDayTasks.isEmpty
+                          ? Center(
+                              child: Text(
+                                '暂无任务',
+                                style: TextStyle(
+                                  color: AmberColors.textSecondary,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            )
+                          : ScrollConfiguration(
+                              behavior:
+                                  ScrollConfiguration.of(context).copyWith(
+                                scrollbars: false,
+                              ),
+                              child: ListView.builder(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 4),
+                                shrinkWrap: true,
+                                itemCount: currentDayTasks.length,
+                                itemBuilder: (context, index) {
+                                  final task = currentDayTasks[index];
+                                  // 双列模式：单击选中任务显示右侧详情
+                                  // 单列模式：使用 GestureDetector 捕获双击弹出编辑对话框
+                                  if (isTwoColumnMode) {
+                                    // 双列模式：单击选中任务显示右侧详情面板
+                                    // 选中状态通过 isSelected 参数传入，覆盖默认的全局导航状态判断
+                                    return TaskItem(
+                                      task: task,
+                                      isSelected: _editingTask?.id == task.id,
+                                      onTap: () =>
+                                          setState(() => _editingTask = task),
+                                    );
+                                  } else {
+                                    // 单列模式：直接显示任务项，不需要双击弹窗（避免弹窗套弹窗）
+                                    return TaskItem(task: task);
+                                  }
+                                },
+                              ),
+                            ),
+                    ),
+                  ),
+                  // 底部操作按钮（全选/反选/关闭）
+                  const SizedBox(height: AmberDimens.spacingSm),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          for (var task in currentDayTasks) {
+                            if (!task.isCompleted) {
+                              ref
+                                  .read(taskProvider.notifier)
+                                  .toggleTaskComplete(task.id);
+                            }
+                          }
+                        },
+                        child: const Text('全选'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          for (var task in currentDayTasks) {
+                            ref
+                                .read(taskProvider.notifier)
+                                .toggleTaskComplete(task.id);
+                          }
+                        },
+                        child: const Text('反选'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('关闭'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // 右侧：任务详情编辑面板（仅双列模式显示）
+            if (showRightPanel) ...[
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 1,
+                child: _editingTask != null
+                    ? _buildTaskDetailPanel(_editingTask!)
+                    : Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.touch_app_outlined,
+                              size: 48,
+                              color: AmberColors.textDisabled,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              '点击左侧任务查看详情',
                               style: TextStyle(
                                 color: AmberColors.textSecondary,
                                 fontSize: 14,
                               ),
                             ),
-                          )
-                        : ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(context).copyWith(
-                              scrollbars: false,
-                            ),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: currentDayTasks.length,
-                              itemBuilder: (context, index) {
-                                final task = currentDayTasks[index];
-                                return GestureDetector(
-                                  onDoubleTap: () => _onTaskDoubleTap(task),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: _editingTask?.id == task.id
-                                          ? AmberColors.primary.withValues(alpha: 0.08)
-                                          : null,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: TaskItem(task: task),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            // 右侧：任务详情编辑面板
-            if (_editingTask != null) ...[
-              const VerticalDivider(width: 1),
-              Expanded(
-                flex: 1,
-                child: _buildTaskDetailPanel(_editingTask!),
+                          ],
+                        ),
+                      ),
               ),
             ],
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            for (var task in currentDayTasks) {
-              if (!task.isCompleted) {
-                ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
-              }
-            }
-          },
-          child: const Text('全选'),
-        ),
-        TextButton(
-          onPressed: () {
-            for (var task in currentDayTasks) {
-              ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
-            }
-          },
-          child: const Text('反选'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('关闭'),
-        ),
-      ],
     );
   }
 
@@ -336,7 +384,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                       focusedBorder: InputBorder.none,
                       enabledBorder: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
-                      hintText: '添加任务到 ${DateFormat('M月d日', 'zh_CN').format(_selectedDate)}...',
+                      hintText:
+                          '添加任务到 ${DateFormat('M月d日', 'zh_CN').format(_selectedDate)}...',
                       hintStyle: TextStyle(
                         color: AmberColors.textDisabled.withValues(alpha: 0.6),
                         fontSize: 15,
@@ -351,19 +400,7 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 展开/收起按钮
-                IconButton(
-                  onPressed: () => setState(() => _isExpanded = !_isExpanded),
-                  icon: Icon(
-                    _isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: AmberColors.textSecondary,
-                  ),
-                  tooltip: _isExpanded ? '收起选项' : '展开选项',
-                  splashRadius: 16,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                ),
-                // Enter 按钮（紧凑模式）
+                // Enter 按钮（紧凑模式下显示，展开模式下用透明占位保持布局一致）
                 if (!_isExpanded)
                   InkWell(
                     onTap: () {
@@ -373,11 +410,13 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: AmberColors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AmberColors.primary.withValues(alpha: 0.3)),
+                        border: Border.all(
+                            color: AmberColors.primary.withValues(alpha: 0.3)),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -391,11 +430,25 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                             ),
                           ),
                           SizedBox(width: 3),
-                          Icon(Icons.keyboard_return_rounded, size: 12, color: AmberColors.primary),
+                          Icon(Icons.keyboard_return_rounded,
+                              size: 12, color: AmberColors.primary),
                         ],
                       ),
                     ),
                   ),
+                const SizedBox(width: 6),
+                // 展开/收起按钮（固定在最右侧，位置保持不变）
+                IconButton(
+                  onPressed: () => setState(() => _isExpanded = !_isExpanded),
+                  icon: Icon(
+                    _isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: AmberColors.textSecondary,
+                  ),
+                  tooltip: _isExpanded ? '收起选项' : '展开选项',
+                  splashRadius: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
               ],
             ),
           ),
@@ -500,15 +553,18 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
             const SizedBox(width: 10),
             Text(
               label,
-              style: const TextStyle(fontSize: 13, color: AmberColors.textSecondary),
+              style:
+                  const TextStyle(fontSize: 13, color: AmberColors.textSecondary),
             ),
             const Spacer(),
             Text(
               value,
-              style: TextStyle(fontSize: 13, color: valueColor ?? AmberColors.textPrimary),
+              style:
+                  TextStyle(fontSize: 13, color: valueColor ?? AmberColors.textPrimary),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, size: 16, color: AmberColors.textDisabled),
+            const Icon(Icons.chevron_right,
+                size: 16, color: AmberColors.textDisabled),
           ],
         ),
       ),
@@ -541,10 +597,9 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
     );
   }
 
-  /// 构建任务详情编辑面板
+  /// 构建任务详情编辑面板（双列模式右侧面板）
   Widget _buildTaskDetailPanel(Task task) {
     final lists = ref.watch(taskListProvider);
-    final tags = ref.watch(tagsProvider);
 
     // 获取清单名称
     String listName = '收集箱';
@@ -580,21 +635,10 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 标题栏
-          Row(
-            children: [
-              const Text(
-                '编辑任务',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: _closeEditPanel,
-                icon: const Icon(Icons.close, size: 20),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-            ],
+          // 标题栏（双列模式下不需要关闭按钮，点击左边任务即可切换）
+          const Text(
+            '编辑任务',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
           // 任务标题
@@ -604,7 +648,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
               fontSize: 18,
               fontWeight: FontWeight.w500,
               decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-              color: task.isCompleted ? AmberColors.textDisabled : AmberColors.textPrimary,
+              color:
+                  task.isCompleted ? AmberColors.textDisabled : AmberColors.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -636,19 +681,7 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
             icon: Icons.label_outline,
             label: '标签',
             value: task.tags.isEmpty ? '无' : task.tags.join(', '),
-            onTap: () => _editTaskTags(task, tags),
-          ),
-          const Spacer(),
-          // 删除按钮
-          Center(
-            child: TextButton.icon(
-              onPressed: () {
-                ref.read(taskProvider.notifier).deleteTask(task.id);
-                _closeEditPanel();
-              },
-              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
-              label: const Text('删除任务', style: TextStyle(color: Colors.red)),
-            ),
+            onTap: () => _editTaskTags(task),
           ),
         ],
       ),
@@ -676,10 +709,12 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
             const Spacer(),
             Text(
               value,
-              style: TextStyle(fontSize: 14, color: valueColor ?? AmberColors.textSecondary),
+              style:
+                  TextStyle(fontSize: 14, color: valueColor ?? AmberColors.textSecondary),
             ),
             const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, size: 18, color: AmberColors.textDisabled),
+            const Icon(Icons.chevron_right,
+                size: 18, color: AmberColors.textDisabled),
           ],
         ),
       ),
@@ -740,7 +775,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                     Text(list.name),
                     const Spacer(),
                     if (_selectedListId == list.id)
-                      const Icon(Icons.check, color: AmberColors.primary, size: 20),
+                      const Icon(Icons.check,
+                          color: AmberColors.primary, size: 20),
                   ],
                 ),
               )),
@@ -765,7 +801,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
     );
   }
 
-  Widget _buildPriorityOption(BuildContext ctx, TaskPriority priority, String label, Color? color) {
+  Widget _buildPriorityOption(
+      BuildContext ctx, TaskPriority priority, String label, Color? color) {
     return SimpleDialogOption(
       onPressed: () {
         setState(() => _selectedPriority = priority);
@@ -803,7 +840,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                       return FilterChip(
                         label: Text(tag.name),
                         selected: isSelected,
-                        selectedColor: AmberColors.primary.withValues(alpha: 0.2),
+                        selectedColor:
+                            AmberColors.primary.withValues(alpha: 0.2),
                         onSelected: (selected) {
                           setDialogState(() {
                             if (selected) {
@@ -830,7 +868,7 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
   }
 
   // ============================================================
-  // 编辑任务时的选择器
+  // 编辑任务时的选择器（双列模式右侧面板）
   // ============================================================
 
   /// 编辑任务日期
@@ -886,7 +924,8 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
                     Text(list.name),
                     const Spacer(),
                     if (task.listId == list.id)
-                      const Icon(Icons.check, color: AmberColors.primary, size: 20),
+                      const Icon(Icons.check,
+                          color: AmberColors.primary, size: 20),
                   ],
                 ),
               )),
@@ -903,16 +942,19 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
         title: const Text('选择优先级'),
         children: [
           _buildEditPriorityOption(ctx, task, TaskPriority.none, '无', null),
-          _buildEditPriorityOption(ctx, task, TaskPriority.low, '低', Colors.green),
-          _buildEditPriorityOption(ctx, task, TaskPriority.medium, '中', Colors.orange),
-          _buildEditPriorityOption(ctx, task, TaskPriority.high, '高', Colors.red),
+          _buildEditPriorityOption(
+              ctx, task, TaskPriority.low, '低', Colors.green),
+          _buildEditPriorityOption(
+              ctx, task, TaskPriority.medium, '中', Colors.orange),
+          _buildEditPriorityOption(
+              ctx, task, TaskPriority.high, '高', Colors.red),
         ],
       ),
     );
   }
 
-  Widget _buildEditPriorityOption(
-      BuildContext ctx, Task task, TaskPriority priority, String label, Color? color) {
+  Widget _buildEditPriorityOption(BuildContext ctx, Task task,
+      TaskPriority priority, String label, Color? color) {
     return SimpleDialogOption(
       onPressed: () {
         final updatedTask = task.copyWith(priority: priority);
@@ -933,52 +975,18 @@ class _DayTaskListDialogState extends ConsumerState<_DayTaskListDialog> {
   }
 
   /// 编辑任务标签
-  void _editTaskTags(Task task, List<Tag> allTags) {
-    List<String> selectedTags = List.from(task.tags);
-
-    showDialog(
+  /// 使用统一的 TagSelectorDialog 组件
+  Future<void> _editTaskTags(Task task) async {
+    final result = await TagSelectorDialog.show(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('选择标签'),
-          content: SizedBox(
-            width: 280,
-            child: allTags.isEmpty
-                ? const Center(child: Text('暂无标签'))
-                : Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: allTags.map((tag) {
-                      final isSelected = selectedTags.contains(tag.name);
-                      return FilterChip(
-                        label: Text(tag.name),
-                        selected: isSelected,
-                        selectedColor: AmberColors.primary.withValues(alpha: 0.2),
-                        onSelected: (selected) {
-                          setDialogState(() {
-                            if (selected) {
-                              selectedTags.add(tag.name);
-                            } else {
-                              selectedTags.remove(tag.name);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                final updatedTask = task.copyWith(tags: selectedTags);
-                ref.read(taskProvider.notifier).updateTask(updatedTask);
-                Navigator.pop(ctx);
-              },
-              child: const Text('完成'),
-            ),
-          ],
-        ),
-      ),
+      ref: ref,
+      selectedTags: task.tags,
+      title: '管理任务标签',
     );
+
+    if (result != null) {
+      final updatedTask = task.copyWith(tags: result);
+      ref.read(taskProvider.notifier).updateTask(updatedTask);
+    }
   }
 }

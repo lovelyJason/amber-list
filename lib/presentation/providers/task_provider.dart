@@ -1,14 +1,18 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:drift/drift.dart' as drift;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/services/home_widget_service.dart';
 import '../../core/services/native_sticky_note_service.dart';
+import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 
 import '../../data/datasources/local/database.dart' as db;
 import 'database_provider.dart';
+import 'task_management_settings_provider.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../pages/sticky_note/sticky_note_page.dart';
 
@@ -77,6 +81,7 @@ Task _mapDbTaskToModel(db.Task dbTask) {
     tags: tags,
     sortOrder: dbTask.sortOrder,
     parentId: dbTask.parentId,
+    autoPostpone: dbTask.autoPostpone, // 自动顺延状态
     createdAt: dbTask.createdAt,
     updatedAt: dbTask.updatedAt,
   );
@@ -254,7 +259,19 @@ class TaskNotifier extends StateNotifier<List<Task>> {
           return b.createdAt.compareTo(a.createdAt);
         });
       state = tasks;
+
+      // 同步到移动端桌面小组件（Android/iOS）
+      _updateHomeWidget(tasks);
     });
+  }
+
+  /// 更新移动端桌面小组件数据
+  /// 仅在 Android/iOS 平台生效
+  void _updateHomeWidget(List<Task> tasks) {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    // 异步更新，不阻塞主线程
+    HomeWidgetService().updateWidgetData(tasks);
   }
 
   /// 切换任务完成状态
@@ -506,6 +523,107 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       );
     }
   }
+
+  // ========== 每日任务顺延功能 ==========
+
+  /// 执行自动顺延
+  /// 在 App 启动时调用，将所有 autoPostpone=true 的过期任务顺延到今天
+  /// 返回被顺延的任务数量
+  ///
+  /// 优化策略：
+  /// - 使用 lastAutoPostponeDate 标记位避免同一天重复检查
+  /// - 今天已检查过则直接跳过，不访问数据库
+  /// - 第二天打开 App 时会重新检查
+  Future<int> performAutoPostpone() async {
+    final notifier = ref.read(taskManagementSettingsProvider.notifier);
+    final taskManagementSettings = ref.read(taskManagementSettingsProvider);
+
+    // 检查全局开关
+    if (!taskManagementSettings.enableAutoPostpone) {
+      debugPrint('[AutoPostpone] 全局开关已关闭，跳过自动顺延');
+      return 0;
+    }
+
+    // 检查今天是否已经执行过（避免同一天重复查询数据库）
+    if (notifier.hasCheckedToday()) {
+      debugPrint('[AutoPostpone] 今天已检查过，跳过');
+      return 0;
+    }
+
+    // 查找需要顺延的任务
+    final tasksToPostpone = state.where((task) {
+      // 条件：autoPostpone=true AND 已过期 AND 未完成 AND 未删除
+      if (!task.autoPostpone) return false;
+      if (task.isCompleted || task.isDeleted) return false;
+      if (task.dueDate == null) return false;
+      return AmberDateUtils.isOverdue(task.dueDate!);
+    }).toList();
+
+    // 无论是否有任务需要顺延，都标记今天已检查
+    final todayStr = TaskManagementSettingsNotifier.getTodayDateString();
+    notifier.setLastAutoPostponeDate(todayStr);
+    debugPrint('[AutoPostpone] 已标记今日($todayStr)检查完成');
+
+    if (tasksToPostpone.isEmpty) {
+      debugPrint('[AutoPostpone] 没有需要顺延的任务');
+      return 0;
+    }
+
+    // 批量顺延
+    final today = AmberDateUtils.normalizeToUtcDate(DateTime.now());
+    final now = DateTime.now();
+
+    for (final task in tasksToPostpone) {
+      await database.updateTask(
+        db.TasksCompanion(
+          id: drift.Value(task.id),
+          dueDate: drift.Value(today),
+          updatedAt: drift.Value(now),
+        ),
+      );
+    }
+
+    debugPrint('[AutoPostpone] 已自动顺延 ${tasksToPostpone.length} 个任务到今天');
+    return tasksToPostpone.length;
+  }
+
+  /// 批量顺延指定任务到今天
+  /// [taskIds] 要顺延的任务 ID 列表
+  Future<void> postponeTasks(List<String> taskIds) async {
+    if (taskIds.isEmpty) return;
+
+    final today = AmberDateUtils.normalizeToUtcDate(DateTime.now());
+    final now = DateTime.now();
+
+    for (final taskId in taskIds) {
+      await database.updateTask(
+        db.TasksCompanion(
+          id: drift.Value(taskId),
+          dueDate: drift.Value(today),
+          updatedAt: drift.Value(now),
+        ),
+      );
+    }
+
+    debugPrint('[Postpone] 已手动顺延 ${taskIds.length} 个任务到今天');
+  }
+
+  /// 顺延所有过期任务到今天
+  /// 用于"全部顺延"按钮
+  Future<void> postponeAllOverdueTasks() async {
+    final overdueTasks = state.where((task) {
+      if (task.isCompleted || task.isDeleted) return false;
+      if (task.dueDate == null) return false;
+      return AmberDateUtils.isOverdue(task.dueDate!);
+    }).toList();
+
+    await postponeTasks(overdueTasks.map((t) => t.id).toList());
+  }
+
+  /// 顺延单个任务到今天
+  Future<void> postponeTask(String taskId) async {
+    await postponeTasks([taskId]);
+  }
 }
 
 /// 标签列表Provider
@@ -518,9 +636,6 @@ class TagNotifier extends StateNotifier<List<Tag>> {
 
   void _init() {
     database.watchAllTags().listen((dbTags) {
-      debugPrint(
-        '[TagNotifier] Fetched ${dbTags.length} tags from DB: ${dbTags.map((e) => e.name).toList()}',
-      );
       final tags = dbTags.map(_mapDbTagToModel).toList()
         ..sort(
           (a, b) => a.createdAt.compareTo(b.createdAt),
@@ -740,4 +855,84 @@ final completedTasksProvider = Provider<List<Task>>((ref) {
 final trashTasksProvider = Provider<List<Task>>((ref) {
   final tasks = ref.watch(taskProvider);
   return tasks.where((t) => t.isDeleted).toList();
+});
+
+// ========== 每日任务顺延相关 Provider ==========
+
+/// 已过期任务 Provider
+/// 返回所有未完成、未删除、且截止日期早于今天的任务
+final overdueTasksProvider = Provider<List<Task>>((ref) {
+  final tasks = ref.watch(taskProvider);
+
+  return tasks.where((task) {
+    if (task.isCompleted || task.isDeleted) return false;
+    if (task.dueDate == null) return false;
+    return AmberDateUtils.isOverdue(task.dueDate!);
+  }).toList()
+    // 按截止日期倒序排列（最早过期的在前）
+    ..sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
+});
+
+/// 今天视图数据模型
+/// 包含今天的任务和已过期的任务
+class TodayViewTasks {
+  /// 今天的任务（截止日期是今天）
+  final List<Task> todayTasks;
+
+  /// 已过期的任务（截止日期早于今天）
+  final List<Task> overdueTasks;
+
+  const TodayViewTasks({
+    required this.todayTasks,
+    required this.overdueTasks,
+  });
+
+  /// 是否有过期任务
+  bool get hasOverdue => overdueTasks.isNotEmpty;
+
+  /// 总任务数（今天 + 过期）
+  int get totalCount => todayTasks.length + overdueTasks.length;
+
+  /// 未完成任务数
+  int get pendingCount {
+    final todayPending = todayTasks.where((t) => !t.isCompleted).length;
+    final overduePending = overdueTasks.where((t) => !t.isCompleted).length;
+    return todayPending + overduePending;
+  }
+}
+
+/// 今天视图任务 Provider
+/// 返回今天的任务和已过期的任务，用于"今天"视图显示
+final todayViewTasksProvider = Provider<TodayViewTasks>((ref) {
+  final tasks = ref.watch(taskProvider);
+
+  final todayTasks = <Task>[];
+  final overdueTasks = <Task>[];
+
+  for (final task in tasks) {
+    if (task.isCompleted || task.isDeleted) continue;
+    if (task.dueDate == null) continue;
+
+    if (AmberDateUtils.isToday(task.dueDate!)) {
+      todayTasks.add(task);
+    } else if (AmberDateUtils.isOverdue(task.dueDate!)) {
+      overdueTasks.add(task);
+    }
+  }
+
+  // 今天的任务按优先级和创建时间排序
+  todayTasks.sort((a, b) {
+    if (a.priority.value != b.priority.value) {
+      return b.priority.value.compareTo(a.priority.value);
+    }
+    return b.createdAt.compareTo(a.createdAt);
+  });
+
+  // 过期任务按截止日期排序（最早过期的在前）
+  overdueTasks.sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
+
+  return TodayViewTasks(
+    todayTasks: todayTasks,
+    overdueTasks: overdueTasks,
+  );
 });

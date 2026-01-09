@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Amber List</string>
+
+    <!-- Widget names shown in widget picker -->
+    <string name="widget_name_small">Amber - Small</string>
+    <string name="widget_name_medium">Amber - Medium</string>
+    <string name="widget_name_large">Amber - Large</string>
+
+    <!-- Widget descriptions shown in widget picker -->
+    <string name="widget_description_small">Quick view of today\'s task count</string>
+    <string name="widget_description_medium">Shows up to 3 tasks</string>
+    <string name="widget_description_large">Shows up to 6 tasks</string>
+</resources>

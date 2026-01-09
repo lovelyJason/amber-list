@@ -45,6 +45,10 @@ class Tasks extends Table {
   TextColumn get tags => text().withDefault(const Constant('[]'))(); // JSON数组
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   TextColumn get parentId => text().nullable()();
+  /// 是否自动顺延过期任务到今天
+  /// - 新任务默认为 true（自动顺延）
+  /// - 旧数据迁移后为 false（不自动顺延，显示在已过期区域）
+  BoolColumn get autoPostpone => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -111,7 +115,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8; // Bump version for notes sortOrder column
+  int get schemaVersion => 9; // Bump version for tasks autoPostpone column
 
 
   @override
@@ -162,6 +166,23 @@ class AppDatabase extends _$AppDatabase {
           );
           if (!hasSortOrder) {
             await m.addColumn(notes, notes.sortOrder);
+          }
+        }
+        if (from < 9) {
+          // 添加 auto_postpone 列
+          // 安全迁移：先检查列是否已存在，避免重复添加报错
+          final columns = await customSelect(
+            "PRAGMA table_info(tasks)",
+          ).get();
+          final hasAutoPostpone = columns.any(
+            (row) => row.read<String>('name') == 'auto_postpone',
+          );
+          if (!hasAutoPostpone) {
+            // 注意：新增列时，旧数据默认为 false（不自动顺延）
+            // 这样旧任务不会被自动顺延，而是显示在"已过期"区域
+            await customStatement(
+              'ALTER TABLE tasks ADD COLUMN auto_postpone INTEGER NOT NULL DEFAULT 0',
+            );
           }
         }
       },

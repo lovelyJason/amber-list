@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'settings_tab_type.dart';
 import 'tabs/profile_tab.dart';
 import 'tabs/display_tab.dart';
+import 'tabs/task_management_tab.dart';
 import 'tabs/quick_add_tab.dart';
+import 'tabs/widget_tab.dart';
 import 'tabs/data_management_tab.dart';
 import 'tabs/cloud_sync_tab.dart';
 import 'tabs/about_tab.dart';
@@ -32,8 +34,16 @@ class SettingsTabConfig {
         builder: (context) => const DisplayTab(),
       ),
       SettingsTabConfig(
+        type: SettingsTabType.taskManagement,
+        builder: (context) => const TaskManagementTab(),
+      ),
+      SettingsTabConfig(
         type: SettingsTabType.quickAdd,
         builder: (context) => const QuickAddTab(),
+      ),
+      SettingsTabConfig(
+        type: SettingsTabType.widget,
+        builder: (context) => const WidgetTab(),
       ),
       SettingsTabConfig(
         type: SettingsTabType.dataManagement,

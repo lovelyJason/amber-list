@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Calendar day cell for Large Widget -->
+<!-- Each cell shows: day number, holiday/workday badge, task indicator dot -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1">
+
+    <LinearLayout
+        android:id="@+id/day_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="1dp">
+
+        <!-- Day number -->
+        <TextView
+            android:id="@+id/day_number"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="1"
+            android:textColor="#5C3D1E"
+            android:textSize="12sp" />
+
+        <!-- Holiday name or workday badge (shows below day number) -->
+        <TextView
+            android:id="@+id/day_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text=""
+            android:textColor="#E53935"
+            android:textSize="7sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <!-- Task indicator dot (shows if has tasks on this day) -->
+        <View
+            android:id="@+id/day_task_dot"
+            android:layout_width="4dp"
+            android:layout_height="4dp"
+            android:layout_marginTop="1dp"
+            android:background="@drawable/widget_task_dot"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Today highlight circle (background, behind content) -->
+    <View
+        android:id="@+id/day_today_bg"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_gravity="center"
+        android:background="@drawable/widget_today_circle"
+        android:visibility="gone" />
+
+</FrameLayout>

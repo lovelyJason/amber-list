@@ -26,17 +26,24 @@ class TaskItem extends ConsumerWidget {
   /// 尾部自定义组件，例如日历视图中的时间标记
   final Widget? trailing;
 
+  /// 外部控制的选中状态
+  /// 如果不为 null，则覆盖默认的 appNavProvider.selectedTaskId 判断
+  /// 用于弹窗等独立上下文中的选中高亮
+  final bool? isSelected;
+
   const TaskItem({
     super.key,
     required this.task,
     this.onTap,
     this.trailing,
+    this.isSelected,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final navState = ref.watch(appNavProvider);
-    final isSelected = navState.selectedTaskId == task.id;
+    // 优先使用外部传入的 isSelected，否则使用全局导航状态判断
+    final isItemSelected = isSelected ?? (navState.selectedTaskId == task.id);
 
     // 移动端：使用 Slidable 包裹，支持左滑操作
     // 桌面端：直接返回卡片
@@ -59,7 +66,7 @@ class TaskItem extends ConsumerWidget {
             color: Colors.transparent, // 容器本身透明，背景色由子元素决定
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? AmberColors.primary : const Color(0xFFEEEEEE),
+              color: isItemSelected ? AmberColors.primary : const Color(0xFFEEEEEE),
               width: 1,
             ),
             boxShadow: [
@@ -92,7 +99,7 @@ class TaskItem extends ConsumerWidget {
                   return _buildMobileTaskCard(
                     slidableContext,
                     ref,
-                    isSelected,
+                    isItemSelected,
                   );
                 },
               ),
@@ -103,7 +110,7 @@ class TaskItem extends ConsumerWidget {
     }
 
     // 桌面端直接构建带 Margin 的卡片
-    return _buildTaskCard(context, ref, isSelected);
+    return _buildTaskCard(context, ref, isItemSelected);
   }
 
   /// 构建滑动操作按钮列表
@@ -360,7 +367,7 @@ class TaskItem extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    // 文字：保持原位，不移动
+                    // 文字：保持原位，不移动（优先级图标在第二行显示）
                     Expanded(child: _buildTaskContent(ref, navState)),
                     if (trailing != null) ...[
                       const SizedBox(width: AmberDimens.spacingMd),
@@ -376,7 +383,8 @@ class TaskItem extends ConsumerWidget {
     );
   }
 
-  /// 构建任务内容区域（标题 + 日期/标签）
+  /// 构建任务内容区域（标题 + 优先级/日期/标签）
+  /// 移动端 _buildMobileTaskCard 使用
   Widget _buildTaskContent(WidgetRef ref, AppNavState navState) {
     final displaySettings = ref.watch(displaySettingsProvider);
 
@@ -384,7 +392,13 @@ class TaskItem extends ConsumerWidget {
         task.dueDate != null &&
         !_shouldHideDateLabel(navState.currentView, task.dueDate!);
     final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
+    // 判断是否需要显示优先级（有优先级且设置开启）
+    final shouldShowPriority = displaySettings.showPriority &&
+        task.priority != TaskPriority.none;
     final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
+
+    // 判断是否需要显示第二行
+    final shouldShowSecondRow = shouldShowPriority || shouldShowDate || shouldShowTags;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,11 +412,16 @@ class TaskItem extends ConsumerWidget {
           isOverdue: isOverdue,
           overdueColor: Color(displaySettings.overdueTitleColorValue),
         ),
-        if (shouldShowDate || shouldShowTags) const SizedBox(height: 4),
-        if (shouldShowDate || shouldShowTags)
+        if (shouldShowSecondRow) const SizedBox(height: 4),
+        if (shouldShowSecondRow)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // 优先级图标（放在最前面）
+              if (shouldShowPriority) ...[
+                _buildPriorityIcon(true)!,
+                const SizedBox(width: 6),
+              ],
               if (shouldShowDate) ...[
                 Icon(
                   Icons.calendar_today_outlined,
@@ -425,7 +444,8 @@ class TaskItem extends ConsumerWidget {
                 ),
               ],
               if (shouldShowTags) ...[
-                if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
+                if (shouldShowDate || shouldShowPriority)
+                  const SizedBox(width: AmberDimens.spacingSm),
                 ...task.tags.take(3).map((tagName) {
                   final allTags = ref.watch(tagsProvider);
                   final tagObj = allTags.firstWhere(
@@ -558,124 +578,29 @@ class TaskItem extends ConsumerWidget {
                   horizontal: AmberDimens.spacingMd,
                   vertical: 12,
                 ),
-                child: Row(
-                  children: [
-                    _buildCheckbox(ref),
-                    const SizedBox(width: AmberDimens.spacingMd),
-                    Expanded(
-                      child: Builder(
-                        builder: (context) {
-                          // 获取显示设置
-                          final displaySettings = ref.watch(displaySettingsProvider);
+                child: Builder(
+                  builder: (context) {
+                    // 获取显示设置
+                    final displaySettings = ref.watch(displaySettingsProvider);
 
-                          // 判断是否需要显示日期
-                          // 条件：1. 全局设置开启 2. 有截止日期 3. 不是在「今天」视图下的今天任务
-                          final shouldShowDate = displaySettings.showDueDate &&
-                              task.dueDate != null &&
-                              !_shouldHideDateLabel(navState.currentView, task.dueDate!);
-
-                          // 判断是否需要显示标签
-                          final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
-
-                          // 判断任务是否已过期
-                          final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // 使用半删除线组件
-                              _buildTitleWithHalfStrikethrough(
-                                title: task.title,
-                                isCompleted: task.isCompleted,
-                                isInProgress: task.isInProgress,
-                                isOverdue: isOverdue,
-                                overdueColor: Color(displaySettings.overdueTitleColorValue),
-                              ),
-                              if (shouldShowDate || shouldShowTags)
-                                const SizedBox(height: 4),
-                              // 第二行：日期+标签（用Flexible包裹防止移动端overflow）
-                              if (shouldShowDate || shouldShowTags)
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    // 日期部分（固定宽度，不会溢出）
-                                    if (shouldShowDate) ...[
-                                      Icon(
-                                        Icons.calendar_today_outlined,
-                                        size: 12,
-                                        color: _getDueDateColor(
-                                          task.dueDate!,
-                                          overdueColor: Color(displaySettings.overdueLabelColorValue),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _formatDueDate(task.dueDate!),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: _getDueDateColor(
-                                            task.dueDate!,
-                                            overdueColor: Color(displaySettings.overdueLabelColorValue),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                    // 标签部分（直接展开，避免嵌套导致对齐问题）
-                                    if (shouldShowTags) ...[
-                                      if (shouldShowDate) const SizedBox(width: AmberDimens.spacingSm),
-                                      ...task.tags.take(3).map((tagName) {
-                                        // 查找标签对应的颜色
-                                        final allTags = ref.watch(tagsProvider);
-                                        final tagObj = allTags.firstWhere(
-                                          (t) => t.name == tagName,
-                                          orElse: () => Tag(
-                                            id: '',
-                                            name: tagName,
-                                            color: AmberColors.primary,
-                                            createdAt: DateTime.now(),
-                                          ),
-                                        );
-                                        final tagColor = tagObj.color;
-
-                                        return Container(
-                                          margin: const EdgeInsets.only(right: 4),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: tagColor.withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(
-                                              color: tagColor.withValues(alpha: 0.2),
-                                              width: 0.5,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            tagName,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: tagColor,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        );
-                                      }),
-                                    ],
-                                  ],
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    if (trailing != null) ...[
-                      const SizedBox(width: AmberDimens.spacingMd),
-                      trailing!,
-                    ],
-                  ],
+                    return Row(
+                      children: [
+                        _buildCheckbox(ref),
+                        const SizedBox(width: AmberDimens.spacingMd),
+                        Expanded(
+                          child: _buildTaskContentColumn(
+                            ref: ref,
+                            navState: navState,
+                            displaySettings: displaySettings,
+                          ),
+                        ),
+                        if (trailing != null) ...[
+                          const SizedBox(width: AmberDimens.spacingMd),
+                          trailing!,
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             );
@@ -1060,15 +985,26 @@ class TaskItem extends ConsumerWidget {
   }
 
   void _showEditDialog(BuildContext context, WidgetRef ref) {
-    final titleController = TextEditingController(text: task.title);
+    final controller = TextEditingController(text: task.title);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('编辑任务'),
+        title: const Text('编辑任务标题'),
         content: TextField(
-          controller: titleController,
+          controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '任务名称'),
+          decoration: const InputDecoration(
+            hintText: '任务标题',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) {
+            if (value.trim().isNotEmpty) {
+              ref
+                  .read(taskProvider.notifier)
+                  .updateTask(task.copyWith(title: value.trim()));
+              Navigator.pop(context);
+            }
+          },
         ),
         actions: [
           TextButton(
@@ -1077,12 +1013,11 @@ class TaskItem extends ConsumerWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              if (titleController.text.trim().isNotEmpty) {
+              final title = controller.text.trim();
+              if (title.isNotEmpty) {
                 ref
                     .read(taskProvider.notifier)
-                    .updateTask(
-                      task.copyWith(title: titleController.text.trim()),
-                    );
+                    .updateTask(task.copyWith(title: title));
                 Navigator.pop(context);
               }
             },
@@ -1473,6 +1408,156 @@ class TaskItem extends ConsumerWidget {
     return CustomPaint(
       size: const Size(16, 16),
       painter: _HalfCheckPainter(color: Colors.white),
+    );
+  }
+
+  /// 构建优先级图标
+  /// 根据任务优先级显示不同颜色的旗帜图标
+  /// [showPriority] 是否显示优先级（来自 DisplaySettings）
+  Widget? _buildPriorityIcon(bool showPriority) {
+    // 不显示优先级或者无优先级时返回 null
+    if (!showPriority || task.priority == TaskPriority.none) {
+      return null;
+    }
+
+    // 根据优先级返回不同颜色的旗帜
+    final Color flagColor;
+    switch (task.priority) {
+      case TaskPriority.high:
+        flagColor = Colors.red;
+      case TaskPriority.medium:
+        flagColor = Colors.orange;
+      case TaskPriority.low:
+        flagColor = Colors.blue;
+      case TaskPriority.none:
+        return null; // 理论上不会执行到这里
+    }
+
+    return Icon(
+      Icons.flag,
+      size: 16,
+      color: flagColor,
+    );
+  }
+
+  /// 构建任务内容列（标题 + 优先级/日期/标签）
+  /// 桌面端 _buildTaskCard 使用
+  Widget _buildTaskContentColumn({
+    required WidgetRef ref,
+    required AppNavState navState,
+    required DisplaySettings displaySettings,
+  }) {
+    // 判断是否需要显示日期
+    // 条件：1. 全局设置开启 2. 有截止日期 3. 不是在「今天」视图下的今天任务
+    final shouldShowDate = displaySettings.showDueDate &&
+        task.dueDate != null &&
+        !_shouldHideDateLabel(navState.currentView, task.dueDate!);
+
+    // 判断是否需要显示标签
+    final shouldShowTags = displaySettings.showTags && task.tags.isNotEmpty;
+
+    // 判断是否需要显示优先级（有优先级且设置开启）
+    final shouldShowPriority = displaySettings.showPriority &&
+        task.priority != TaskPriority.none;
+
+    // 判断任务是否已过期
+    final isOverdue = task.dueDate != null && _isOverdue(task.dueDate!);
+
+    // 判断是否需要显示第二行（优先级、日期、标签任一存在）
+    final shouldShowSecondRow = shouldShowPriority || shouldShowDate || shouldShowTags;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 使用半删除线组件
+        _buildTitleWithHalfStrikethrough(
+          title: task.title,
+          isCompleted: task.isCompleted,
+          isInProgress: task.isInProgress,
+          isOverdue: isOverdue,
+          overdueColor: Color(displaySettings.overdueTitleColorValue),
+        ),
+        if (shouldShowSecondRow) const SizedBox(height: 4),
+        // 第二行：优先级+日期+标签
+        if (shouldShowSecondRow)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 优先级图标（放在最前面）
+              if (shouldShowPriority) ...[
+                _buildPriorityIcon(true)!,
+                const SizedBox(width: 6),
+              ],
+              // 日期部分
+              if (shouldShowDate) ...[
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 12,
+                  color: _getDueDateColor(
+                    task.dueDate!,
+                    overdueColor: Color(displaySettings.overdueLabelColorValue),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDueDate(task.dueDate!),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _getDueDateColor(
+                      task.dueDate!,
+                      overdueColor: Color(displaySettings.overdueLabelColorValue),
+                    ),
+                  ),
+                ),
+              ],
+              // 标签部分
+              if (shouldShowTags) ...[
+                if (shouldShowDate || shouldShowPriority)
+                  const SizedBox(width: AmberDimens.spacingSm),
+                ...task.tags.take(3).map((tagName) {
+                  // 查找标签对应的颜色
+                  final allTags = ref.watch(tagsProvider);
+                  final tagObj = allTags.firstWhere(
+                    (t) => t.name == tagName,
+                    orElse: () => Tag(
+                      id: '',
+                      name: tagName,
+                      color: AmberColors.primary,
+                      createdAt: DateTime.now(),
+                    ),
+                  );
+                  final tagColor = tagObj.color;
+
+                  return Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: tagColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: tagColor.withValues(alpha: 0.2),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      tagName,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: tagColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+      ],
     );
   }
 

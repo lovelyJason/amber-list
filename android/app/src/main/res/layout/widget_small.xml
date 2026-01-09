@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small Widget Layout (2x2): Header + 5 Tasks + Time -->
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_container"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_small_background"
+    android:padding="12dp">
+
+    <!-- Header: Logo + Title -->
+    <LinearLayout
+        android:id="@+id/widget_header"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentStart="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- App Logo -->
+        <ImageView
+            android:id="@+id/app_logo"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="Amber List" />
+
+        <!-- Title -->
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:text="今日任务"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <!-- Page indicator (shows when > 5 tasks) -->
+        <TextView
+            android:id="@+id/page_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text=""
+            android:textColor="#FFFFFF"
+            android:textSize="9sp"
+            android:alpha="0.7"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Next Page Button (top-right corner, shows when > 5 tasks) -->
+    <ImageView
+        android:id="@+id/btn_next_page"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_alignParentTop="true"
+        android:layout_alignParentEnd="true"
+        android:src="@drawable/ic_chevron_right"
+        android:contentDescription="Next Page"
+        android:alpha="0.85"
+        android:visibility="gone" />
+
+    <!-- Task List Container -->
+    <LinearLayout
+        android:id="@+id/task_list"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/widget_header"
+        android:layout_above="@id/time_container"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="4dp"
+        android:orientation="vertical">
+
+        <!-- Task 1 -->
+        <LinearLayout
+            android:id="@+id/task_item_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="3dp"
+            android:visibility="gone">
+
+            <!-- Priority flag icon -->
+            <ImageView
+                android:id="@+id/task_priority_1"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_flag_none"
+                android:contentDescription="Priority"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/task_checkbox_1"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_checkbox_unchecked"
+                android:contentDescription="Checkbox" />
+
+            <TextView
+                android:id="@+id/task_title_1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5C3D1E"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Task 2 -->
+        <LinearLayout
+            android:id="@+id/task_item_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="3dp"
+            android:visibility="gone">
+
+            <!-- Priority flag icon -->
+            <ImageView
+                android:id="@+id/task_priority_2"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_flag_none"
+                android:contentDescription="Priority"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/task_checkbox_2"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_checkbox_unchecked"
+                android:contentDescription="Checkbox" />
+
+            <TextView
+                android:id="@+id/task_title_2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5C3D1E"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Task 3 -->
+        <LinearLayout
+            android:id="@+id/task_item_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="3dp"
+            android:visibility="gone">
+
+            <!-- Priority flag icon -->
+            <ImageView
+                android:id="@+id/task_priority_3"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_flag_none"
+                android:contentDescription="Priority"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/task_checkbox_3"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_checkbox_unchecked"
+                android:contentDescription="Checkbox" />
+
+            <TextView
+                android:id="@+id/task_title_3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5C3D1E"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Task 4 -->
+        <LinearLayout
+            android:id="@+id/task_item_4"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="3dp"
+            android:visibility="gone">
+
+            <!-- Priority flag icon -->
+            <ImageView
+                android:id="@+id/task_priority_4"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_flag_none"
+                android:contentDescription="Priority"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/task_checkbox_4"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_checkbox_unchecked"
+                android:contentDescription="Checkbox" />
+
+            <TextView
+                android:id="@+id/task_title_4"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5C3D1E"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Task 5 -->
+        <LinearLayout
+            android:id="@+id/task_item_5"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="3dp"
+            android:visibility="gone">
+
+            <!-- Priority flag icon -->
+            <ImageView
+                android:id="@+id/task_priority_5"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="4dp"
+                android:src="@drawable/ic_flag_none"
+                android:contentDescription="Priority"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/task_checkbox_5"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:src="@drawable/ic_checkbox_unchecked"
+                android:contentDescription="Checkbox" />
+
+            <TextView
+                android:id="@+id/task_title_5"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#5C3D1E"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Empty state -->
+        <TextView
+            android:id="@+id/empty_state"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="暂无任务"
+            android:textColor="#5C3D1E"
+            android:textSize="13sp"
+            android:alpha="0.7"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- Time Container (bottom left) -->
+    <LinearLayout
+        android:id="@+id/time_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentStart="true"
+        android:background="@drawable/widget_time_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="3dp">
+
+        <!-- Clock icon -->
+        <TextView
+            android:id="@+id/time_icon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🕐"
+            android:textSize="9sp" />
+
+        <!-- Time text -->
+        <TextView
+            android:id="@+id/time_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="3dp"
+            android:text="--:--"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp" />
+
+    </LinearLayout>
+
+</RelativeLayout>

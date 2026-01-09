@@ -337,31 +337,35 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   }
 
   Widget _buildQuickAdd() {
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: AmberDimens.spacingMd,
-        vertical: 4, // 与 TaskItem 间距对齐
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AmberDimens.spacingMd,
-        vertical: 2, // 稍微减小垂直内边距，因为 TextField 本身有高度
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isAddingTask ? AmberColors.primary : const Color(0xFFEEEEEE),
-          width: 1,
+    // Material 包裹层：TextField 需要 Material 祖先组件
+    // 移动端没有 Scaffold 包裹时会报错 "No Material widget found"
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.symmetric(
+          horizontal: AmberDimens.spacingMd,
+          vertical: 4, // 与 TaskItem 间距对齐
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x05000000), // 非常淡的阴影
-            offset: Offset(0, 2),
-            blurRadius: 4,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AmberDimens.spacingMd,
+          vertical: 2, // 稍微减小垂直内边距，因为 TextField 本身有高度
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isAddingTask ? AmberColors.primary : const Color(0xFFEEEEEE),
+            width: 1,
           ),
-        ],
-      ),
-      child: Row(
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x05000000), // 非常淡的阴影
+              offset: Offset(0, 2),
+              blurRadius: 4,
+            ),
+          ],
+        ),
+        child: Row(
         children: [
           Icon(
             Icons.add_rounded, // 使用圆角加号
@@ -430,6 +434,7 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
             ),
           ],
         ],
+      ),
       ),
     );
   }

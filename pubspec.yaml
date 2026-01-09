@@ -1,7 +1,7 @@
 name: amber_list
 description: "琥珀清单 - 一款简约而不失质感的桌面端待办应用"
 publish_to: 'none'
-version: 1.0.10+11
+version: 1.1.1+12
 
 environment:
   sdk: ^3.10.1
@@ -44,10 +44,14 @@ dependencies:
   http: ^1.2.2                    # HTTP 客户端（用于 OSS 下载）
   url_launcher: ^6.2.5            # 打开外部链接（用于应用更新下载）
 
+  # 桌面小组件（Android/iOS Home Screen Widget）
+  home_widget: ^0.7.0
+
   # 桌面窗口管理
   window_manager: ^0.4.3
   desktop_multi_window: ^0.3.0
   hotkey_manager: ^0.2.3          # 全局快捷键（用于闪念胶囊）
+  tray_manager: ^0.5.2            # 系统托盘管理
   fluentui_system_icons: ^1.1.273
   audioplayers: ^6.5.1
   flutter_localizations:

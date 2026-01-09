@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -29,6 +30,17 @@ class DisplaySettings {
   /// 默认 false（使用 macOS 风格红绿灯）
   final bool useNativeTitleBar;
 
+  /// 关闭窗口时最小化到托盘（仅桌面端有效）
+  /// true = 关闭时隐藏到系统托盘，false = 直接退出应用
+  /// 默认 true（最小化到托盘）
+  final bool minimizeToTray;
+
+  /// 最小化到托盘时是否在 Dock 中显示（仅 macOS 有效）
+  /// true = Dock 中显示图标（有小黑点），点击可恢复窗口
+  /// false = 从 Dock 中完全隐藏，仅通过托盘图标操作
+  /// 默认 true（在 Dock 中显示）
+  final bool showInDockWhenMinimized;
+
   const DisplaySettings({
     this.showTags = true,
     this.showDueDate = true,
@@ -36,6 +48,8 @@ class DisplaySettings {
     this.overdueTitleColorValue = 0xFFFF5722,
     this.overdueLabelColorValue = 0xFFFF5722,
     this.useNativeTitleBar = false,
+    this.minimizeToTray = true,
+    this.showInDockWhenMinimized = true,
   });
 
   DisplaySettings copyWith({
@@ -45,6 +59,8 @@ class DisplaySettings {
     int? overdueTitleColorValue,
     int? overdueLabelColorValue,
     bool? useNativeTitleBar,
+    bool? minimizeToTray,
+    bool? showInDockWhenMinimized,
   }) {
     return DisplaySettings(
       showTags: showTags ?? this.showTags,
@@ -53,6 +69,8 @@ class DisplaySettings {
       overdueTitleColorValue: overdueTitleColorValue ?? this.overdueTitleColorValue,
       overdueLabelColorValue: overdueLabelColorValue ?? this.overdueLabelColorValue,
       useNativeTitleBar: useNativeTitleBar ?? this.useNativeTitleBar,
+      minimizeToTray: minimizeToTray ?? this.minimizeToTray,
+      showInDockWhenMinimized: showInDockWhenMinimized ?? this.showInDockWhenMinimized,
     );
   }
 
@@ -64,6 +82,8 @@ class DisplaySettings {
         'overdueTitleColorValue': overdueTitleColorValue,
         'overdueLabelColorValue': overdueLabelColorValue,
         'useNativeTitleBar': useNativeTitleBar,
+        'minimizeToTray': minimizeToTray,
+        'showInDockWhenMinimized': showInDockWhenMinimized,
       };
 
   /// 从 JSON 创建
@@ -75,6 +95,8 @@ class DisplaySettings {
       overdueTitleColorValue: json['overdueTitleColorValue'] as int? ?? 0xFFFF5722,
       overdueLabelColorValue: json['overdueLabelColorValue'] as int? ?? 0xFFFF5722,
       useNativeTitleBar: json['useNativeTitleBar'] as bool? ?? false,
+      minimizeToTray: json['minimizeToTray'] as bool? ?? true,
+      showInDockWhenMinimized: json['showInDockWhenMinimized'] as bool? ?? true,
     );
   }
 }
@@ -89,6 +111,14 @@ class DisplaySettingsNotifier extends StateNotifier<DisplaySettings> {
   /// SharedPreferences key
   static const _configKey = 'display_settings';
 
+  /// 加载完成标志 Completer
+  /// 用于确保外部代码可以等待设置加载完成
+  final Completer<DisplaySettings> _loadCompleter = Completer<DisplaySettings>();
+
+  /// 等待设置加载完成
+  /// 返回加载完成后的设置值
+  Future<DisplaySettings> waitForLoad() => _loadCompleter.future;
+
   /// 加载设置
   Future<void> _loadSettings() async {
     try {
@@ -100,8 +130,17 @@ class DisplaySettingsNotifier extends StateNotifier<DisplaySettings> {
         state = DisplaySettings.fromJson(json);
         debugPrint('[DisplaySettings] 已加载显示设置');
       }
+
+      // 标记加载完成（无论成功还是使用默认值）
+      if (!_loadCompleter.isCompleted) {
+        _loadCompleter.complete(state);
+      }
     } catch (e) {
       debugPrint('[DisplaySettings] 加载设置失败: $e');
+      // 加载失败时也标记完成，使用默认值
+      if (!_loadCompleter.isCompleted) {
+        _loadCompleter.complete(state);
+      }
     }
   }
 
@@ -168,6 +207,18 @@ class DisplaySettingsNotifier extends StateNotifier<DisplaySettings> {
   /// 注意：此设置需要重启应用才能生效
   void setUseNativeTitleBar(bool value) {
     state = state.copyWith(useNativeTitleBar: value);
+    _saveSettings();
+  }
+
+  /// 设置是否关闭时最小化到托盘
+  void setMinimizeToTray(bool value) {
+    state = state.copyWith(minimizeToTray: value);
+    _saveSettings();
+  }
+
+  /// 设置最小化到托盘时是否在 Dock 中显示（仅 macOS 有效）
+  void setShowInDockWhenMinimized(bool value) {
+    state = state.copyWith(showInDockWhenMinimized: value);
     _saveSettings();
   }
 }

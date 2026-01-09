@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../../../core/constants/constants.dart';
+import '../../../../core/utils/chinese_holidays.dart';
 import '../../../../data/models/models.dart';
 
 /// 日历网格组件
@@ -139,11 +140,13 @@ class CalendarGrid extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 日期数字 - 使用 LayoutBuilder 判断是否有足够宽度显示今日图标
+            // 日期数字 - 使用 LayoutBuilder 判断是否有足够宽度显示今日图标和节假日
             LayoutBuilder(
               builder: (context, constraints) {
                 // 需要至少 56px 才能显示日期(24) + 间距(4) + 图标(24) + 余量(4)
                 final showTodayIcon = constraints.maxWidth >= 56;
+                // 获取节假日名称
+                final holiday = ChineseHolidays.getHoliday(day);
 
                 return Row(
                   children: [
@@ -179,6 +182,24 @@ class CalendarGrid extends StatelessWidget {
                           width: 24,
                           height: 24,
                           fit: BoxFit.cover,
+                        ),
+                      ),
+                    ],
+                    // 节假日名称显示
+                    if (holiday != null && !isToday) ...[
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          holiday,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isOutside
+                                ? AmberColors.textDisabled
+                                : AmberColors.priorityHigh,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],

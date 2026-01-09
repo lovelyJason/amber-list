@@ -49,6 +49,9 @@ class MainFlutterWindow: NSWindow {
     // Register method channel for splash screen control
     setupSplashChannel(with: flutterViewController.engine.binaryMessenger)
 
+    // Register method channel for Dock visibility control
+    setupDockChannel(with: flutterViewController.engine.binaryMessenger)
+
     super.awakeFromNib()
   }
 
@@ -143,6 +146,35 @@ class MainFlutterWindow: NSWindow {
       DispatchQueue.main.asyncAfter(deadline: .now() + Double(duration) / 1000.0) { [weak self] in
         print("[Splash] Auto-hide timer fired")
         self?.hideSplash()
+      }
+    }
+  }
+
+  /// Setup Platform Channel for Dock visibility control from Flutter
+  ///
+  /// Allows Flutter to show/hide the app from the Dock.
+  /// - showInDock: Set activation policy to .regular (app appears in Dock)
+  /// - hideFromDock: Set activation policy to .accessory (app hidden from Dock)
+  private func setupDockChannel(with messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "com.amberlist.dock",
+      binaryMessenger: messenger
+    )
+
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "showInDock":
+        // Show app in Dock (normal app behavior)
+        NSApp.setActivationPolicy(.regular)
+        print("[Dock] Set activation policy to .regular (visible in Dock)")
+        result(nil)
+      case "hideFromDock":
+        // Hide app from Dock (accessory/background app)
+        NSApp.setActivationPolicy(.accessory)
+        print("[Dock] Set activation policy to .accessory (hidden from Dock)")
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
       }
     }
   }

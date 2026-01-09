@@ -30,10 +30,69 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
-        <!-- 禁用 Impeller，使用 Skia 渲染（解决部分设备白屏问题） -->
+
+        <!-- [DEPRECATED] Impeller opt-out - Flutter will remove this option in future releases
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false"/>
+        -->
+
+        <!-- Home Screen Widget: Small (2x2) -->
+        <receiver
+            android:name=".widget.AmberWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_name_small">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.amber_list.TOGGLE_TASK" />
+                <action android:name="com.example.amber_list.OPEN_APP" />
+                <action android:name="com.example.amber_list.NEXT_PAGE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_small" />
+        </receiver>
+
+        <!-- RemoteViewsService for Small Widget StackView -->
+        <service
+            android:name=".widget.WidgetTaskService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!-- Home Screen Widget: Medium (4x2) -->
+        <receiver
+            android:name=".widget.AmberWidgetMediumProvider"
+            android:exported="true"
+            android:label="@string/widget_name_medium">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.amber_list.TOGGLE_TASK" />
+                <action android:name="com.example.amber_list.OPEN_APP" />
+                <action android:name="com.example.amber_list.NEXT_PAGE_MEDIUM" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_medium" />
+        </receiver>
+
+        <!-- Home Screen Widget: Large (4x4) - Calendar Month View -->
+        <receiver
+            android:name=".widget.AmberWidgetLargeProvider"
+            android:exported="true"
+            android:label="@string/widget_name_large">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.amber_list.TOGGLE_TASK" />
+                <action android:name="com.example.amber_list.OPEN_APP" />
+                <action android:name="com.example.amber_list.PREV_MONTH" />
+                <action android:name="com.example.amber_list.NEXT_MONTH" />
+                <action android:name="com.example.amber_list.GO_TODAY" />
+                <action android:name="com.example.amber_list.OPEN_DAY" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_large" />
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
