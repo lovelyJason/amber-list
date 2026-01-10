@@ -1,11 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Large Widget Layout (4x4): Calendar Month View -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_container"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_large_background"
-    android:orientation="vertical">
+    android:background="@drawable/widget_large_background">
+
+    <!-- Background Image Layer -->
+    <ImageView
+        android:id="@+id/widget_bg_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="@drawable/widget_large_background"
+        android:clipToOutline="true"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
     <!-- Header: Year-Month + Navigation (full width, no padding on container) -->
     <RelativeLayout
@@ -341,4 +357,6 @@
         </FrameLayout>
     </LinearLayout>
 
-</LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>

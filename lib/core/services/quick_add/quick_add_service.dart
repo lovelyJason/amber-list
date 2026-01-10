@@ -113,7 +113,7 @@ class QuickAddService {
         keyDownHandler: (_) => _onHotKeyPressed(),
       );
       _currentHotKey = hotKey;
-      debugPrint('[QuickAddService] 热键已注册: ${_formatHotKey(hotKey)}');
+      // debugPrint('[QuickAddService] 热键已注册: ${_formatHotKey(hotKey)}');
     } catch (e) {
       debugPrint('[QuickAddService] 热键注册失败: $e');
     }
@@ -235,7 +235,7 @@ class QuickAddService {
       _handleListSelected,
     );
 
-    debugPrint('[QuickAddService] 原生窗口回调已注册');
+    // debugPrint('[QuickAddService] 原生窗口回调已注册');
   }
 
   /// 注销原生窗口回调

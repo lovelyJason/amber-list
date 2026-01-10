@@ -802,7 +802,7 @@ LazyDatabase _openConnection() {
     final file = File(dbPath);
     return NativeDatabase(
       file,
-      logStatements: true,
+      logStatements: false,
       setup: (database) {
         database.execute('PRAGMA journal_mode = WAL');
         database.execute('PRAGMA busy_timeout = 5000');

@@ -12,6 +12,7 @@ import 'core/services/dock_service.dart';
 import 'core/services/quick_add/quick_add_service.dart';
 import 'core/services/splash_service.dart';
 import 'core/theme/amber_theme.dart';
+import 'presentation/widgets/common/toast/toast_manager.dart';
 import 'data/models/note.dart';
 import 'data/models/task.dart';
 import 'presentation/pages/home_page.dart';
@@ -35,6 +36,10 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   /// 闪念胶囊服务
   QuickAddService? _quickAddService;
 
+  /// 全局导航 Key，用于获取 MaterialApp 内部的 context
+  /// 解决启动阶段 Toast 显示失败问题（AmberListApp 的 context 在 MaterialApp 外面，没有 Overlay）
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
@@ -53,15 +58,11 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
       _initTray();
     }
 
-    // 延迟初始化，避免阻塞启动流程
+    // 延迟初始化，执行启动序列
     WidgetsBinding.instance.addPostFrameCallback((_) {
       debugPrint('[App] addPostFrameCallback triggered - first frame rendered');
-      // 首帧渲染完成，隐藏原生 Splash 屏幕
-      _hideSplash();
-      _checkForUpdatesOnStartup();
-      _initializeQuickAddService();
-      // 执行自动顺延（将过期任务移动到今天）
-      _performAutoPostpone();
+      // 执行统一启动流程（桌面端 vs 移动端不同策略）
+      _executeStartupSequence();
     });
   }
 
@@ -76,7 +77,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
       final iconPath = await _extractTrayIcon();
       if (iconPath != null) {
         await trayManager.setIcon(iconPath);
-        debugPrint('[App] 托盘图标已设置: $iconPath');
+        // debugPrint('[App] 托盘图标已设置: $iconPath');
       }
 
       // 设置托盘右键菜单
@@ -88,7 +89,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         ],
       );
       await trayManager.setContextMenu(menu);
-      debugPrint('[App] 托盘菜单已设置');
+      // debugPrint('[App] 托盘菜单已设置');
     } catch (e) {
       debugPrint('[App] 初始化托盘失败: $e');
     }
@@ -306,7 +307,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
     // 初始化服务（使用用户配置的快捷键）
     await _quickAddService!.initialize(customHotKey: customHotKey);
-    debugPrint('[App] 闪念胶囊服务已初始化，快捷键: ${quickAddSettings.displayText}');
+    // debugPrint('[App] 闪念胶囊服务已初始化，快捷键: ${quickAddSettings.displayText}');
   }
 
   /// 显示闪念胶囊窗口（带数据）
@@ -335,6 +336,183 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     );
   }
 
+  /// 执行启动序列（统一入口）
+  ///
+  /// 桌面端（macOS/Windows）：同步 → 顺延 → 隐藏 Splash
+  /// 移动端（Android/iOS）：顺延 → 其他初始化（不等待同步）
+  Future<void> _executeStartupSequence() async {
+    if (Platform.isMacOS || Platform.isWindows) {
+      // 桌面端：同步 → 顺延 → 隐藏 Splash
+      await _desktopStartupSequence();
+    } else {
+      // 移动端：直接执行非阻塞初始化
+      _mobileStartupSequence();
+    }
+
+    // 公共初始化（不阻塞 UI）
+    _checkForUpdatesOnStartup();
+    _initializeQuickAddService();
+  }
+
+  /// 桌面端启动序列
+  ///
+  /// 1. 等待云同步完成（如果配置了，超时 30 秒）
+  /// 2. 执行自动顺延
+  /// 3. 隐藏 Splash
+  Future<void> _desktopStartupSequence() async {
+    debugPrint('');
+    debugPrint('🚀 ══════════════════════════════════════════');
+    debugPrint('🚀 [Startup] 桌面端启动序列开始');
+    debugPrint('🚀 ══════════════════════════════════════════');
+    try {
+      // 步骤1: 等待云同步完成（如果配置了同步）
+      debugPrint('   📡 步骤1: 等待云同步...');
+      final syncSuccess = await _waitForCloudSync();
+
+      if (syncSuccess) {
+        debugPrint('   ✅ 云同步成功');
+      } else {
+        debugPrint('   ⏭️  云同步失败/超时/未配置，继续启动');
+      }
+
+      // 步骤2: 执行自动顺延（在同步完成后）
+      debugPrint('   🔄 步骤2: 执行自动顺延...');
+      await _performAutoPostpone();
+
+      // 步骤3: 隐藏 Splash（Windows 额外延迟让用户看到效果）
+      if (Platform.isWindows) {
+        debugPrint('   ⏳ Windows 延迟 1s 后隐藏 Splash');
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+      debugPrint('   🎬 步骤3: 隐藏 Splash');
+      await _hideSplash();
+
+      debugPrint('✨ ══════════════════════════════════════════');
+      debugPrint('✨ [Startup] 桌面端启动序列完成');
+      debugPrint('✨ ══════════════════════════════════════════');
+      debugPrint('');
+    } catch (e) {
+      debugPrint('❌ [Startup] 启动序列异常: $e');
+      // 发生异常时仍然隐藏 Splash，避免卡住
+      await _hideSplash();
+    }
+  }
+
+  /// 移动端启动序列
+  ///
+  /// 移动端后台执行同步和顺延，不阻塞 UI
+  /// 流程：后台同步 → Toast"同步完成" → 自动顺延 → Toast"顺延 X 个任务"
+  void _mobileStartupSequence() {
+    debugPrint('[Startup] 移动端启动序列');
+    // 后台执行同步和顺延，不阻塞 UI
+    _performMobileSyncAndPostpone();
+  }
+
+  /// 移动端后台同步和顺延
+  ///
+  /// 非阻塞执行：
+  /// 1. 检查并执行云同步
+  /// 2. 同步完成后显示 Toast
+  /// 3. 执行自动顺延
+  /// 4. 顺延完成后显示 Toast
+  Future<void> _performMobileSyncAndPostpone() async {
+    try {
+      // 步骤1: 检查是否配置了云同步
+      await ref.read(syncStateProvider.notifier).waitForLoad();
+      final syncType = ref.read(syncTypeProvider);
+
+      if (syncType != null) {
+        debugPrint('[Startup] 移动端开始后台同步: ${syncType.displayName}');
+        // 执行同步
+        final syncSuccess =
+            await ref.read(syncStateProvider.notifier).manualSync();
+        if (syncSuccess && mounted) {
+          debugPrint('[Startup] 移动端同步成功');
+          // Toast 可能因 Overlay 未准备好而失败，不影响后续逻辑
+          _showToastSafe('☁️ 云同步完成', ToastType.success);
+        } else if (!syncSuccess) {
+          debugPrint('[Startup] 移动端同步失败');
+        }
+      }
+
+      // 步骤2: 执行自动顺延
+      await ref.read(taskManagementSettingsProvider.notifier).waitForLoad();
+      // 稍微延迟，确保 TaskNotifier 已经从数据库加载完数据
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      final count = await ref.read(taskProvider.notifier).performAutoPostpone();
+      if (count > 0 && mounted) {
+        debugPrint('[Startup] 移动端自动顺延 $count 个任务');
+        _showToastSafe('📅 已顺延 $count 个过期任务到今天', ToastType.info);
+      }
+    } catch (e) {
+      debugPrint('[Startup] 移动端启动序列异常: $e');
+    }
+  }
+
+  /// 安全显示 Toast（捕获 Overlay 未准备好的异常）
+  ///
+  /// 直接使用 NavigatorState.overlay 获取 OverlayState，绕过 Overlay.of() 查找
+  /// 这样可以避免"用 Overlay 的 context 去找 Overlay"的悖论
+  void _showToastSafe(String message, ToastType type) {
+    // 延迟 500ms，确保 MaterialApp 内部的 Navigator 和 Overlay 都已构建完成
+    Future.delayed(const Duration(milliseconds: 500), () {
+      try {
+        final navigator = _navigatorKey.currentState;
+        if (navigator == null) {
+          debugPrint('[Startup] Toast 跳过：Navigator 不可用');
+          return;
+        }
+
+        // 直接获取 OverlayState，绕过 Overlay.of() 查找
+        final overlayState = navigator.overlay;
+        if (overlayState != null && mounted) {
+          ToastManager().showWithOverlay(overlayState, message, type: type);
+        } else {
+          debugPrint('[Startup] Toast 跳过：Overlay 不可用');
+        }
+      } catch (e) {
+        // 启动阶段的 Toast 显示失败不影响功能，静默忽略
+        debugPrint('[Startup] Toast 显示失败: $e');
+      }
+    });
+  }
+
+  /// 等待云同步完成（超时 30 秒）
+  ///
+  /// 返回 true = 同步成功，false = 同步失败或未配置
+  Future<bool> _waitForCloudSync() async {
+    try {
+      // 等待 SyncStateNotifier 初始化完成（加载 syncType 配置）
+      await ref.read(syncStateProvider.notifier).waitForLoad();
+
+      // 检查是否配置了云同步
+      final syncType = ref.read(syncTypeProvider);
+      if (syncType == null) {
+        debugPrint('   ⏭️  未配置云同步，跳过');
+        return false;
+      }
+
+      debugPrint('   📡 云同步类型: ${syncType.displayName}');
+
+      // 等待 SyncProvider 触发首次同步并完成
+      // 超时 30 秒，避免卡死
+      final syncNotifier = ref.read(syncStateProvider.notifier);
+      final syncSuccess = await syncNotifier.waitForInitialSync().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          debugPrint('   ⏰ 云同步超时（30秒）');
+          return false;
+        },
+      );
+
+      return syncSuccess;
+    } catch (e) {
+      debugPrint('   ❌ 云同步异常: $e');
+      return false;
+    }
+  }
+
   /// 执行自动顺延
   ///
   /// 在 App 启动时调用，将符合条件的过期任务自动顺延到今天
@@ -348,7 +526,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
     final count = await ref.read(taskProvider.notifier).performAutoPostpone();
     if (count > 0) {
-      debugPrint('[App] 自动顺延完成，已顺延 $count 个任务到今天');
+      debugPrint('   🟢 自动顺延完成，已顺延 $count 个任务到今天');
     }
   }
 
@@ -373,6 +551,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     final updateState = ref.watch(appUpdateProvider);
 
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: '琥珀清单',
       debugShowCheckedModeBanner: false,
       theme: AmberTheme.lightTheme,

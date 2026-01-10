@@ -85,14 +85,11 @@ object WidgetDatabaseHelper {
                     val formatter = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                     dueTime = formatter.format(date)
                 }
-                // Debug: log each task with due date details
-                Log.d(TAG, "Task: '$title', completed=$isCompleted, dueTimestamp=$dueTimestampSeconds, dueTime=$dueTime")
                 tasks.add(WidgetTask(id, title, isCompleted, priority, dueTime))
             }
             cursor.close()
             database.close()
 
-            Log.d(TAG, "Loaded ${tasks.size} tasks from SQLite (dbPath: $dbPath)")
             tasks
         } catch (e: Exception) {
             Log.e(TAG, "Error loading tasks from SQLite", e)
@@ -102,41 +99,28 @@ object WidgetDatabaseHelper {
 
     /**
      * Load today's tasks from SQLite database
-     * Returns incomplete tasks with dueDate == today (only today's tasks)
+     * Returns incomplete tasks with dueDate == today OR overdue tasks
      *
-     * Note: Overdue tasks are NOT shown. The auto-postpone feature is handled
-     * by the Flutter app on startup, not by the widget.
+     * Note: This method now includes overdue tasks since the Widget also
+     * performs auto-postpone on update. After auto-postpone, overdue tasks
+     * become today's tasks.
      *
      * @param context Application context
-     * @return List of today's incomplete tasks
+     * @return List of today's and overdue incomplete tasks
      */
     fun loadTodayTasks(context: Context): List<WidgetTask> {
         val allTasks = loadAllTasks(context)
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
             .format(java.util.Date())
 
-        Log.d(TAG, "loadTodayTasks: today=$today, allTasks=${allTasks.size}")
 
-        val result = allTasks.filter { task ->
-            // Must be incomplete
-            if (task.isCompleted) {
-                Log.d(TAG, "  Skipping '${task.title}': completed")
-                return@filter false
-            }
-            // Must have due date
-            val dueTime = task.dueTime
-            if (dueTime == null) {
-                Log.d(TAG, "  Skipping '${task.title}': no due date")
-                return@filter false
-            }
-            // Due date == today (only today's tasks, not overdue)
-            val include = dueTime == today
-            Log.d(TAG, "  Task '${task.title}': dueTime=$dueTime, include=$include (compare: $dueTime == $today)")
-            include
+        return allTasks.filter { task ->
+            // Must be incomplete and have due date
+            if (task.isCompleted) return@filter false
+            val dueTime = task.dueTime ?: return@filter false
+            // Due date == today OR overdue (dueTime <= today)
+            dueTime <= today
         }
-
-        Log.d(TAG, "loadTodayTasks: returning ${result.size} tasks")
-        return result
     }
 
     /**
@@ -188,22 +172,40 @@ object WidgetDatabaseHelper {
             val nowSeconds = System.currentTimeMillis() / 1000
 
             // Update the task
+            // Note: When marking as complete, also reset is_in_progress to 0
+            // to maintain consistency with iOS widget behavior
             val completedAt = if (newStatus) nowSeconds else null
-            database.execSQL(
-                """
-                UPDATE tasks
-                SET is_completed = ?,
-                    completed_at = ?,
-                    updated_at = ?
-                WHERE id = ?
-                """.trimIndent(),
-                arrayOf(
-                    if (newStatus) 1 else 0,
-                    completedAt,
-                    nowSeconds,
-                    taskId
+            if (newStatus) {
+                database.execSQL(
+                    """
+                    UPDATE tasks
+                    SET is_completed = 1,
+                        is_in_progress = 0,
+                        completed_at = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """.trimIndent(),
+                    arrayOf(
+                        completedAt,
+                        nowSeconds,
+                        taskId
+                    )
                 )
-            )
+            } else {
+                database.execSQL(
+                    """
+                    UPDATE tasks
+                    SET is_completed = 0,
+                        completed_at = NULL,
+                        updated_at = ?
+                    WHERE id = ?
+                    """.trimIndent(),
+                    arrayOf(
+                        nowSeconds,
+                        taskId
+                    )
+                )
+            }
 
             database.close()
 
@@ -212,6 +214,113 @@ object WidgetDatabaseHelper {
         } catch (e: Exception) {
             Log.e(TAG, "Error toggling task completion", e)
             false
+        }
+    }
+
+    /**
+     * Perform auto-postpone for overdue tasks
+     *
+     * This method is called when the Widget is updated (onUpdate).
+     * It checks if auto-postpone has been done today, and if not,
+     * postpones all overdue tasks with auto_postpone=1 to today.
+     *
+     * Conditions for postponing a task:
+     * - is_deleted = 0 (not deleted)
+     * - is_completed = 0 (not completed)
+     * - auto_postpone = 1 (task allows auto-postpone)
+     * - due_date < today (overdue)
+     *
+     * @param context Application context
+     * @return Number of tasks postponed, or 0 if skipped/failed
+     */
+    fun performAutoPostpone(context: Context): Int {
+        try {
+            // Step 1: Check if auto-postpone is enabled globally
+            if (!WidgetSettingsHelper.isAutoPostponeEnabled(context)) return 0
+
+            // Step 2: Check if already done today
+            if (WidgetSettingsHelper.hasCheckedToday(context)) return 0
+
+            // Step 3: Open database
+            val dbPath = getDatabasePath(context)
+            val dbFile = File(dbPath)
+
+            if (!dbFile.exists()) return 0
+
+            val database = SQLiteDatabase.openDatabase(
+                dbPath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE
+            )
+
+            // Step 4: Calculate today's timestamp (start of day in seconds)
+            // Drift stores due_date as Unix timestamp in seconds (UTC)
+            val calendar = java.util.Calendar.getInstance()
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 0)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            val todayStartSeconds = calendar.timeInMillis / 1000
+            val nowSeconds = System.currentTimeMillis() / 1000
+
+
+            // Step 5: Count overdue tasks first (for logging)
+            val countCursor = database.rawQuery(
+                """
+                SELECT COUNT(*) FROM tasks
+                WHERE is_deleted = 0
+                  AND is_completed = 0
+                  AND auto_postpone = 1
+                  AND due_date IS NOT NULL
+                  AND due_date < ?
+                """.trimIndent(),
+                arrayOf(todayStartSeconds.toString())
+            )
+            var overdueCount = 0
+            if (countCursor.moveToFirst()) {
+                overdueCount = countCursor.getInt(0)
+            }
+            countCursor.close()
+
+            if (overdueCount == 0) {
+                database.close()
+                // Still mark as checked today (no tasks to postpone)
+                WidgetSettingsHelper.setCheckedToday(context)
+                return 0
+            }
+
+            // Step 6: Update overdue tasks to today
+            database.execSQL(
+                """
+                UPDATE tasks
+                SET due_date = ?,
+                    updated_at = ?
+                WHERE is_deleted = 0
+                  AND is_completed = 0
+                  AND auto_postpone = 1
+                  AND due_date IS NOT NULL
+                  AND due_date < ?
+                """.trimIndent(),
+                arrayOf(
+                    todayStartSeconds,
+                    nowSeconds,
+                    todayStartSeconds
+                )
+            )
+
+            database.close()
+
+            // Step 7: Mark as checked today
+            WidgetSettingsHelper.setCheckedToday(context)
+
+            // Only log when tasks are actually postponed
+            if (overdueCount > 0) {
+                Log.i(TAG, "Auto-postponed $overdueCount tasks to today")
+            }
+            return overdueCount
+        } catch (e: Exception) {
+            Log.e(TAG, "performAutoPostpone error", e)
+            return 0
         }
     }
 

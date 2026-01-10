@@ -38,7 +38,7 @@ class ToastManager {
       duration: duration,
       position: position,
     );
-    
+
     // 播放提示音
     if (type == ToastType.error && playSoundOnError) {
       SoundService().playError();
@@ -46,6 +46,59 @@ class ToastManager {
 
     _queue.add(request);
     _processQueue();
+  }
+
+  /// 直接使用 OverlayState 显示 Toast（绕过 Overlay.of() 查找）
+  ///
+  /// 用于启动阶段等特殊场景，此时可能没有合适的 context 来调用 Overlay.of()
+  /// 通过 NavigatorState.overlay 可以直接获取 OverlayState
+  void showWithOverlay(
+    OverlayState overlayState,
+    String message, {
+    ToastType type = ToastType.info,
+    Duration duration = const Duration(seconds: 2),
+    ToastPosition position = ToastPosition.top,
+    bool playSoundOnError = true,
+  }) {
+    final request = _ToastRequestWithOverlay(
+      overlayState: overlayState,
+      message: message,
+      type: type,
+      duration: duration,
+      position: position,
+    );
+
+    // 播放提示音
+    if (type == ToastType.error && playSoundOnError) {
+      SoundService().playError();
+    }
+
+    _overlayQueue.add(request);
+    _processOverlayQueue();
+  }
+
+  final Queue<_ToastRequestWithOverlay> _overlayQueue = Queue();
+
+  void _processOverlayQueue() {
+    if (_isShowing || _overlayQueue.isEmpty) return;
+
+    final request = _overlayQueue.removeFirst();
+    _isShowing = true;
+    _showOverlayDirect(request);
+  }
+
+  void _showOverlayDirect(_ToastRequestWithOverlay request) {
+    // 创建 OverlayEntry
+    _currentEntry = OverlayEntry(
+      builder: (context) => _ToastAnimatorDirect(
+        request: request,
+        onDismiss: () {
+          _removeCurrent();
+        },
+      ),
+    );
+
+    request.overlayState.insert(_currentEntry!);
   }
 
   void _processQueue() {
@@ -245,6 +298,129 @@ class _ToastAnimatorState extends State<_ToastAnimator> with SingleTickerProvide
                 message: widget.request.message,
                 type: widget.request.type,
             ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toast 请求（直接使用 OverlayState，绕过 Overlay.of() 查找）
+class _ToastRequestWithOverlay {
+  final OverlayState overlayState;
+  final String message;
+  final ToastType type;
+  final Duration duration;
+  final ToastPosition position;
+
+  _ToastRequestWithOverlay({
+    required this.overlayState,
+    required this.message,
+    required this.type,
+    required this.duration,
+    required this.position,
+  });
+}
+
+/// Toast 动画器（直接使用 OverlayState 版本）
+class _ToastAnimatorDirect extends StatefulWidget {
+  final _ToastRequestWithOverlay request;
+  final VoidCallback onDismiss;
+
+  const _ToastAnimatorDirect({
+    required this.request,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_ToastAnimatorDirect> createState() => _ToastAnimatorDirectState();
+}
+
+class _ToastAnimatorDirectState extends State<_ToastAnimatorDirect>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+  late Animation<Offset> _offset;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _opacity = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    ));
+
+    final alignOffset = _getAlignOffset(widget.request.position);
+    _offset = Tween<Offset>(
+      begin: alignOffset,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutBack,
+    ));
+
+    _controller.forward();
+
+    final displayTime = widget.request.duration;
+    Future.delayed(displayTime, () {
+      if (mounted) {
+        _dismiss();
+      }
+    });
+  }
+
+  void _dismiss() async {
+    await _controller.reverse();
+    widget.onDismiss();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Offset _getAlignOffset(ToastPosition position) {
+    switch (position) {
+      case ToastPosition.top:
+        return const Offset(0, -1.0);
+      case ToastPosition.bottom:
+        return const Offset(0, 1.0);
+      case ToastPosition.center:
+        return const Offset(0, 0.2);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: widget.request.position == ToastPosition.top ? 50 : null,
+      bottom: widget.request.position == ToastPosition.bottom ? 50 : null,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: widget.request.position == ToastPosition.center
+            ? Center(child: _buildAnimatedToast())
+            : _buildAnimatedToast(),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedToast() {
+    return SlideTransition(
+      position: _offset,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: Material(
+          color: Colors.transparent,
+          child: AmberToast(
+            message: widget.request.message,
+            type: widget.request.type,
+          ),
         ),
       ),
     );

@@ -445,10 +445,17 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
   /// 手动触发同步
   Future<void> _manualSync() async {
     // 设置冲突决策回调（在同步过程中弹窗让用户选择）
-    ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+    ref.read(syncStateProvider.notifier).onConflictDetected = (
+      conflicts, {
+      int autoPostponeMergedCount = 0,
+    }) async {
       if (!mounted) return null;
       // 弹出冲突决策弹窗
-      return showSyncConflictDialog(context, conflicts: conflicts);
+      return showSyncConflictDialog(
+        context,
+        conflicts: conflicts,
+        autoPostponeMergedCount: autoPostponeMergedCount,
+      );
     };
 
     final success = await ref.read(syncStateProvider.notifier).manualSync();

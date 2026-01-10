@@ -171,7 +171,7 @@ class NativeWindowService {
   ) {
     _callbacks[windowType] ??= {};
     _callbacks[windowType]![method] = callback;
-    debugPrint('[NativeWindow] 注册回调: $windowType.$method');
+    // debugPrint('[NativeWindow] 注册回调: $windowType.$method');
   }
 
   /// 取消注册回调

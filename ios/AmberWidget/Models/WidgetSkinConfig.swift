@@ -17,6 +17,11 @@ enum WidgetSkinType: String, Codable, CaseIterable {
     case dark = "dark"     // 深空灰
     case mint = "mint"     // 薄荷绿
     case pink = "pink"     // 樱花粉
+    case contrast01 = "contrast01" // 撞色01
+    case contrast02 = "contrast02" // 撞色02
+    case contrast03 = "contrast03" // 撞色03
+    case contrast04 = "contrast04" // 撞色04
+    case contrast05 = "contrast05" // 撞色05
 
     /// 中文显示名称
     var displayName: String {
@@ -26,6 +31,11 @@ enum WidgetSkinType: String, Codable, CaseIterable {
         case .dark: return "深空灰"
         case .mint: return "薄荷绿"
         case .pink: return "樱花粉"
+        case .contrast01: return "撞色01"
+        case .contrast02: return "撞色02"
+        case .contrast03: return "撞色03"
+        case .contrast04: return "撞色04"
+        case .contrast05: return "撞色05"
         }
     }
 }
@@ -40,6 +50,7 @@ struct WidgetSkinConfig {
     let iconColor: Color       // 图标颜色
     let checkboxColor: Color   // 复选框颜色
     let mediumPriorityColor: Color // 中等优先级旗帜颜色（避免与背景撞色）
+    var backgroundImageName: String? = nil // 背景图片名称 (Assets 中)
 
     /// 背景渐变
     var backgroundGradient: LinearGradient {
@@ -113,6 +124,61 @@ struct WidgetSkinConfig {
                 checkboxColor: Color(hex: 0x6D1B42),
                 mediumPriorityColor: Color(hex: 0xFB8C00)  // 标准橙色
             )
+        case .contrast01:
+            // 撞色01：雪青/水红（紫粉水墨渐变）- 浅色背景需深色文字
+            return WidgetSkinConfig(
+                startColor: Color(hex: 0xA59ACA), centerColor: Color(hex: 0xF4B3C2), endColor: Color(hex: 0xE8CADB),
+                textColor: Color(hex: 0x4A3B5C),         // 深紫色文字
+                secondaryTextColor: Color(hex: 0x6B5A7A), // 中紫色
+                iconColor: Color(hex: 0x4A3B5C),
+                checkboxColor: Color(hex: 0x5A4A6A),
+                mediumPriorityColor: Color(hex: 0xE57373), // 浅红（在粉紫背景上清晰）
+                backgroundImageName: "contrast01"
+            )
+        case .contrast02:
+            // 撞色02：浅天蓝/绿萝纱（蓝绿水墨渐变）- 浅色背景需深色文字
+            return WidgetSkinConfig(
+                startColor: Color(hex: 0x90C9D8), centerColor: Color(hex: 0xB0D8E0), endColor: Color(hex: 0x99AAA2),
+                textColor: Color(hex: 0x2A4A4A),         // 深青色文字
+                secondaryTextColor: Color(hex: 0x4A6A6A), // 中青色
+                iconColor: Color(hex: 0x2A4A4A),
+                checkboxColor: Color(hex: 0x3A5A5A),
+                mediumPriorityColor: Color(hex: 0xFB8C00), // 标准橙色
+                backgroundImageName: "contrast02"
+            )
+        case .contrast03:
+            // 撞色03：柔雾蓝/群青（蓝色水墨渐变）- 浅色背景需深色文字
+            return WidgetSkinConfig(
+                startColor: Color(hex: 0xAFC9CF), centerColor: Color(hex: 0x8AB0C0), endColor: Color(hex: 0x3658A1),
+                textColor: Color(hex: 0x1A3A5A),         // 深蓝色文字
+                secondaryTextColor: Color(hex: 0x3A5A7A), // 中蓝色
+                iconColor: Color(hex: 0x1A3A5A),
+                checkboxColor: Color(hex: 0x2A4A6A),
+                mediumPriorityColor: Color(hex: 0xFFB74D), // 亮橙色
+                backgroundImageName: "contrast03"
+            )
+        case .contrast04:
+            // 撞色04：远天蓝/天水碧（青蓝水墨渐变）- 浅色背景需深色文字
+            return WidgetSkinConfig(
+                startColor: Color(hex: 0xD2DEE5), centerColor: Color(hex: 0xA0C8D0), endColor: Color(hex: 0x55A3AE),
+                textColor: Color(hex: 0x1A4A5A),         // 深青蓝色文字
+                secondaryTextColor: Color(hex: 0x3A6A7A), // 中青蓝色
+                iconColor: Color(hex: 0x1A4A5A),
+                checkboxColor: Color(hex: 0x2A5A6A),
+                mediumPriorityColor: Color(hex: 0xFB8C00), // 标准橙色
+                backgroundImageName: "contrast04"
+            )
+        case .contrast05:
+            // 撞色05：晴山/盈盈（蓝紫粉水墨渐变）- 浅色背景需深色文字
+            return WidgetSkinConfig(
+                startColor: Color(hex: 0xA4B8DB), centerColor: Color(hex: 0xC8C0E0), endColor: Color(hex: 0xE8CADB),
+                textColor: Color(hex: 0x3A3A5C),         // 深蓝紫色文字
+                secondaryTextColor: Color(hex: 0x5A5A7C), // 中蓝紫色
+                iconColor: Color(hex: 0x3A3A5C),
+                checkboxColor: Color(hex: 0x4A4A6C),
+                mediumPriorityColor: Color(hex: 0xE57373), // 浅红
+                backgroundImageName: "contrast05"
+            )
         }
     }
 }
@@ -127,6 +193,11 @@ enum WidgetSkinAppEnum: String, AppEnum {
     case dark = "dark"
     case mint = "mint"
     case pink = "pink"
+    case contrast01 = "contrast01"
+    case contrast02 = "contrast02"
+    case contrast03 = "contrast03"
+    case contrast04 = "contrast04"
+    case contrast05 = "contrast05"
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "皮肤主题")
 
@@ -136,7 +207,12 @@ enum WidgetSkinAppEnum: String, AppEnum {
         .white: DisplayRepresentation(title: "纯净白", subtitle: "简约风格"),
         .dark: DisplayRepresentation(title: "深空灰", subtitle: "深色主题"),
         .mint: DisplayRepresentation(title: "薄荷绿", subtitle: "清新自然"),
-        .pink: DisplayRepresentation(title: "樱花粉", subtitle: "温柔少女")
+        .pink: DisplayRepresentation(title: "樱花粉", subtitle: "温柔少女"),
+        .contrast01: DisplayRepresentation(title: "撞色01", subtitle: "蓝紫渐变"),
+        .contrast02: DisplayRepresentation(title: "撞色02", subtitle: "红粉渐变"),
+        .contrast03: DisplayRepresentation(title: "撞色03", subtitle: "绿黄渐变"),
+        .contrast04: DisplayRepresentation(title: "撞色04", subtitle: "橙紫撞色"),
+        .contrast05: DisplayRepresentation(title: "撞色05", subtitle: "青蓝渐变")
     ]
 
     /// 转换为 WidgetSkinType（followApp 返回 nil，需要从 App 设置读取）

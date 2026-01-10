@@ -247,22 +247,51 @@ class TaskNotifier extends StateNotifier<List<Task>> {
 
   void _init() {
     database.watchAllTasks().listen((dbTasks) {
-      final tasks = dbTasks.map(_mapDbTaskToModel).toList()
-        ..sort((a, b) {
-          // 简单排序：未完成在前，高优先级在前，创建时间倒序
-          if (a.isCompleted != b.isCompleted) {
-            return a.isCompleted ? 1 : -1;
-          }
-          if (a.priority.value != b.priority.value) {
-            return b.priority.value.compareTo(a.priority.value); // High to Low
-          }
-          return b.createdAt.compareTo(a.createdAt);
-        });
+      final tasks = _sortTasks(dbTasks.map(_mapDbTaskToModel).toList());
+
+      // 避免数据相同时重复刷新 UI（防止启动闪屏）
+      // Drift 的 watch stream 可能在数据不变时也触发回调
+      if (_isTaskListEqual(state, tasks)) {
+        return;
+      }
+
       state = tasks;
 
       // 同步到移动端桌面小组件（Android/iOS）
       _updateHomeWidget(tasks);
     });
+  }
+
+  /// 任务排序逻辑（提取公共方法）
+  List<Task> _sortTasks(List<Task> tasks) {
+    return tasks
+      ..sort((a, b) {
+        // 简单排序：未完成在前，高优先级在前，创建时间倒序
+        if (a.isCompleted != b.isCompleted) {
+          return a.isCompleted ? 1 : -1;
+        }
+        if (a.priority.value != b.priority.value) {
+          return b.priority.value.compareTo(a.priority.value); // High to Low
+        }
+        return b.createdAt.compareTo(a.createdAt);
+      });
+  }
+
+  /// 比较两个任务列表是否内容相同
+  /// 用于避免 Drift watch stream 重复触发导致的无意义 UI 刷新
+  bool _isTaskListEqual(List<Task> oldList, List<Task> newList) {
+    if (oldList.length != newList.length) return false;
+    for (int i = 0; i < oldList.length; i++) {
+      if (oldList[i].id != newList[i].id ||
+          oldList[i].title != newList[i].title ||
+          oldList[i].isCompleted != newList[i].isCompleted ||
+          oldList[i].dueDate != newList[i].dueDate ||
+          oldList[i].priority != newList[i].priority ||
+          oldList[i].updatedAt != newList[i].updatedAt) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// 更新移动端桌面小组件数据
@@ -596,25 +625,38 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       return 0;
     }
 
-    // 检查今天是否已经执行过（避免同一天重复查询数据库）
-    if (notifier.hasCheckedToday()) {
-      debugPrint('[AutoPostpone] 今天已检查过，跳过');
+    // 检查今天是否已经执行过（实时读取 SharedPreferences，与 Android Widget 共享标记位）
+    if (await notifier.hasCheckedToday()) {
+      debugPrint('[AutoPostpone] 今天已检查过（Flutter 或 Android Widget），跳过');
       return 0;
     }
 
-    // 查找需要顺延的任务
-    final tasksToPostpone = state.where((task) {
+    // 直接从数据库查询过期任务（不依赖 state，避免同步后 state 未更新的时序问题）
+    final allDbTasks = await database.getAllTasks();
+
+    // 调试日志：打印所有 autoPostpone=true 的任务及其日期
+    final autoPostponeTasks = allDbTasks.where((t) => t.autoPostpone).toList();
+    debugPrint('[AutoPostpone] 数据库中 autoPostpone=true 的任务: ${autoPostponeTasks.length} 个');
+    for (final t in autoPostponeTasks) {
+      final dueDateStr = t.dueDate != null
+          ? '${t.dueDate!.year}-${t.dueDate!.month}-${t.dueDate!.day}'
+          : 'null';
+      final isOverdue = t.dueDate != null && AmberDateUtils.isOverdue(t.dueDate!);
+      debugPrint('[AutoPostpone]   - "${t.title}" dueDate=$dueDateStr isOverdue=$isOverdue isCompleted=${t.isCompleted}');
+    }
+
+    final tasksToPostpone = allDbTasks.where((dbTask) {
       // 条件：autoPostpone=true AND 已过期 AND 未完成 AND 未删除
-      if (!task.autoPostpone) return false;
-      if (task.isCompleted || task.isDeleted) return false;
-      if (task.dueDate == null) return false;
-      return AmberDateUtils.isOverdue(task.dueDate!);
+      if (!dbTask.autoPostpone) return false;
+      if (dbTask.isCompleted || dbTask.isDeleted) return false;
+      if (dbTask.dueDate == null) return false;
+      return AmberDateUtils.isOverdue(dbTask.dueDate!);
     }).toList();
 
-    // 无论是否有任务需要顺延，都标记今天已检查
-    final todayStr = TaskManagementSettingsNotifier.getTodayDateString();
-    notifier.setLastAutoPostponeDate(todayStr);
-    debugPrint('[AutoPostpone] 已标记今日($todayStr)检查完成');
+    // 无论是否有任务需要顺延，都标记今天已检查（含时分秒）
+    final nowStr = TaskManagementSettingsNotifier.getNowDateTimeString();
+    notifier.setLastAutoPostponeDate(nowStr);
+    debugPrint('[AutoPostpone] 已标记检查完成: $nowStr');
 
     if (tasksToPostpone.isEmpty) {
       debugPrint('[AutoPostpone] 没有需要顺延的任务');
@@ -625,10 +667,10 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     final today = AmberDateUtils.normalizeToUtcDate(DateTime.now());
     final now = DateTime.now();
 
-    for (final task in tasksToPostpone) {
+    for (final dbTask in tasksToPostpone) {
       await database.updateTask(
         db.TasksCompanion(
-          id: drift.Value(task.id),
+          id: drift.Value(dbTask.id),
           dueDate: drift.Value(today),
           updatedAt: drift.Value(now),
         ),

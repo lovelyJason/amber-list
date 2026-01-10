@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -123,8 +125,65 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
   /// 当检测到首次同步且双端都有数据时调用
   FirstSyncConflictCallback? onFirstSyncConflict;
 
+  /// 首次同步完成标志 Completer
+  /// 用于桌面端启动时等待首次同步完成
+  Completer<bool>? _initialSyncCompleter;
+
+  /// 是否已触发首次同步
+  bool _hasTriggeredInitialSync = false;
+
+  /// 初始化完成标志 Completer
+  /// 用于确保外部代码可以等待配置加载完成
+  final Completer<void> _loadCompleter = Completer<void>();
+
   SyncStateNotifier(this._ref) : super(const SyncState()) {
     _initialize();
+  }
+
+  /// 等待初始化完成（配置加载完成）
+  /// 确保 syncTypeProvider 等已从 SharedPreferences 加载
+  Future<void> waitForLoad() => _loadCompleter.future;
+
+  /// 等待首次同步完成（供启动流程调用）
+  ///
+  /// 桌面端启动时调用此方法，阻塞 Splash 隐藏直到同步完成
+  /// 返回 true = 同步成功，false = 同步失败或未配置
+  ///
+  /// 注意：此方法只会触发一次同步，后续调用直接返回缓存结果
+  Future<bool> waitForInitialSync() async {
+    // 检查是否配置了云同步
+    final syncType = _ref.read(syncTypeProvider);
+    if (syncType == null) {
+      debugPrint('[SyncProvider] 未配置云同步，跳过首次同步');
+      return false;
+    }
+
+    // 如果已经有 Completer 在等待，直接返回
+    if (_initialSyncCompleter != null) {
+      return _initialSyncCompleter!.future;
+    }
+
+    // 如果已经触发过，返回 false（避免重复触发）
+    if (_hasTriggeredInitialSync) {
+      debugPrint('[SyncProvider] 首次同步已触发过，跳过');
+      return false;
+    }
+
+    // 创建 Completer 并触发首次同步
+    _initialSyncCompleter = Completer<bool>();
+    _hasTriggeredInitialSync = true;
+
+    debugPrint('[SyncProvider] 桌面端启动，触发首次同步...');
+
+    try {
+      final success = await manualSync();
+      _initialSyncCompleter!.complete(success);
+      return success;
+    } catch (e) {
+      debugPrint('[SyncProvider] 首次同步异常: $e');
+      _initialSyncCompleter!.complete(false);
+      return false;
+    }
   }
 
   /// 初始化 - 加载所有配置并启动当前激活的同步
@@ -138,6 +197,11 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
       // 这样用户可以在 UI 上看到所有已配置的平台
       await _loadAllConfigs();
 
+      // 标记配置加载完成（无论成功与否）
+      if (!_loadCompleter.isCompleted) {
+        _loadCompleter.complete();
+      }
+
       // 3. 根据当前激活的同步类型启动自动同步
       if (syncType == SyncType.webdav) {
         await _startWebDavAutoSync();
@@ -147,6 +211,10 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     } catch (e) {
       debugPrint('[SyncProvider] 初始化失败: $e');
       state = state.copyWith(lastError: '初始化失败: $e');
+      // 即使失败也标记完成，避免永远阻塞
+      if (!_loadCompleter.isCompleted) {
+        _loadCompleter.complete();
+      }
     }
   }
 
@@ -214,9 +282,11 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     };
     await _syncManager!.initialize();
     _syncManager!.onSyncComplete = (success) {
-      if (success) {
-        debugPrint('[SyncProvider] 自动同步成功，刷新数据库连接...');
+      if (success && _syncManager!.hasDataChanged) {
+        debugPrint('[SyncProvider] 自动同步成功且有数据变化，刷新数据库连接...');
         _ref.invalidate(databaseProvider);
+      } else if (success) {
+        debugPrint('[SyncProvider] 自动同步成功但无数据变化，跳过刷新');
       }
     };
 
@@ -503,9 +573,11 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     };
     await _syncManager!.initialize();
     _syncManager!.onSyncComplete = (success) {
-      if (success) {
-        debugPrint('[SyncProvider] 同步成功，刷新数据库连接...');
+      if (success && _syncManager!.hasDataChanged) {
+        debugPrint('[SyncProvider] 同步成功且有数据变化，刷新数据库连接...');
         _ref.invalidate(databaseProvider);
+      } else if (success) {
+        debugPrint('[SyncProvider] 同步成功但无数据变化，跳过刷新');
       }
     };
     // 设置冲突决策回调

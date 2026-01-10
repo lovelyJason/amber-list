@@ -2,16 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/constants.dart';
 import '../../core/utils/responsive_helper.dart';
 import '../widgets/common/toast/toast_manager.dart';
-import '../widgets/common/toast/toast_types.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import '../providers/native_sticky_note_provider.dart';
@@ -24,10 +21,7 @@ import 'pomodoro/pomodoro_page.dart';
 import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../pages/sticky_note/sticky_note_page.dart';
-import '../widgets/debug/sticky_note_debugger.dart';
-import '../widgets/debug/prefs_editor.dart';
-import '../../core/services/splash_service.dart';
-import '../../data/datasources/local/database.dart' show AppDatabase;
+import '../widgets/debug/debug_toolbox.dart';
 import '../widgets/common/kept_alive_wrapper.dart';
 
 /// 主页面
@@ -226,7 +220,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   highlightElevation: 8,
                   backgroundColor: AmberColors.primary,
                   child: const Icon(Icons.bug_report, color: Colors.white),
-                  onPressed: () => _showDebugToolbox(context),
+                  onPressed: () => showDebugToolbox(context, ref),
                 ),
               ),
             ),
@@ -308,95 +302,15 @@ class _HomePageState extends ConsumerState<HomePage> {
               tooltip: '调试工具箱',
               backgroundColor: AmberColors.primary,
               child: const Icon(Icons.bug_report, color: Colors.white, size: 20),
-              onPressed: () => _showDebugToolbox(context),
+              onPressed: () => showDebugToolbox(context, ref),
             )
           : null,
     );
   }
 
-  /// 构建移动端同步按钮
+  /// 获取移动端同步按钮（独立组件，避免影响父组件 rebuild）
   Widget _buildMobileSyncButton(WidgetRef ref) {
-    // 监听同步状态和配置
-    final syncState = ref.watch(syncStateProvider);
-    final syncType = ref.watch(syncTypeProvider);
-
-    // 未配置同步则隐藏（syncType 为 null 表示未选择任何同步方式）
-    if (syncType == null) {
-      return const SizedBox.shrink();
-    }
-
-    if (syncState.isSyncing) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        width: 24,
-        height: 24,
-        child: const Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                AmberColors.textSecondary,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return IconButton(
-      icon: const Icon(
-        FluentIcons.arrow_sync_24_regular,
-        color: AmberColors.textSecondary,
-      ),
-      tooltip: '立即同步',
-      onPressed: () async {
-        // 设置冲突决策回调（在同步过程中弹窗让用户选择）
-        ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
-          if (!mounted) return null;
-          // 弹出冲突决策弹窗
-          return showSyncConflictDialog(context, conflicts: conflicts);
-        };
-
-        // 设置首次同步冲突回调（检测到双端都有数据时弹窗）
-        ref.read(syncStateProvider.notifier).onFirstSyncConflict = (conflict) async {
-          if (!mounted) return null;
-          // 弹出首次同步冲突弹窗
-          return showFirstSyncConflictDialog(
-            context,
-            localTaskCount: conflict.localTaskCount,
-            remoteVersion: conflict.remoteVersion,
-            remoteDevice: conflict.remoteDevice,
-            remoteLastSync: conflict.remoteLastSync,
-          );
-        };
-
-        final success = await ref.read(syncStateProvider.notifier).manualSync();
-        if (success) {
-          ref.read(soundServiceProvider).playSuccess();
-        } else if (mounted) {
-          // 同步失败，检查错误信息并提示
-          final syncState = ref.read(syncStateProvider);
-          final errorMsg = syncState.lastError ?? '同步失败';
-
-          // 针对 429 错误特殊处理
-          if (errorMsg.contains('429')) {
-            ToastManager().show(
-              context,
-              '请求太频繁，请稍后再试',
-              type: ToastType.warning,
-            );
-          } else {
-            ToastManager().show(
-              context,
-              errorMsg,
-              type: ToastType.error,
-            );
-          }
-        }
-      },
-    );
+    return const _MobileSyncButton();
   }
 
   /// 获取当前视图的标题（用于移动端 AppBar）
@@ -431,424 +345,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       MaterialPageRoute(
         builder: (_) => const SettingsPage(windowId: null),
       ),
-    );
-  }
-
-  /// 显示 Debug 调试工具箱弹窗
-  void _showDebugToolbox(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(24),
-          child: Container(
-            width: 320,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AmberColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.build_circle,
-                        color: AmberColors.primary,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      '调试工具箱',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AmberColors.textPrimary,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        Icons.close,
-                        size: 20,
-                        color: AmberColors.textSecondary,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: AmberColors.sidebarBackground,
-                        padding: const EdgeInsets.all(8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildDebugOption(
-                  context,
-                  icon: Icons.sticky_note_2_rounded,
-                  label: '便签注册表监控',
-                  description: '查看便签窗口状态与进程',
-                  color: Colors.orange,
-                  onTap: () {
-                    Navigator.pop(context);
-                    showDialog(
-                      context: context,
-                      builder: (context) => const Dialog(
-                        backgroundColor: Colors.transparent,
-                        child: StickyNoteDebugger(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildDebugOption(
-                  context,
-                  icon: Icons.settings_applications_rounded,
-                  label: 'SharedPreferences Editor',
-                  description: '查看和修改本地配置 (Prefs)',
-                  color: Colors.blueGrey,
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const PrefsEditor()),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildDebugOption(
-                  context,
-                  icon: Icons.screen_lock_portrait_rounded,
-                  label: 'Splash 屏幕预览',
-                  description: '显示启动 Splash 屏幕 3 秒',
-                  color: Colors.amber,
-                  onTap: () async {
-                    Navigator.pop(context);
-                    // 调用 SplashService 显示 Splash
-                    await SplashService.showSplash(duration: 3000);
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildDebugOption(
-                  context,
-                  icon: Icons.restore_page,
-                  label: '恢复出厂设置',
-                  description: '清空所有数据、配置，恢复初始安装状态',
-                  color: Colors.red,
-                  onTap: () async {
-                    // Double check dialog
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('⚠️ 恢复出厂设置'),
-                        content: const Text(
-                          '此操作将清除所有数据和设置：\n\n'
-                          '• 所有任务、笔记、番茄钟记录\n'
-                          '• 所有设置和偏好配置\n'
-                          '• 云同步配置和登录状态\n'
-                          '• 激活状态\n\n'
-                          '应用将恢复到首次安装时的状态。\n'
-                          '此操作无法撤销！',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('取消'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
-                            child: const Text('确认重置'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (confirm == true) {
-                      Navigator.pop(context);
-                      await _performFactoryReset(context);
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildDebugOption(
-                  context,
-                  icon: Icons.vpn_key_rounded,
-                  label: '生成激活码',
-                  description: '生成应用激活码（仅生成）',
-                  color: Colors.purple,
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showActivationCodeGenerator(context);
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 执行出厂重置
-  ///
-  /// 清除所有本地数据和配置，恢复到首次安装状态：
-  /// 1. 关闭数据库连接
-  /// 2. 删除数据库文件（包括 WAL 和 SHM）
-  /// 3. 清除 SharedPreferences（所有设置和配置）
-  /// 4. 刷新所有 Provider，重新创建数据库
-  Future<void> _performFactoryReset(BuildContext context) async {
-    try {
-      // 1. 关闭数据库连接
-      await ref.read(databaseProvider).close();
-
-      // 2. 删除数据库文件（包括 WAL 和 SHM 文件）
-      final dbPath = await AppDatabase.getDatabasePath();
-      final dbFile = File(dbPath);
-      final walFile = File('$dbPath-wal');
-      final shmFile = File('$dbPath-shm');
-
-      if (await dbFile.exists()) {
-        await dbFile.delete();
-        debugPrint('[FactoryReset] 已删除数据库文件: $dbPath');
-      }
-      if (await walFile.exists()) {
-        await walFile.delete();
-        debugPrint('[FactoryReset] 已删除 WAL 文件');
-      }
-      if (await shmFile.exists()) {
-        await shmFile.delete();
-        debugPrint('[FactoryReset] 已删除 SHM 文件');
-      }
-
-      // 3. 清除所有 SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      debugPrint('[FactoryReset] 已清除 SharedPreferences');
-
-      // 4. 刷新关键 Provider，让它们重新从空状态开始
-      // 注意：invalidate databaseProvider 会触发数据库重建
-      ref.invalidate(databaseProvider);
-      ref.invalidate(taskProvider);
-      ref.invalidate(tagsProvider);
-      ref.invalidate(syncTypeProvider);
-      ref.invalidate(syncConfigProvider);
-      ref.invalidate(activationProvider);
-      ref.invalidate(displaySettingsProvider);
-      ref.invalidate(userProfileProvider);
-
-      if (context.mounted) {
-        ToastManager().show(
-          context,
-          '已恢复出厂设置，请重启应用',
-          type: ToastType.success,
-          position: ToastPosition.top,
-        );
-      }
-    } catch (e) {
-      debugPrint('[FactoryReset] 重置失败: $e');
-      if (context.mounted) {
-        ToastManager().show(
-          context,
-          '重置失败: $e',
-          type: ToastType.error,
-          position: ToastPosition.top,
-        );
-      }
-    }
-  }
-
-  /// 生成激活码
-  /// 格式：AMBER-XXXXX-XXXXX-XXXXX（琥珀前缀 + 15位随机码）
-  String _generateActivationCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易混淆的字符 I/1, O/0
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final buffer = StringBuffer('AMBER-');
-
-    for (var i = 0; i < 3; i++) {
-      if (i > 0) buffer.write('-');
-      for (var j = 0; j < 5; j++) {
-        final index = (random ~/ (i * 5 + j + 1) + DateTime.now().microsecondsSinceEpoch + i * j) % chars.length;
-        buffer.write(chars[index]);
-      }
-    }
-
-    return buffer.toString();
-  }
-
-  /// 显示激活码生成器弹窗
-  void _showActivationCodeGenerator(BuildContext context) {
-    String code = _generateActivationCode();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Dialog(
-              backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.all(24),
-              child: Container(
-                width: 360,
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 头部图标
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.purple.shade400,
-                            Colors.purple.shade600,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.vpn_key_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '激活码生成器',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AmberColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '点击刷新按钮生成新的激活码',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AmberColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // 激活码展示区
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 20,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.purple.withValues(alpha: 0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: SelectableText(
-                        code,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.5,
-                          fontFamily: 'monospace',
-                          color: Colors.purple.shade700,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    // 操作按钮
-                    Row(
-                      children: [
-                        // 刷新按钮
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                code = _generateActivationCode();
-                              });
-                            },
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text('刷新'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.purple,
-                              side: BorderSide(color: Colors.purple.shade300),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // 复制按钮
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: code));
-                              ToastManager().show(
-                                context,
-                                '激活码已复制',
-                                type: ToastType.success,
-                              );
-                            },
-                            icon: const Icon(Icons.copy_rounded, size: 18),
-                            label: const Text('复制'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 关闭按钮
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('关闭'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -982,66 +478,107 @@ class _HomePageState extends ConsumerState<HomePage> {
       ],
     );
   }
+}
 
-  Widget _buildDebugOption(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String description,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          border: Border.all(color: AmberColors.divider),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AmberColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    description,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AmberColors.textSecondary,
-                    ),
-                  ),
-                ],
+/// 移动端同步按钮（独立组件）
+///
+/// 抽离成独立 ConsumerWidget，避免 syncStateProvider/syncTypeProvider 的变化
+/// 触发整个 HomePage rebuild，导致启动时列表抖动
+class _MobileSyncButton extends ConsumerWidget {
+  const _MobileSyncButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 监听同步状态和配置（仅影响本组件 rebuild）
+    final syncState = ref.watch(syncStateProvider);
+    final syncType = ref.watch(syncTypeProvider);
+
+    // 未配置同步则隐藏（syncType 为 null 表示未选择任何同步方式）
+    if (syncType == null) {
+      return const SizedBox.shrink();
+    }
+
+    if (syncState.isSyncing) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        width: 24,
+        height: 24,
+        child: const Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                AmberColors.textSecondary,
               ),
             ),
-            const Icon(
-              Icons.chevron_right,
-              color: AmberColors.textDisabled,
-              size: 20,
-            ),
-          ],
+          ),
         ),
+      );
+    }
+
+    return IconButton(
+      icon: const Icon(
+        FluentIcons.arrow_sync_24_regular,
+        color: AmberColors.textSecondary,
       ),
+      tooltip: '立即同步',
+      onPressed: () => _onSyncPressed(context, ref),
     );
+  }
+
+  /// 同步按钮点击处理
+  Future<void> _onSyncPressed(BuildContext context, WidgetRef ref) async {
+    // 设置冲突决策回调（在同步过程中弹窗让用户选择）
+    ref.read(syncStateProvider.notifier).onConflictDetected = (
+      conflicts, {
+      int autoPostponeMergedCount = 0,
+    }) async {
+      if (!context.mounted) return null;
+      // 弹出冲突决策弹窗
+      return showSyncConflictDialog(
+        context,
+        conflicts: conflicts,
+        autoPostponeMergedCount: autoPostponeMergedCount,
+      );
+    };
+
+    // 设置首次同步冲突回调（检测到双端都有数据时弹窗）
+    ref.read(syncStateProvider.notifier).onFirstSyncConflict = (conflict) async {
+      if (!context.mounted) return null;
+      // 弹出首次同步冲突弹窗
+      return showFirstSyncConflictDialog(
+        context,
+        localTaskCount: conflict.localTaskCount,
+        remoteVersion: conflict.remoteVersion,
+        remoteDevice: conflict.remoteDevice,
+        remoteLastSync: conflict.remoteLastSync,
+      );
+    };
+
+    final success = await ref.read(syncStateProvider.notifier).manualSync();
+    if (success) {
+      ref.read(soundServiceProvider).playSuccess();
+    } else if (context.mounted) {
+      // 同步失败，检查错误信息并提示
+      final syncState = ref.read(syncStateProvider);
+      final errorMsg = syncState.lastError ?? '同步失败';
+
+      // 针对 429 错误特殊处理
+      if (errorMsg.contains('429')) {
+        ToastManager().show(
+          context,
+          '请求太频繁，请稍后再试',
+          type: ToastType.warning,
+        );
+      } else {
+        ToastManager().show(
+          context,
+          errorMsg,
+          type: ToastType.error,
+        );
+      }
+    }
   }
 }

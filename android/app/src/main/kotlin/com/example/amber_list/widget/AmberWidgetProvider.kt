@@ -74,7 +74,10 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        Log.d(TAG, "onUpdate: ${appWidgetIds.size} widgets")
+        // Perform auto-postpone before updating widgets
+        // This ensures overdue tasks are moved to today on each widget refresh
+        // Uses lastAutoPostponeDate to avoid repeated execution on the same day
+        WidgetDatabaseHelper.performAutoPostpone(context)
 
         for (appWidgetId in appWidgetIds) {
             updateAppWidget(context, appWidgetManager, appWidgetId)
@@ -87,7 +90,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             ACTION_TOGGLE_TASK -> {
                 val taskId = intent.getStringExtra(EXTRA_TASK_ID)
-                Log.d(TAG, "Toggle task clicked (legacy): $taskId")
 
                 if (taskId != null) {
                     // Launch app with deep link to toggle task
@@ -101,7 +103,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
             }
             ACTION_TOGGLE_TASK_DIRECT -> {
                 val taskId = intent.getStringExtra(EXTRA_TASK_ID)
-                Log.d(TAG, "Direct toggle task clicked: $taskId")
 
                 if (taskId != null) {
                     // Toggle task directly in SQLite database (no app launch)
@@ -123,13 +124,11 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 }
             }
             ACTION_OPEN_APP -> {
-                Log.d(TAG, "Open app clicked")
                 val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
                 launchIntent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 context.startActivity(launchIntent)
             }
             ACTION_NEXT_PAGE -> {
-                Log.d(TAG, "Next page clicked (small)")
                 // Get current page and total pages from prefs
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 val tasks = loadTasks(context)
@@ -143,8 +142,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 currentPage = (currentPage + 1) % totalPages
                 prefs.edit().putInt("small_widget_page", currentPage).apply()
 
-                Log.d(TAG, "Small widget switched to page ${currentPage + 1}/$totalPages")
-
                 // Refresh all widgets
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val widgetIds = appWidgetManager.getAppWidgetIds(
@@ -155,7 +152,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 }
             }
             ACTION_NEXT_PAGE_MEDIUM -> {
-                Log.d(TAG, "Next page clicked (medium)")
                 // Get current page and total pages from prefs
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 val tasks = loadTasks(context)
@@ -169,8 +165,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 currentPage = (currentPage + 1) % totalPages
                 prefs.edit().putInt("medium_widget_page", currentPage).apply()
 
-                Log.d(TAG, "Medium widget switched to page ${currentPage + 1}/$totalPages")
-
                 // Refresh medium widgets
                 val appWidgetManager = AppWidgetManager.getInstance(context)
                 val widgetIds = appWidgetManager.getAppWidgetIds(
@@ -181,7 +175,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 }
             }
             ACTION_PREV_MONTH -> {
-                Log.d(TAG, "Previous month clicked")
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 var monthOffset = prefs.getInt("large_widget_month_offset", 0)
                 monthOffset--
@@ -189,7 +182,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 refreshLargeWidgets(context)
             }
             ACTION_NEXT_MONTH -> {
-                Log.d(TAG, "Next month clicked")
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 var monthOffset = prefs.getInt("large_widget_month_offset", 0)
                 monthOffset++
@@ -197,14 +189,12 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 refreshLargeWidgets(context)
             }
             ACTION_TODAY -> {
-                Log.d(TAG, "Today clicked")
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putInt("large_widget_month_offset", 0).apply()
                 refreshLargeWidgets(context)
             }
             ACTION_OPEN_DAY -> {
                 val dateStr = intent.getStringExtra(EXTRA_DAY_DATE)
-                Log.d(TAG, "Open day clicked: $dateStr")
                 if (dateStr != null) {
                     // Launch app with deep link to calendar day view
                     val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
@@ -262,15 +252,14 @@ open class AmberWidgetProvider : AppWidgetProvider() {
             updateAppWidget(context, appWidgetManager, widgetId)
         }
 
-        Log.d(TAG, "Refreshed all widgets: ${smallIds.size} small, ${mediumIds.size} medium, ${largeIds.size} large")
     }
 
     override fun onEnabled(context: Context) {
-        Log.d(TAG, "Widget enabled")
+        // Widget enabled
     }
 
     override fun onDisabled(context: Context) {
-        Log.d(TAG, "Widget disabled")
+        // Widget disabled
     }
 
     /**
@@ -282,7 +271,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetId: Int
     ) {
-        Log.d(TAG, "Widget $appWidgetId updating, forced size: ${getWidgetSize()}")
 
         // Load tasks from SharedPreferences
         val tasks = loadTasks(context)
@@ -355,10 +343,26 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
         // Load tap text to complete setting
         val tapTextToComplete = loadTapTextToComplete(context)
-        Log.d(TAG, "Small widget tapTextToComplete: $tapTextToComplete")
 
         // Apply skin background and colors
         views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+
+        // Text & Background Image Config
+        if (skinConfig.backgroundImageRes != 0) {
+            views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
+            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+            // Make layout background transparent or semi-transparent if needed, 
+            // but keeping it as fallback/tint is often good. 
+            // Let's hide the container background if we have an image? 
+            // Or change it to a generic gradient?
+            // Existing logic sets 'widget_container' background. 
+            // For now, allow both (layering). Use transparent if image covers all.
+            // But let's set container bg to transparent to avoid tinting the image weirdly.
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
+        } else {
+            views.setViewVisibility(R.id.widget_bg_image, View.GONE)
+            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+        }
 
         // Apply skin color to header title
         views.setTextColor(R.id.widget_title, skinConfig.textColor)
@@ -379,9 +383,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Get tasks for current page
         val startIndex = currentPage * tasksPerPage
         val pageTasks = todayTasks.drop(startIndex).take(tasksPerPage)
-
-        // Note: Auto-rotation removed, now using manual next page button
-        Log.d(TAG, "Small widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks today tasks")
 
         // Task item IDs (5 items per page)
         val taskIds = arrayOf(R.id.task_item_1, R.id.task_item_2, R.id.task_item_3, R.id.task_item_4, R.id.task_item_5)
@@ -512,7 +513,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
      * - false: only checkbox toggles completion, clicking title opens app
      */
     private fun createMediumWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
-        Log.d(TAG, "createMediumWidget: starting with ${tasks.size} tasks")
         val views = RemoteViews(context.packageName, R.layout.widget_medium)
 
         // Load skin setting from SharedPreferences
@@ -520,10 +520,16 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
         // Load tap text to complete setting
         val tapTextToComplete = loadTapTextToComplete(context)
-        Log.d(TAG, "Medium widget tapTextToComplete: $tapTextToComplete")
 
         // Apply skin background
-        views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+        if (skinConfig.backgroundImageRes != 0) {
+            views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
+            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
+        } else {
+            views.setViewVisibility(R.id.widget_bg_image, View.GONE)
+            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+        }
 
         // Apply skin color to header title (今日任务)
         views.setTextColor(R.id.header_title, skinConfig.textColor)
@@ -562,8 +568,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Get tasks for current page
         val startIndex = currentPage * tasksPerPage
         val pageTasks = todayTasks.drop(startIndex).take(tasksPerPage)
-
-        Log.d(TAG, "Medium widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks today tasks")
 
         // Task item IDs
         val taskIds = arrayOf(R.id.task_item_1, R.id.task_item_2, R.id.task_item_3, R.id.task_item_4, R.id.task_item_5)
@@ -670,7 +674,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         )
         views.setOnClickPendingIntent(R.id.widget_container, openPendingIntent)
 
-        Log.d(TAG, "createMediumWidget: completed successfully")
         return views
     }
 
@@ -686,8 +689,20 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val skinConfig = loadWidgetSkin(context)
 
         // Apply skin background
-        views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
-        views.setInt(R.id.widget_header, "setBackgroundResource", skinConfig.headerBackgroundRes)
+        if (skinConfig.backgroundImageRes != 0) {
+            views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
+            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
+            // Also handle header background for large widget?
+            // If using full image, header might need to be transparent or semi-transparent.
+            // Let's make header background transparent too if image is used?
+            // Or keep it as a scrim.
+            views.setInt(R.id.widget_header, "setBackgroundResource", R.drawable.widget_header_background) // Keep scrim
+        } else {
+            views.setViewVisibility(R.id.widget_bg_image, View.GONE)
+            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_header, "setBackgroundResource", skinConfig.headerBackgroundRes)
+        }
 
         // Get month offset from prefs (0 = current month)
         val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
@@ -1296,7 +1311,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val secondaryTextColor: Int,
         val headerTextColor: Int,      // For header title (white on colored background)
         val dividerColor: Int,         // For Medium widget divider
-        val mediumPriorityIconRes: Int // Medium priority flag icon (avoids clash with background)
+        val mediumPriorityIconRes: Int, // Medium priority flag icon (avoids clash with background)
+        val backgroundImageRes: Int = 0 // Resource ID for image background (0 = none)
     )
 
     /**
@@ -1324,8 +1340,6 @@ open class AmberWidgetProvider : AppWidgetProvider() {
             val prefs = HomeWidgetPlugin.getData(context)
             val skinName = prefs.getString(KEY_SMALL_WIDGET_SKIN, "white") ?: "white"
 
-            Log.d(TAG, "Loading widget skin: $skinName")
-
             when (skinName) {
                 "amber" -> WidgetSkinConfig(
                     // 琥珀橙 - 活力品牌色
@@ -1335,7 +1349,18 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     secondaryTextColor = Color.parseColor("#6D4C41"), // 中棕色
                     headerTextColor = Color.parseColor("#FFFFFF"),
                     dividerColor = Color.parseColor("#FFAB40"),    // 活力橙分隔线
-                    mediumPriorityIconRes = R.drawable.ic_flag_medium_amber  // 深红色（避免与橙色背景撞色）
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium_amber,  // 深红色（避免与橙色背景撞色）
+                    backgroundImageRes = 0
+                )
+                "white" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_bg_white,
+                    headerBackgroundRes = R.drawable.widget_small_bg_white,
+                    textColor = Color.parseColor("#212121"),
+                    secondaryTextColor = Color.parseColor("#757575"),
+                    headerTextColor = Color.parseColor("#212121"),
+                    dividerColor = Color.parseColor("#E0E0E0"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = 0
                 )
                 "dark" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_dark,
@@ -1344,7 +1369,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     secondaryTextColor = Color.parseColor("#9E9E9E"),
                     headerTextColor = Color.parseColor("#FFFFFF"),
                     dividerColor = Color.parseColor("#616161"),
-                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = 0
                 )
                 "mint" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_mint,
@@ -1353,7 +1379,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     secondaryTextColor = Color.parseColor("#2E5752"),
                     headerTextColor = Color.parseColor("#FFFFFF"),
                     dividerColor = Color.parseColor("#4DB6AC"),
-                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = 0
                 )
                 "pink" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_pink,
@@ -1362,7 +1389,63 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     secondaryTextColor = Color.parseColor("#4A1228"),
                     headerTextColor = Color.parseColor("#FFFFFF"),
                     dividerColor = Color.parseColor("#F48FB1"),
-                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = 0
+                )
+                // 撞色01：雪青/水红（紫粉水墨渐变）- 浅色背景需深色文字
+                "contrast01" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_background, // Fallback/Underlay
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#4A3B5C"),         // 深紫色文字
+                    secondaryTextColor = Color.parseColor("#6B5A7A"), // 中紫色
+                    headerTextColor = Color.parseColor("#4A3B5C"),
+                    dividerColor = Color.parseColor("#8A7A9A"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = R.drawable.widget_skin_contrast_01
+                )
+                // 撞色02：浅天蓝/绿萝纱（蓝绿水墨渐变）- 浅色背景需深色文字
+                "contrast02" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_background,
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#2A4A4A"),         // 深青色文字
+                    secondaryTextColor = Color.parseColor("#4A6A6A"), // 中青色
+                    headerTextColor = Color.parseColor("#2A4A4A"),
+                    dividerColor = Color.parseColor("#6A8A8A"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,
+                    backgroundImageRes = R.drawable.widget_skin_contrast_02
+                )
+                // 撞色03：柔雾蓝/群青（蓝色水墨渐变）- 浅色背景需深色文字
+                "contrast03" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_background,
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#1A3A5A"),         // 深蓝色文字
+                    secondaryTextColor = Color.parseColor("#3A5A7A"), // 中蓝色
+                    headerTextColor = Color.parseColor("#1A3A5A"),
+                    dividerColor = Color.parseColor("#5A7A9A"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,
+                    backgroundImageRes = R.drawable.widget_skin_contrast_03
+                )
+                // 撞色04：远天蓝/天水碧（青蓝水墨渐变）- 浅色背景需深色文字
+                "contrast04" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_background,
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#1A4A5A"),         // 深青蓝色文字
+                    secondaryTextColor = Color.parseColor("#3A6A7A"), // 中青蓝色
+                    headerTextColor = Color.parseColor("#1A4A5A"),
+                    dividerColor = Color.parseColor("#5A8A9A"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,
+                    backgroundImageRes = R.drawable.widget_skin_contrast_04
+                )
+                // 撞色05：晴山/盈盈（蓝紫粉水墨渐变）- 浅色背景需深色文字
+                "contrast05" -> WidgetSkinConfig(
+                    backgroundRes = R.drawable.widget_small_background,
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#3A3A5C"),         // 深蓝紫色文字
+                    secondaryTextColor = Color.parseColor("#5A5A7C"), // 中蓝紫色
+                    headerTextColor = Color.parseColor("#3A3A5C"),
+                    dividerColor = Color.parseColor("#7A7A9C"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,
+                    backgroundImageRes = R.drawable.widget_skin_contrast_05
                 )
                 else -> WidgetSkinConfig(
                     // Default white skin
@@ -1372,7 +1455,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     secondaryTextColor = Color.parseColor("#757575"),
                     headerTextColor = Color.parseColor("#212121"),
                     dividerColor = Color.parseColor("#E0E0E0"),
-                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
+                    backgroundImageRes = 0
                 )
             }
         } catch (e: Exception) {
@@ -1385,7 +1469,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 secondaryTextColor = Color.parseColor("#6D4C41"),
                 headerTextColor = Color.parseColor("#FFFFFF"),
                 dividerColor = Color.parseColor("#FFAB40"),
-                mediumPriorityIconRes = R.drawable.ic_flag_medium_amber
+                mediumPriorityIconRes = R.drawable.ic_flag_medium_amber,
+                backgroundImageRes = 0
             )
         }
     }

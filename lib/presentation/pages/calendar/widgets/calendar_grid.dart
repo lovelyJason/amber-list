@@ -135,122 +135,144 @@ class CalendarGrid extends StatelessWidget {
         border: Border.all(color: Colors.grey[200]!),
       ),
       padding: const EdgeInsets.all(4),
-      child: Opacity(
-        opacity: isOutside ? 0.4 : 1.0,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 日期数字 - 使用 LayoutBuilder 判断是否有足够宽度显示今日图标和节假日
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // 需要至少 56px 才能显示日期(24) + 间距(4) + 图标(24) + 余量(4)
-                final showTodayIcon = constraints.maxWidth >= 56;
-                // 获取节假日名称
-                final holiday = ChineseHolidays.getHoliday(day);
+      // ClipRect 静默裁剪溢出内容，避免 iOS 上报 overflow 错误
+      child: ClipRect(
+        child: Opacity(
+          opacity: isOutside ? 0.4 : 1.0,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // 需要至少 56px 才能显示日期(24) + 间距(4) + 图标(24) + 余量(4)
+              final showTodayIcon = constraints.maxWidth >= 56;
+              // 获取节假日名称
+              final holiday = ChineseHolidays.getHoliday(day);
 
-                return Row(
-                  children: [
-                    Container(
-                      width: 24,
-                      height: 24,
-                      alignment: Alignment.center,
-                      decoration: isToday
-                          ? const BoxDecoration(
-                              color: AmberColors.primary,
-                              shape: BoxShape.circle,
-                            )
-                          : null,
-                      child: Text(
-                        '${day.day}',
-                        style: TextStyle(
-                          color: isToday
-                              ? Colors.white
-                              : (isOutside
-                                  ? AmberColors.textDisabled
-                                  : AmberColors.textPrimary),
-                          fontWeight:
-                              isToday ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                    // 仅在宽度足够时显示今日图标（桌面端显示，移动端隐藏）
-                    if (isToday && showTodayIcon) ...[
-                      const SizedBox(width: 4),
-                      ClipOval(
-                        child: Image.asset(
-                          'assets/images/mosquito_amber.png',
-                          width: 24,
-                          height: 24,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ],
-                    // 节假日名称显示
-                    if (holiday != null && !isToday) ...[
-                      const SizedBox(width: 4),
-                      Flexible(
+              // 动态计算可显示任务数（iOS 设备格子小，可能只能放 2 个）
+              // 可用高度 = 总高度 - 日期行(24) - 间距(4) - padding(8)
+              final availableHeight = constraints.maxHeight - 36;
+              // 每个任务项约 20px（fontSize 10 实际渲染 ~14 + padding 4 + margin 2）
+              // "+X more" 文本约 14px
+              const taskItemHeight = 20.0;
+              const moreTextHeight = 14.0;
+              // 计算最多能放几个任务（上限 3）
+              int maxTasks = (availableHeight / taskItemHeight).floor().clamp(0, 3);
+              // 如果任务数超过 maxTasks，需要预留 "+X more" 空间
+              if (dayTasks.length > maxTasks && maxTasks > 0) {
+                final remaining = availableHeight - (maxTasks * taskItemHeight);
+                if (remaining < moreTextHeight) {
+                  maxTasks = (maxTasks - 1).clamp(0, 3);
+                }
+              }
+              final visibleTasks = dayTasks.take(maxTasks).toList();
+              final hasMore = dayTasks.length > maxTasks;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 日期数字行
+                  Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: isToday
+                            ? const BoxDecoration(
+                                color: AmberColors.primary,
+                                shape: BoxShape.circle,
+                              )
+                            : null,
                         child: Text(
-                          holiday,
+                          '${day.day}',
+                          style: TextStyle(
+                            color: isToday
+                                ? Colors.white
+                                : (isOutside
+                                    ? AmberColors.textDisabled
+                                    : AmberColors.textPrimary),
+                            fontWeight:
+                                isToday ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                      // 仅在宽度足够时显示今日图标（桌面端显示，移动端隐藏）
+                      if (isToday && showTodayIcon) ...[
+                        const SizedBox(width: 4),
+                        ClipOval(
+                          child: Image.asset(
+                            'assets/images/mosquito_amber.png',
+                            width: 24,
+                            height: 24,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ],
+                      // 节假日名称显示
+                      if (holiday != null && !isToday) ...[
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            holiday,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: isOutside
+                                  ? AmberColors.textDisabled
+                                  : AmberColors.priorityHigh,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // 任务列表（根据可用空间动态显示 2-3 个）
+                  ...visibleTasks.map((task) {
+                    return Tooltip(
+                      message: task.title,
+                      waitDuration: const Duration(milliseconds: 500),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getPriorityColor(task.priority)
+                              .withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: _getPriorityColor(task.priority)
+                                .withValues(alpha: 0.5),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Text(
+                          task.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,
-                            color: isOutside
-                                ? AmberColors.textDisabled
-                                : AmberColors.priorityHigh,
+                            color: _getPriorityColor(task.priority),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                    ],
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 4),
-            // 任务列表 (最多显示3个)
-            ...dayTasks.take(3).map((task) {
-              return Tooltip(
-                message: task.title,
-                waitDuration: const Duration(milliseconds: 500),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 2),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getPriorityColor(task.priority)
-                        .withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: _getPriorityColor(task.priority)
-                          .withValues(alpha: 0.5),
-                      width: 0.5,
+                    );
+                  }),
+                  if (hasMore)
+                    Text(
+                      '+${dayTasks.length - maxTasks} more',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AmberColors.textSecondary,
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    task.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: _getPriorityColor(task.priority),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
+                ],
               );
-            }),
-            if (dayTasks.length > 3)
-              Text(
-                '+${dayTasks.length - 3} more',
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: AmberColors.textSecondary,
-                ),
-              ),
-          ],
+            },
+          ),
         ),
       ),
     );

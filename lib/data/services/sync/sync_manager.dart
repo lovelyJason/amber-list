@@ -71,9 +71,13 @@ typedef SyncProgressCallback = void Function(
 /// 冲突决策回调
 /// 当检测到需要用户决策的冲突时调用
 /// 返回用户对每个冲突的决策列表
+///
+/// [conflicts] 需要用户决策的冲突列表
+/// [autoPostponeMergedCount] 已自动合并的顺延冲突数量（仅 due_date 变化的冲突）
 typedef ConflictResolutionCallback = Future<List<ConflictResolution>?> Function(
-  List<RecordConflict> conflicts,
-);
+  List<RecordConflict> conflicts, {
+  int autoPostponeMergedCount,
+});
 
 /// 同步管理器
 class SyncManager {
@@ -125,6 +129,12 @@ class SyncManager {
 
   /// 是否正在同步
   bool _isSyncing = false;
+
+  /// 最后一次同步是否有数据变化
+  /// true = 有数据变化（下载/上传/合并）
+  /// false = 双端无变化，不需要刷新数据库连接
+  bool _hasDataChanged = false;
+  bool get hasDataChanged => _hasDataChanged;
 
   /// 初始化同步管理器
   Future<void> initialize() async {
@@ -270,6 +280,7 @@ class SyncManager {
     }
 
     _isSyncing = true;
+    _hasDataChanged = true; // 默认有变化，只有"双端无变化"时才设为 false
     _updateStatus(SyncStatus.connecting, '正在连接服务器...');
 
     try {
@@ -368,6 +379,7 @@ class SyncManager {
 
             _updateStatus(SyncStatus.success, '已是最新');
             _isSyncing = false; // 必须手动重置状态，因为直接返回了
+            _hasDataChanged = false; // 双端无变化，不需要刷新数据库
             return true;
           } else {
             debugPrint('[Sync] 预检查发现变化，继续完整同步流程');
@@ -593,8 +605,12 @@ class SyncManager {
     // ========== 关键步骤 0：验证下载的数据库完整性 ==========
     // 在替换本地数据库之前，必须先验证下载的文件是否损坏
     // 避免用损坏的数据库覆盖正常的本地数据
+    // 使用 testWalMode: true 测试 WAL 模式，因为临时文件没有被其他连接占用
     _updateStatus(SyncStatus.downloading, '验证数据库完整性...');
-    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(remoteDbPath);
+    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(
+      remoteDbPath,
+      testWalMode: true,
+    );
     if (!integrityResult.isOk) {
       debugPrint('[Sync] ❌ 下载的数据库损坏: ${integrityResult.message}');
       // 清理损坏的临时文件
@@ -678,8 +694,12 @@ class SyncManager {
     }
 
     // ========== 验证下载的数据库完整性 ==========
+    // 使用 testWalMode: true 测试 WAL 模式，因为临时文件没有被其他连接占用
     _updateStatus(SyncStatus.downloading, '验证数据库完整性...');
-    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(remoteDbPath);
+    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(
+      remoteDbPath,
+      testWalMode: true,
+    );
     if (!integrityResult.isOk) {
       debugPrint('[Sync] ❌ 下载的远程数据库损坏: ${integrityResult.message}');
       // 清理损坏的临时文件
@@ -722,7 +742,11 @@ class SyncManager {
         _updateStatus(SyncStatus.merging, '发现 ${conflicts.length} 个冲突，请选择...');
 
         // 调用回调，让 UI 层弹窗
-        final resolutions = await onConflictDetected!(conflicts);
+        // 同时传递自动顺延合并的数量，用于在弹窗中显示提示
+        final resolutions = await onConflictDetected!(
+          conflicts,
+          autoPostponeMergedCount: mergeResult.stats.autoPostponeMergedCount,
+        );
 
         if (resolutions == null || resolutions.length != conflicts.length) {
           // 用户取消或决策不完整，中止同步

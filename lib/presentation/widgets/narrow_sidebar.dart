@@ -246,9 +246,16 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
       if (syncState.isSyncing) return;
 
       // 设置冲突决策回调
-      ref.read(syncStateProvider.notifier).onConflictDetected = (conflicts) async {
+      ref.read(syncStateProvider.notifier).onConflictDetected = (
+        conflicts, {
+        int autoPostponeMergedCount = 0,
+      }) async {
         if (!mounted) return null;
-        return showSyncConflictDialog(context, conflicts: conflicts);
+        return showSyncConflictDialog(
+          context,
+          conflicts: conflicts,
+          autoPostponeMergedCount: autoPostponeMergedCount,
+        );
       };
 
       // 设置首次同步冲突回调（检测到双端都有数据时弹窗）

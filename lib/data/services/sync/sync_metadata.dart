@@ -234,7 +234,16 @@ class DatabaseIntegrityUtils {
   /// - [DatabaseIntegrityResult.corrupted] 数据库损坏
   /// - [DatabaseIntegrityResult.notFound] 文件不存在
   /// - [DatabaseIntegrityResult.error] 其他错误
-  static Future<DatabaseIntegrityResult> verifyDatabase(String dbPath) async {
+  ///
+  /// 参数：
+  /// - [dbPath] 数据库文件路径
+  /// - [testWalMode] 是否测试 WAL 模式（默认 false）
+  ///   - true: 用于验证下载的临时数据库文件（未被其他连接占用）
+  ///   - false: 用于验证正在使用的本地数据库（避免锁冲突）
+  static Future<DatabaseIntegrityResult> verifyDatabase(
+    String dbPath, {
+    bool testWalMode = false,
+  }) async {
     final file = File(dbPath);
     if (!await file.exists()) {
       return DatabaseIntegrityResult(
@@ -245,8 +254,28 @@ class DatabaseIntegrityUtils {
 
     sqlite3.Database? db;
     try {
-      // 以只读方式打开数据库
-      db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      // 根据参数选择打开模式：
+      // - testWalMode=true: 读写模式，用于测试下载的临时文件
+      // - testWalMode=false: 只读模式，避免与 Drift 连接冲突
+      final openMode = testWalMode
+          ? sqlite3.OpenMode.readWrite
+          : sqlite3.OpenMode.readOnly;
+      db = sqlite3.sqlite3.open(dbPath, mode: openMode);
+
+      // 如果需要测试 WAL 模式（仅用于临时文件）
+      if (testWalMode) {
+        try {
+          db.execute('PRAGMA journal_mode = WAL');
+          db.execute('PRAGMA busy_timeout = 5000');
+          db.execute('PRAGMA foreign_keys = ON');
+        } catch (e) {
+          debugPrint('[DatabaseIntegrity] ❌ WAL 模式设置失败: $e');
+          return DatabaseIntegrityResult(
+            status: DatabaseIntegrityStatus.corrupted,
+            message: 'WAL 模式设置失败: $e',
+          );
+        }
+      }
 
       // 执行完整性检查
       final result = db.select('PRAGMA integrity_check;');

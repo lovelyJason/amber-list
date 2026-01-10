@@ -53,7 +53,13 @@ class WidgetDatabaseHelper {
             print("[WidgetDB] Database opened: \(dbPath)")
             return db
         } else {
-            print("[WidgetDB] Failed to open database: \(String(cString: sqlite3_errmsg(db)))")
+            // Handle error safely - db might be nil in out-of-memory conditions
+            if let db = db {
+                print("[WidgetDB] Failed to open database: \(String(cString: sqlite3_errmsg(db)))")
+                sqlite3_close(db)
+            } else {
+                print("[WidgetDB] Failed to open database: out of memory or nil db")
+            }
             return nil
         }
     }
@@ -159,10 +165,10 @@ class WidgetDatabaseHelper {
         return loadTasks().filter { !$0.isCompleted }
     }
 
-    /// 加载今日任务（只显示截止日期等于今天的任务）
+    /// 加载今日任务（截止日期等于今天 + 已过期的任务）
     ///
-    /// 注意：已过期任务不会显示在 Widget 上。
-    /// 自动顺延功能由 Flutter App 在启动时处理，不在 Widget 中执行。
+    /// Widget 刷新时会先调用 performAutoPostpone()，将过期任务顺延到今天。
+    /// 顺延后，这些任务的 dueDate 变成今天，会被此方法返回。
     static func loadTodayTasks() -> [WidgetTask] {
         let allTasks = loadIncompleteTasks()
         print("[WidgetDB] loadTodayTasks: total incomplete tasks = \(allTasks.count)")
@@ -177,14 +183,122 @@ class WidgetDatabaseHelper {
                 print("[WidgetDB] Task '\(task.title)' has no dueTime")
                 return false
             }
-            // 只显示截止日期 == 今天的任务
-            let include = dueTime == todayStr
-            print("[WidgetDB] Task '\(task.title)' dueTime=\(dueTime) today=\(todayStr) include=\(include)")
+            // 显示截止日期 <= 今天的任务（包含今天和已过期）
+            let include = dueTime <= todayStr
             return include
         }
 
         print("[WidgetDB] loadTodayTasks: filtered = \(todayTasks.count)")
         return todayTasks
+    }
+
+    // MARK: - Auto-Postpone
+
+    /// Perform auto-postpone for overdue tasks
+    ///
+    /// This method is called when the Widget Timeline is refreshed.
+    /// It checks if auto-postpone has been done today, and if not,
+    /// postpones all overdue tasks with auto_postpone=1 to today.
+    ///
+    /// Conditions for postponing a task:
+    /// - is_deleted = 0 (not deleted)
+    /// - is_completed = 0 (not completed)
+    /// - auto_postpone = 1 (task allows auto-postpone)
+    /// - due_date < today (overdue)
+    ///
+    /// - Returns: Number of tasks postponed, or 0 if skipped/failed
+    static func performAutoPostpone() -> Int {
+        // Step 1: Check if auto-postpone is enabled globally
+        guard WidgetSettingsHelper.isAutoPostponeEnabled() else {
+            print("[WidgetDB] performAutoPostpone: global switch disabled, skipping")
+            return 0
+        }
+
+        // Step 2: Check if already done today
+        guard !WidgetSettingsHelper.hasCheckedToday() else {
+            print("[WidgetDB] performAutoPostpone: already checked today, skipping")
+            return 0
+        }
+
+        // Step 3: Open database
+        guard let db = openDatabase() else {
+            print("[WidgetDB] performAutoPostpone: failed to open database")
+            return 0
+        }
+        defer { closeDatabase(db) }
+
+        // Step 4: Calculate today's timestamp (start of day in seconds)
+        // Drift stores due_date as Unix timestamp in seconds (UTC)
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let todayStartSeconds = Int64(todayStart.timeIntervalSince1970)
+        let nowSeconds = Int64(Date().timeIntervalSince1970)
+
+        print("[WidgetDB] performAutoPostpone: todayStartSeconds=\(todayStartSeconds), nowSeconds=\(nowSeconds)")
+
+        // Step 5: Count overdue tasks first (for logging)
+        let countSQL = """
+            SELECT COUNT(*) FROM tasks
+            WHERE is_deleted = 0
+              AND is_completed = 0
+              AND auto_postpone = 1
+              AND due_date IS NOT NULL
+              AND due_date < ?
+            """
+        var countStmt: OpaquePointer?
+        var overdueCount = 0
+
+        if sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK {
+            sqlite3_bind_int64(countStmt, 1, todayStartSeconds)
+            if sqlite3_step(countStmt) == SQLITE_ROW {
+                overdueCount = Int(sqlite3_column_int(countStmt, 0))
+            }
+        }
+        sqlite3_finalize(countStmt)
+
+        print("[WidgetDB] performAutoPostpone: found \(overdueCount) overdue tasks")
+
+        if overdueCount == 0 {
+            // Still mark as checked today (no tasks to postpone)
+            WidgetSettingsHelper.setCheckedToday()
+            return 0
+        }
+
+        // Step 6: Update overdue tasks to today
+        let updateSQL = """
+            UPDATE tasks
+            SET due_date = ?,
+                updated_at = ?
+            WHERE is_deleted = 0
+              AND is_completed = 0
+              AND auto_postpone = 1
+              AND due_date IS NOT NULL
+              AND due_date < ?
+            """
+        var updateStmt: OpaquePointer?
+
+        if sqlite3_prepare_v2(db, updateSQL, -1, &updateStmt, nil) == SQLITE_OK {
+            sqlite3_bind_int64(updateStmt, 1, todayStartSeconds)
+            sqlite3_bind_int64(updateStmt, 2, nowSeconds)
+            sqlite3_bind_int64(updateStmt, 3, todayStartSeconds)
+
+            if sqlite3_step(updateStmt) == SQLITE_DONE {
+                print("[WidgetDB] performAutoPostpone: updated \(overdueCount) tasks to today")
+                sqlite3_finalize(updateStmt)
+
+                // Step 7: Mark as checked today (only on success)
+                WidgetSettingsHelper.setCheckedToday()
+                return overdueCount
+            } else {
+                print("[WidgetDB] performAutoPostpone: update failed: \(String(cString: sqlite3_errmsg(db)))")
+                sqlite3_finalize(updateStmt)
+                return 0
+            }
+        } else {
+            print("[WidgetDB] performAutoPostpone: prepare failed")
+            return 0
+        }
     }
 
     // MARK: - Toggle Task

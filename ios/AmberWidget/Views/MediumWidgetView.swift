@@ -53,6 +53,13 @@ struct MediumWidgetProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: MediumWidgetConfigurationIntent, in context: Context) async -> Timeline<MediumWidgetEntry> {
+        // Execute auto-postpone before loading tasks
+        // This ensures overdue tasks are updated to today before display
+        let postponedCount = WidgetDatabaseHelper.performAutoPostpone()
+        if postponedCount > 0 {
+            print("[MediumWidget] Auto-postponed \(postponedCount) overdue tasks to today")
+        }
+
         let tasks = WidgetDataStore.loadTodayTasks()
         let page = WidgetDataStore.loadCurrentPage(for: .medium)
         let skinType = getEffectiveSkin(from: configuration)
@@ -236,7 +243,13 @@ struct MediumWidgetView: View {
             .padding(12)
         }
         .containerBackground(for: .widget) {
-            skinConfig.backgroundGradient
+            if let bgName = skinConfig.backgroundImageName {
+                Image(bgName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                skinConfig.backgroundGradient
+            }
         }
     }
 }

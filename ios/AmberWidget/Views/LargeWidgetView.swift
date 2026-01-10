@@ -49,6 +49,13 @@ struct LargeWidgetProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: LargeWidgetConfigurationIntent, in context: Context) async -> Timeline<LargeWidgetEntry> {
+        // Execute auto-postpone before loading tasks
+        // This ensures overdue tasks are updated to today before display
+        let postponedCount = WidgetDatabaseHelper.performAutoPostpone()
+        if postponedCount > 0 {
+            print("[LargeWidget] Auto-postponed \(postponedCount) overdue tasks to today")
+        }
+
         let tasks = WidgetDataStore.loadTasks()
         let offset = WidgetDataStore.loadMonthOffset()
         let skinType = getEffectiveSkin(from: configuration)
@@ -211,7 +218,13 @@ struct LargeWidgetView: View {
         }
         .padding(.vertical, 12)
         .containerBackground(for: .widget) {
-            skinConfig.backgroundGradient
+            if let bgName = skinConfig.backgroundImageName {
+                Image(bgName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                skinConfig.backgroundGradient
+            }
         }
     }
 

@@ -19,9 +19,13 @@ class SyncConflictDialog extends StatefulWidget {
   /// 冲突列表
   final List<RecordConflict> conflicts;
 
+  /// 自动顺延合并的任务数量（可选，显示提示 Banner）
+  final int autoPostponeMergedCount;
+
   const SyncConflictDialog({
     super.key,
     required this.conflicts,
+    this.autoPostponeMergedCount = 0,
   });
 
   @override
@@ -115,6 +119,12 @@ class _SyncConflictDialogState extends State<SyncConflictDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 自动顺延合并提示 Banner（如果有）
+            if (widget.autoPostponeMergedCount > 0) ...[
+              _buildAutoPostponeMergedBanner(theme),
+              const SizedBox(height: AmberDimens.spacingMd),
+            ],
+
             // 标题栏
             _buildHeader(theme),
             const SizedBox(height: AmberDimens.spacingMd),
@@ -133,6 +143,40 @@ class _SyncConflictDialogState extends State<SyncConflictDialog> {
             _buildBottomBar(theme, isMobile: isMobile),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 构建自动顺延合并提示 Banner
+  /// 当检测到仅 due_date 变化的冲突时自动合并，并显示此提示
+  Widget _buildAutoPostponeMergedBanner(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(AmberDimens.spacingMd),
+      decoration: BoxDecoration(
+        color: AmberColors.success.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+        border: Border.all(
+          color: AmberColors.success.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.auto_fix_high,
+            color: AmberColors.success,
+            size: 20,
+          ),
+          const SizedBox(width: AmberDimens.spacingSm),
+          Expanded(
+            child: Text(
+              '已自动合并 ${widget.autoPostponeMergedCount} 个因自动顺延产生的冲突',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: AmberColors.success,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -594,14 +638,20 @@ class _SyncConflictDialogState extends State<SyncConflictDialog> {
 
 /// 显示冲突决策弹窗
 /// 返回用户决策列表，如果用户取消则返回 null
+///
+/// [autoPostponeMergedCount] 自动顺延合并的任务数量，显示提示 Banner
 Future<List<ConflictResolution>?> showSyncConflictDialog(
   BuildContext context, {
   required List<RecordConflict> conflicts,
+  int autoPostponeMergedCount = 0,
 }) {
   return showDialog<List<ConflictResolution>>(
     context: context,
     barrierDismissible: false,
-    builder: (context) => SyncConflictDialog(conflicts: conflicts),
+    builder: (context) => SyncConflictDialog(
+      conflicts: conflicts,
+      autoPostponeMergedCount: autoPostponeMergedCount,
+    ),
   );
 }
 

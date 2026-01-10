@@ -20,6 +20,21 @@ enum WidgetSkinType {
 
   /// 樱花粉 - 温柔少女风格
   pink,
+
+  /// 撞色 01
+  contrast01,
+
+  /// 撞色 02
+  contrast02,
+
+  /// 撞色 03
+  contrast03,
+
+  /// 撞色 04
+  contrast04,
+
+  /// 撞色 05
+  contrast05,
 }
 
 /// Widget 皮肤配置类
@@ -154,6 +169,71 @@ class WidgetSkins {
       iconColor: Color(0xFF4A0D2B),
       checkboxColor: Color(0xFF6D1B42),
     ),
+
+    // 撞色 01 - 蓝紫渐变
+    WidgetSkinType.contrast01: const WidgetSkinConfig(
+      type: WidgetSkinType.contrast01,
+      displayName: '撞色01',
+      startColor: Color(0xFF4527A0),
+      centerColor: Color(0xFF7C4DFF),
+      endColor: Color(0xFF651FFF),
+      textColor: Colors.white,
+      secondaryTextColor: Colors.white70,
+      iconColor: Colors.white,
+      checkboxColor: Colors.white,
+    ),
+
+    // 撞色 02 - 红粉渐变
+    WidgetSkinType.contrast02: const WidgetSkinConfig(
+      type: WidgetSkinType.contrast02,
+      displayName: '撞色02',
+      startColor: Color(0xFFC62828),
+      centerColor: Color(0xFFEF5350),
+      endColor: Color(0xFFE57373),
+      textColor: Colors.white,
+      secondaryTextColor: Colors.white70,
+      iconColor: Colors.white,
+      checkboxColor: Colors.white,
+    ),
+
+    // 撞色 03 - 绿黄渐变
+    WidgetSkinType.contrast03: const WidgetSkinConfig(
+      type: WidgetSkinType.contrast03,
+      displayName: '撞色03',
+      startColor: Color(0xFF2E7D32),
+      centerColor: Color(0xFF66BB6A),
+      endColor: Color(0xFF43A047),
+      textColor: Colors.white,
+      secondaryTextColor: Colors.white70,
+      iconColor: Colors.white,
+      checkboxColor: Colors.white,
+    ),
+
+    // 撞色 04 - 橙紫撞色
+    WidgetSkinType.contrast04: const WidgetSkinConfig(
+      type: WidgetSkinType.contrast04,
+      displayName: '撞色04',
+      startColor: Color(0xFFEF6C00),
+      centerColor: Color(0xFFAB47BC),
+      endColor: Color(0xFF8E24AA),
+      textColor: Colors.white,
+      secondaryTextColor: Colors.white70,
+      iconColor: Colors.white,
+      checkboxColor: Colors.white,
+    ),
+
+    // 撞色 05 - 青蓝渐变
+    WidgetSkinType.contrast05: const WidgetSkinConfig(
+      type: WidgetSkinType.contrast05,
+      displayName: '撞色05',
+      startColor: Color(0xFF00838F),
+      centerColor: Color(0xFF00ACC1),
+      endColor: Color(0xFF0097A7),
+      textColor: Colors.white,
+      secondaryTextColor: Colors.white70,
+      iconColor: Colors.white,
+      checkboxColor: Colors.white,
+    ),
   };
 
   /// 根据皮肤类型获取 Android drawable 名称
@@ -170,6 +250,16 @@ class WidgetSkins {
         return 'widget_small_bg_mint';
       case WidgetSkinType.pink:
         return 'widget_small_bg_pink';
+      case WidgetSkinType.contrast01:
+        return 'widget_skin_contrast_01'; // Not actually used for setting bg resource directly if we use updateWidget
+      case WidgetSkinType.contrast02:
+        return 'widget_skin_contrast_02';
+      case WidgetSkinType.contrast03:
+        return 'widget_skin_contrast_03';
+      case WidgetSkinType.contrast04:
+        return 'widget_skin_contrast_04';
+      case WidgetSkinType.contrast05:
+        return 'widget_skin_contrast_05';
     }
   }
 }

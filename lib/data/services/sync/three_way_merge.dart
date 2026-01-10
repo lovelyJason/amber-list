@@ -85,6 +85,63 @@ class RecordConflict {
     if (ts is int) return DateTime.fromMillisecondsSinceEpoch(ts);
     return null;
   }
+
+  /// 检测是否为"仅 due_date 变化"的冲突
+  /// 这种冲突通常由多端自动顺延功能产生，可以自动合并
+  ///
+  /// 判断逻辑：
+  /// 1. 必须是 bothModified 类型
+  /// 2. 必须是 tasks 表
+  /// 3. 本地和远程相比 base，只有 due_date 和 updated_at 发生变化
+  bool get isDueDateOnlyConflict {
+    // 必须是任务表的"双方都修改"冲突
+    if (tableName != 'tasks' || type != ConflictType.bothModified) {
+      return false;
+    }
+    // 需要有 base 数据才能判断
+    if (local == null || remote == null || base == null) {
+      return false;
+    }
+
+    // 允许变化的字段（due_date 变化必然导致 updated_at 变化）
+    const allowedChangedFields = {'due_date', 'updated_at'};
+
+    // 检查本地相比 base 的变化字段
+    final localChangedFields = _getChangedFields(base!, local!);
+    // 检查远程相比 base 的变化字段
+    final remoteChangedFields = _getChangedFields(base!, remote!);
+
+    // 本地变化的字段必须都在允许列表内
+    final localOnlyDueDateChange = localChangedFields.isNotEmpty &&
+        localChangedFields.every((f) => allowedChangedFields.contains(f));
+    // 远程变化的字段必须都在允许列表内
+    final remoteOnlyDueDateChange = remoteChangedFields.isNotEmpty &&
+        remoteChangedFields.every((f) => allowedChangedFields.contains(f));
+
+    // 额外检查：确保本地和远程都真的改了 due_date（不只是 updated_at）
+    // 避免误判纯 updated_at 变化的场景
+    final localDueDateChanged = localChangedFields.contains('due_date');
+    final remoteDueDateChanged = remoteChangedFields.contains('due_date');
+
+    return localOnlyDueDateChange &&
+        remoteOnlyDueDateChange &&
+        localDueDateChanged &&
+        remoteDueDateChanged;
+  }
+
+  /// 获取两个 Map 之间变化的字段名列表
+  Set<String> _getChangedFields(
+    Map<String, dynamic> base,
+    Map<String, dynamic> current,
+  ) {
+    final changedFields = <String>{};
+    for (final key in current.keys) {
+      if (base[key] != current[key]) {
+        changedFields.add(key);
+      }
+    }
+    return changedFields;
+  }
 }
 
 /// 用户对冲突的决策
@@ -112,6 +169,8 @@ class MergeStats {
   List<TagConflict> tagConflicts = [];
   /// 待决策的冲突列表（需要用户手动选择）
   List<RecordConflict> pendingConflicts = [];
+  /// 自动顺延合并的任务数量（仅 due_date 变化的冲突，自动使用最新值）
+  int autoPostponeMergedCount = 0;
 
   /// 是否有任何变化
   bool get hasChanges =>
@@ -126,6 +185,7 @@ class MergeStats {
       notesDeleted > 0 ||
       tagsAdded > 0 ||
       tagsDeleted > 0 ||
+      autoPostponeMergedCount > 0 ||
       pendingConflicts.isNotEmpty;
 
   /// 是否有需要用户决策的冲突
@@ -143,6 +203,7 @@ class MergeStats {
     if (notesAdded > 0) parts.add('笔记+$notesAdded');
     if (notesUpdated > 0) parts.add('笔记↑$notesUpdated');
     if (notesDeleted > 0) parts.add('笔记-$notesDeleted');
+    if (autoPostponeMergedCount > 0) parts.add('自动顺延合并$autoPostponeMergedCount');
     if (pendingConflicts.isNotEmpty) parts.add('待决策冲突${pendingConflicts.length}');
     if (conflicts > 0) parts.add('已解决冲突$conflicts');
 
@@ -511,15 +572,33 @@ class ThreeWayMergeEngine {
           stats.tasksDeleted++;
           break;
         case _MergeAction.conflict:
-          // 不自动合并，收集冲突让用户决策
-          stats.pendingConflicts.add(RecordConflict(
+          // 构建冲突对象
+          final conflict = RecordConflict(
             tableName: 'tasks',
             recordId: id,
             type: ConflictType.bothModified,
             local: Map<String, dynamic>.from(local!),
             remote: Map<String, dynamic>.from(remote!),
             base: base != null ? Map<String, dynamic>.from(base) : null,
-          ));
+          );
+          // 检查是否为"仅 due_date 变化"的冲突（自动顺延产生）
+          if (conflict.isDueDateOnlyConflict) {
+            // 自动合并：保留 due_date 更大的版本（即更晚的日期）
+            final localDueDate = local['due_date'] as int? ?? 0;
+            final remoteDueDate = remote['due_date'] as int? ?? 0;
+            if (remoteDueDate > localDueDate) {
+              // 远程的 due_date 更晚，用远程
+              _updateRow(localDb, 'tasks', id, remote);
+              debugPrint('[ThreeWayMerge] 自动顺延合并: $id 使用远程 due_date');
+            } else {
+              // 本地的 due_date 更晚或相等，保持本地
+              debugPrint('[ThreeWayMerge] 自动顺延合并: $id 保持本地 due_date');
+            }
+            stats.autoPostponeMergedCount++;
+          } else {
+            // 非 dueDate-only 冲突，需要用户决策
+            stats.pendingConflicts.add(conflict);
+          }
           break;
         case _MergeAction.localModifiedRemoteDeleted:
           // 本地修改了，远程删除了 → 让用户决策

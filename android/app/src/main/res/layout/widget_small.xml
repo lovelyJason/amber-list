@@ -1,11 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Small Widget Layout (2x2): Header + 5 Tasks + Time -->
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_container"
+<!-- Outer FrameLayout for background image to cover full widget area -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_small_background"
-    android:padding="12dp">
+    android:background="@drawable/widget_small_background">
+
+    <!-- Background Image Layer - must be outside padding container to cover full area -->
+    <ImageView
+        android:id="@+id/widget_bg_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <!-- Content container with padding -->
+    <RelativeLayout
+        android:id="@+id/widget_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="12dp">
 
     <!-- Header: Logo + Title -->
     <LinearLayout
@@ -320,4 +336,6 @@
 
     </LinearLayout>
 
-</RelativeLayout>
+    </RelativeLayout>
+
+</FrameLayout>

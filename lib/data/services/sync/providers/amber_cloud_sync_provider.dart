@@ -62,7 +62,7 @@ class AmberCloudSyncProvider implements ISyncStorageProvider {
   @override
   Future<SyncResult<void>> ensureAppDirectory() async {
     // 琥珀云服务端会自动按激活码创建目录，不需要客户端操作
-    debugPrint('[AmberCloudSync] ensureAppDirectory: 服务端自动管理目录');
+    // debugPrint('[AmberCloudSync] ensureAppDirectory: 服务端自动管理目录');
     return const SyncResult.success(null);
   }
 
