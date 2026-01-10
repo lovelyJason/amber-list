@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// - 背景渐变色（start, center, end 三色渐变）
 /// - 文字颜色（根据背景自动计算对比度最佳的颜色）
 enum WidgetSkinType {
-  /// 琥珀金（默认）- 经典的琥珀清单品牌色
+  /// 琥珀橙（默认）- 活力的琥珀清单品牌色
   amber,
 
   /// 纯净白 - 简约白色背景
@@ -90,17 +90,17 @@ class WidgetSkins {
 
   /// 皮肤配置映射表
   static final Map<WidgetSkinType, WidgetSkinConfig> _configs = {
-    // 琥珀金（默认）
+    // 琥珀橙（默认）- 活力品牌色
     WidgetSkinType.amber: const WidgetSkinConfig(
       type: WidgetSkinType.amber,
-      displayName: '琥珀金',
-      startColor: Color(0xFFE8D494),
-      centerColor: Color(0xFFDDBE6F),
-      endColor: Color(0xFFD9B560),
-      textColor: Color(0xFF5C3D1E), // 深棕色，对比度高
-      secondaryTextColor: Color(0xFF8B6914), // 中棕色
-      iconColor: Color(0xFF5C3D1E),
-      checkboxColor: Color(0xFF5C3D1E),
+      displayName: '琥珀橙',
+      startColor: Color(0xFFFFE0B2),  // 温暖浅橙
+      centerColor: Color(0xFFFFB74D), // 活力橙
+      endColor: Color(0xFFFFA726),    // 深琥珀橙
+      textColor: Color(0xFF4E342E),   // 深棕色文字
+      secondaryTextColor: Color(0xFF6D4C41), // 中棕色
+      iconColor: Color(0xFF4E342E),
+      checkboxColor: Color(0xFF5D4037),
     ),
 
     // 纯净白
@@ -142,13 +142,13 @@ class WidgetSkins {
       checkboxColor: Color(0xFF2E5752),
     ),
 
-    // 樱花粉
+    // 樱花粉（淡雅版）
     WidgetSkinType.pink: const WidgetSkinConfig(
       type: WidgetSkinType.pink,
       displayName: '樱花粉',
-      startColor: Color(0xFFF8BBD9),
-      centerColor: Color(0xFFF48FB1),
-      endColor: Color(0xFFF06292),
+      startColor: Color(0xFFFCE4EC),  // 淡粉白
+      centerColor: Color(0xFFF8BBD9), // 浅樱花粉
+      endColor: Color(0xFFF48FB1),    // 中等樱花粉
       textColor: Color(0xFF4A0D2B), // 更深的紫红色，提高可读性
       secondaryTextColor: Color(0xFF6D1B42), // 深玫红色
       iconColor: Color(0xFF4A0D2B),

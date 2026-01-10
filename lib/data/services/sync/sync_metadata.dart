@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 /// ============================================================
 /// 同步元数据模型
@@ -213,4 +215,130 @@ class ChecksumUtils {
     final digest = md5.convert(bytes);
     return digest.toString();
   }
+}
+
+/// ============================================================
+/// 数据库完整性验证工具
+/// ============================================================
+/// 用于验证 SQLite 数据库文件是否完整可用。
+/// 主要场景：
+/// 1. 下载云端数据库后，验证文件是否损坏
+/// 2. 上传前验证本地数据库是否正常
+/// ============================================================
+class DatabaseIntegrityUtils {
+  /// 验证数据库文件完整性
+  ///
+  /// 使用 SQLite 的 PRAGMA integrity_check 命令检查数据库是否损坏。
+  /// 返回值：
+  /// - [DatabaseIntegrityResult.ok] 数据库正常
+  /// - [DatabaseIntegrityResult.corrupted] 数据库损坏
+  /// - [DatabaseIntegrityResult.notFound] 文件不存在
+  /// - [DatabaseIntegrityResult.error] 其他错误
+  static Future<DatabaseIntegrityResult> verifyDatabase(String dbPath) async {
+    final file = File(dbPath);
+    if (!await file.exists()) {
+      return DatabaseIntegrityResult(
+        status: DatabaseIntegrityStatus.notFound,
+        message: '数据库文件不存在: $dbPath',
+      );
+    }
+
+    sqlite3.Database? db;
+    try {
+      // 以只读方式打开数据库
+      db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+
+      // 执行完整性检查
+      final result = db.select('PRAGMA integrity_check;');
+      if (result.isEmpty) {
+        return DatabaseIntegrityResult(
+          status: DatabaseIntegrityStatus.error,
+          message: 'integrity_check 返回空结果',
+        );
+      }
+
+      // 检查结果，正常情况下返回 "ok"
+      final checkResult = result.first.values.first?.toString() ?? '';
+      if (checkResult.toLowerCase() == 'ok') {
+        debugPrint('[DatabaseIntegrity] ✅ 数据库完整性检查通过: $dbPath');
+        return DatabaseIntegrityResult(
+          status: DatabaseIntegrityStatus.ok,
+          message: 'ok',
+        );
+      } else {
+        debugPrint('[DatabaseIntegrity] ❌ 数据库损坏: $checkResult');
+        return DatabaseIntegrityResult(
+          status: DatabaseIntegrityStatus.corrupted,
+          message: checkResult,
+        );
+      }
+    } catch (e) {
+      debugPrint('[DatabaseIntegrity] ❌ 验证失败: $e');
+      return DatabaseIntegrityResult(
+        status: DatabaseIntegrityStatus.error,
+        message: e.toString(),
+      );
+    } finally {
+      db?.dispose();
+    }
+  }
+
+  /// 快速验证数据库是否可打开
+  ///
+  /// 比 [verifyDatabase] 更快，只检查能否正常打开和执行简单查询。
+  /// 适用于快速预检场景。
+  static Future<bool> canOpenDatabase(String dbPath) async {
+    final file = File(dbPath);
+    if (!await file.exists()) {
+      return false;
+    }
+
+    sqlite3.Database? db;
+    try {
+      db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      // 执行一个简单查询验证数据库可用
+      db.select('SELECT 1;');
+      return true;
+    } catch (e) {
+      debugPrint('[DatabaseIntegrity] 无法打开数据库: $e');
+      return false;
+    } finally {
+      db?.dispose();
+    }
+  }
+}
+
+/// 数据库完整性状态
+enum DatabaseIntegrityStatus {
+  /// 数据库正常
+  ok,
+
+  /// 数据库损坏
+  corrupted,
+
+  /// 文件不存在
+  notFound,
+
+  /// 其他错误
+  error,
+}
+
+/// 数据库完整性检查结果
+class DatabaseIntegrityResult {
+  final DatabaseIntegrityStatus status;
+  final String message;
+
+  const DatabaseIntegrityResult({
+    required this.status,
+    required this.message,
+  });
+
+  /// 数据库是否正常
+  bool get isOk => status == DatabaseIntegrityStatus.ok;
+
+  /// 数据库是否损坏
+  bool get isCorrupted => status == DatabaseIntegrityStatus.corrupted;
+
+  @override
+  String toString() => 'DatabaseIntegrityResult($status: $message)';
 }

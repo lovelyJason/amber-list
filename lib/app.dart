@@ -31,7 +31,7 @@ class AmberListApp extends ConsumerStatefulWidget {
 }
 
 class _AmberListAppState extends ConsumerState<AmberListApp>
-    with WindowListener, TrayListener {
+    with WindowListener, TrayListener, WidgetsBindingObserver {
   /// 闪念胶囊服务
   QuickAddService? _quickAddService;
 
@@ -39,6 +39,9 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   void initState() {
     super.initState();
     debugPrint('[App] initState() called');
+
+    // 添加生命周期监听（用于 App 回到前台时刷新数据）
+    WidgetsBinding.instance.addObserver(this);
 
     // 桌面端添加窗口关闭监听（用于最小化到托盘功能）
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -178,6 +181,8 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
   @override
   void dispose() {
+    // 移除生命周期监听
+    WidgetsBinding.instance.removeObserver(this);
     // 桌面端移除窗口和托盘监听
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
       windowManager.removeListener(this);
@@ -185,6 +190,23 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     }
     _quickAddService?.dispose();
     super.dispose();
+  }
+
+  /// App 生命周期变化回调（WidgetsBindingObserver）
+  ///
+  /// 当 App 从后台回到前台时，重新加载任务数据
+  /// 这确保 Widget 上的修改能同步到 App 界面
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    debugPrint('[App] 生命周期变化: $state');
+
+    if (state == AppLifecycleState.resumed) {
+      // App 回到前台，重新从数据库加载任务数据
+      // 这样 Widget 上的勾选操作就能同步到 App 界面
+      debugPrint('[App] 回到前台，刷新任务数据...');
+      ref.read(taskProvider.notifier).refresh();
+    }
   }
 
   /// 窗口关闭事件处理（WindowListener 回调）

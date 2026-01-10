@@ -36,10 +36,14 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // SharedPreferences key (must match Flutter HomeWidgetService)
         private const val KEY_WIDGET_TASKS = "widget_tasks"
         private const val KEY_SMALL_WIDGET_SKIN = "widget_small_skin"
+        private const val KEY_TAP_TEXT_TO_COMPLETE = "widget_tap_text_to_complete"
 
-        // Action for task toggle click
+        // Action for task toggle click (opens app - legacy)
         const val ACTION_TOGGLE_TASK = "com.example.amber_list.TOGGLE_TASK"
         const val EXTRA_TASK_ID = "task_id"
+
+        // Action for direct task toggle (no app launch, direct SQLite)
+        const val ACTION_TOGGLE_TASK_DIRECT = "com.example.amber_list.TOGGLE_TASK_DIRECT"
 
         // Action to open app
         const val ACTION_OPEN_APP = "com.example.amber_list.OPEN_APP"
@@ -83,7 +87,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         when (intent.action) {
             ACTION_TOGGLE_TASK -> {
                 val taskId = intent.getStringExtra(EXTRA_TASK_ID)
-                Log.d(TAG, "Toggle task clicked: $taskId")
+                Log.d(TAG, "Toggle task clicked (legacy): $taskId")
 
                 if (taskId != null) {
                     // Launch app with deep link to toggle task
@@ -93,6 +97,29 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     }
                     context.startActivity(launchIntent)
+                }
+            }
+            ACTION_TOGGLE_TASK_DIRECT -> {
+                val taskId = intent.getStringExtra(EXTRA_TASK_ID)
+                Log.d(TAG, "Direct toggle task clicked: $taskId")
+
+                if (taskId != null) {
+                    // Toggle task directly in SQLite database (no app launch)
+                    val success = WidgetDatabaseHelper.toggleTaskCompletion(context, taskId)
+
+                    if (success) {
+                        // Refresh all widgets to reflect the change
+                        refreshAllWidgets(context)
+                    } else {
+                        // Fallback: launch app if direct toggle fails
+                        Log.w(TAG, "Direct toggle failed, falling back to app launch")
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                        launchIntent?.apply {
+                            data = Uri.parse("amberlist://widget/toggle_task?id=$taskId")
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        }
+                        context.startActivity(launchIntent)
+                    }
                 }
             }
             ACTION_OPEN_APP -> {
@@ -106,8 +133,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 // Get current page and total pages from prefs
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 val tasks = loadTasks(context)
-                val incompleteTasks = tasks.filter { !it.isCompleted }
-                val totalTasks = incompleteTasks.size
+                val todayTasks = filterTodayTasks(tasks)
+                val totalTasks = todayTasks.size
                 val tasksPerPage = 5
                 val totalPages = if (totalTasks == 0) 1 else (totalTasks + tasksPerPage - 1) / tasksPerPage
 
@@ -132,8 +159,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 // Get current page and total pages from prefs
                 val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
                 val tasks = loadTasks(context)
-                val incompleteTasks = tasks.filter { !it.isCompleted }
-                val totalTasks = incompleteTasks.size
+                val todayTasks = filterTodayTasks(tasks)
+                val totalTasks = todayTasks.size
                 val tasksPerPage = 5
                 val totalPages = if (totalTasks == 0) 1 else (totalTasks + tasksPerPage - 1) / tasksPerPage
 
@@ -204,6 +231,40 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    /**
+     * Refresh all widget types (Small, Medium, Large)
+     * Used after direct task toggle to update all widget displays
+     */
+    private fun refreshAllWidgets(context: Context) {
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+
+        // Refresh Small widgets
+        val smallIds = appWidgetManager.getAppWidgetIds(
+            android.content.ComponentName(context, AmberWidgetProvider::class.java)
+        )
+        for (widgetId in smallIds) {
+            updateAppWidget(context, appWidgetManager, widgetId)
+        }
+
+        // Refresh Medium widgets
+        val mediumIds = appWidgetManager.getAppWidgetIds(
+            android.content.ComponentName(context, AmberWidgetMediumProvider::class.java)
+        )
+        for (widgetId in mediumIds) {
+            updateAppWidget(context, appWidgetManager, widgetId)
+        }
+
+        // Refresh Large widgets
+        val largeIds = appWidgetManager.getAppWidgetIds(
+            android.content.ComponentName(context, AmberWidgetLargeProvider::class.java)
+        )
+        for (widgetId in largeIds) {
+            updateAppWidget(context, appWidgetManager, widgetId)
+        }
+
+        Log.d(TAG, "Refreshed all widgets: ${smallIds.size} small, ${mediumIds.size} medium, ${largeIds.size} large")
+    }
+
     override fun onEnabled(context: Context) {
         Log.d(TAG, "Widget enabled")
     }
@@ -244,37 +305,36 @@ open class AmberWidgetProvider : AppWidgetProvider() {
     protected open fun getWidgetSize(): WidgetSize = WidgetSize.SMALL
 
     /**
-     * Load tasks from SharedPreferences via HomeWidgetPlugin
+     * Load tasks directly from SQLite database
+     * Same approach as iOS - no SharedPreferences middle layer
      */
     private fun loadTasks(context: Context): List<WidgetTask> {
-        return try {
-            val prefs = HomeWidgetPlugin.getData(context)
-            val jsonString = prefs.getString(KEY_WIDGET_TASKS, null)
+        val dbTasks = WidgetDatabaseHelper.loadAllTasks(context)
+        return dbTasks.map { task ->
+            WidgetTask(
+                id = task.id,
+                title = task.title,
+                isCompleted = task.isCompleted,
+                priority = task.priority,
+                dueTime = task.dueTime
+            )
+        }
+    }
 
-            if (jsonString.isNullOrEmpty()) {
-                Log.d(TAG, "No tasks in SharedPreferences")
-                return emptyList()
-            }
-
-            val jsonArray = JSONArray(jsonString)
-            val tasks = mutableListOf<WidgetTask>()
-
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                tasks.add(WidgetTask(
-                    id = obj.getString("id"),
-                    title = obj.getString("title"),
-                    isCompleted = obj.getBoolean("isCompleted"),
-                    priority = obj.getInt("priority"),
-                    dueTime = obj.optString("dueTime", null)
-                ))
-            }
-
-            Log.d(TAG, "Loaded ${tasks.size} tasks")
-            tasks
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading tasks", e)
-            emptyList()
+    /**
+     * Load today's tasks directly from SQLite database
+     * Returns incomplete tasks with dueDate <= today
+     */
+    private fun loadTodayTasks(context: Context): List<WidgetTask> {
+        val dbTasks = WidgetDatabaseHelper.loadTodayTasks(context)
+        return dbTasks.map { task ->
+            WidgetTask(
+                id = task.id,
+                title = task.title,
+                isCompleted = task.isCompleted,
+                priority = task.priority,
+                dueTime = task.dueTime
+            )
         }
     }
 
@@ -282,12 +342,20 @@ open class AmberWidgetProvider : AppWidgetProvider() {
      * Create Small Widget (2x2): Header + 3 Tasks + Time
      * Shows 3 tasks at a time, rotates to next page on each data refresh when > 3 tasks.
      * Supports multiple skin themes with dynamic background and text colors.
+     *
+     * Task row click behavior controlled by tapTextToComplete setting:
+     * - true: clicking anywhere on task row (including title) toggles completion
+     * - false: only checkbox toggles completion, clicking title opens app
      */
     private fun createSmallWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_small)
 
         // Load skin setting from SharedPreferences
-        val skinConfig = loadSmallWidgetSkin(context)
+        val skinConfig = loadWidgetSkin(context)
+
+        // Load tap text to complete setting
+        val tapTextToComplete = loadTapTextToComplete(context)
+        Log.d(TAG, "Small widget tapTextToComplete: $tapTextToComplete")
 
         // Apply skin background and colors
         views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
@@ -295,9 +363,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Apply skin color to header title
         views.setTextColor(R.id.widget_title, skinConfig.textColor)
 
-        // Get all incomplete tasks
-        val incompleteTasks = tasks.filter { !it.isCompleted }
-        val totalTasks = incompleteTasks.size
+        // Get today's incomplete tasks (today + overdue)
+        val todayTasks = filterTodayTasks(tasks)
+        val totalTasks = todayTasks.size
 
         // Pagination: 5 tasks per page
         val tasksPerPage = 5
@@ -310,10 +378,10 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
         // Get tasks for current page
         val startIndex = currentPage * tasksPerPage
-        val pageTasks = incompleteTasks.drop(startIndex).take(tasksPerPage)
+        val pageTasks = todayTasks.drop(startIndex).take(tasksPerPage)
 
         // Note: Auto-rotation removed, now using manual next page button
-        Log.d(TAG, "Small widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks tasks")
+        Log.d(TAG, "Small widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks today tasks")
 
         // Task item IDs (5 items per page)
         val taskIds = arrayOf(R.id.task_item_1, R.id.task_item_2, R.id.task_item_3, R.id.task_item_4, R.id.task_item_5)
@@ -356,12 +424,41 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     views.setTextColor(titleIds[i], skinConfig.textColor)
                     views.setImageViewResource(checkboxIds[i], R.drawable.ic_checkbox_unchecked)
 
-                    // Priority flag icon
+                    // Set checkbox click listener for direct task toggle
+                    val toggleIntent = Intent(context, AmberWidgetProvider::class.java).apply {
+                        action = ACTION_TOGGLE_TASK_DIRECT
+                        putExtra(EXTRA_TASK_ID, task.id)
+                    }
+                    val togglePendingIntent = PendingIntent.getBroadcast(
+                        context, 2000 + i, toggleIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(checkboxIds[i], togglePendingIntent)
+
+                    // Task title/row click behavior based on tapTextToComplete setting
+                    if (tapTextToComplete) {
+                        // Clicking title also toggles task completion
+                        views.setOnClickPendingIntent(titleIds[i], togglePendingIntent)
+                        views.setOnClickPendingIntent(taskIds[i], togglePendingIntent)
+                    } else {
+                        // Clicking title opens app
+                        val openAppIntent = Intent(context, AmberWidgetProvider::class.java).apply {
+                            action = ACTION_OPEN_APP
+                        }
+                        val openAppPendingIntent = PendingIntent.getBroadcast(
+                            context, 4000 + i, openAppIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        views.setOnClickPendingIntent(titleIds[i], openAppPendingIntent)
+                        views.setOnClickPendingIntent(taskIds[i], openAppPendingIntent)
+                    }
+
+                    // Priority flag icon (uses skin-specific medium priority icon to avoid color clash)
                     val priorityIcon = when (task.priority) {
-                        3 -> R.drawable.ic_flag_high    // High - Red flag
-                        2 -> R.drawable.ic_flag_medium  // Medium - Orange flag
-                        1 -> R.drawable.ic_flag_low     // Low - Green flag
-                        else -> R.drawable.ic_flag_none // None - Gray flag
+                        3 -> R.drawable.ic_flag_high         // High - Red flag
+                        2 -> skinConfig.mediumPriorityIconRes // Medium - skin-specific
+                        1 -> R.drawable.ic_flag_low          // Low - Green flag
+                        else -> R.drawable.ic_flag_none      // None - Gray flag
                     }
                     if (task.priority > 0) {
                         views.setViewVisibility(priorityIds[i], View.VISIBLE)
@@ -408,10 +505,28 @@ open class AmberWidgetProvider : AppWidgetProvider() {
     /**
      * Create Medium Widget (4x2): Left(Date) + Right(Tasks)
      * Shows date info on left, task list on right
+     * Supports multiple skin themes with dynamic background and text colors.
+     *
+     * Task row click behavior controlled by tapTextToComplete setting:
+     * - true: clicking anywhere on task row (including title) toggles completion
+     * - false: only checkbox toggles completion, clicking title opens app
      */
     private fun createMediumWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
         Log.d(TAG, "createMediumWidget: starting with ${tasks.size} tasks")
         val views = RemoteViews(context.packageName, R.layout.widget_medium)
+
+        // Load skin setting from SharedPreferences
+        val skinConfig = loadWidgetSkin(context)
+
+        // Load tap text to complete setting
+        val tapTextToComplete = loadTapTextToComplete(context)
+        Log.d(TAG, "Medium widget tapTextToComplete: $tapTextToComplete")
+
+        // Apply skin background
+        views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+
+        // Apply skin color to header title (今日任务)
+        views.setTextColor(R.id.header_title, skinConfig.textColor)
 
         // Set date info on left side
         val calendar = java.util.Calendar.getInstance()
@@ -426,9 +541,14 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         views.setTextViewText(R.id.date_lunar, "${lunarInfo.first}${lunarInfo.second}")  // Lunar: "腊月二十"
         views.setTextViewText(R.id.date_weekday, weekday)
 
-        // Get all incomplete tasks
-        val incompleteTasks = tasks.filter { !it.isCompleted }
-        val totalTasks = incompleteTasks.size
+        // Apply skin colors to date section
+        views.setTextColor(R.id.date_day, skinConfig.textColor)
+        views.setTextColor(R.id.date_lunar, skinConfig.secondaryTextColor)
+        views.setTextColor(R.id.date_weekday, skinConfig.secondaryTextColor)
+
+        // Get today's incomplete tasks (today + overdue)
+        val todayTasks = filterTodayTasks(tasks)
+        val totalTasks = todayTasks.size
 
         // Pagination: 5 tasks per page (same as small widget)
         val tasksPerPage = 5
@@ -441,9 +561,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
         // Get tasks for current page
         val startIndex = currentPage * tasksPerPage
-        val pageTasks = incompleteTasks.drop(startIndex).take(tasksPerPage)
+        val pageTasks = todayTasks.drop(startIndex).take(tasksPerPage)
 
-        Log.d(TAG, "Medium widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks tasks")
+        Log.d(TAG, "Medium widget: page ${currentPage + 1}/$totalPages, showing ${pageTasks.size} of $totalTasks today tasks")
 
         // Task item IDs
         val taskIds = arrayOf(R.id.task_item_1, R.id.task_item_2, R.id.task_item_3, R.id.task_item_4, R.id.task_item_5)
@@ -458,7 +578,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
             if (totalPages > 1) {
                 views.setViewVisibility(R.id.page_indicator, View.VISIBLE)
                 views.setTextViewText(R.id.page_indicator, "${currentPage + 1}/$totalPages")
+                views.setTextColor(R.id.page_indicator, skinConfig.secondaryTextColor)
                 views.setViewVisibility(R.id.btn_next_page, View.VISIBLE)
+                views.setInt(R.id.btn_next_page, "setColorFilter", skinConfig.secondaryTextColor)
 
                 // Set click listener for next page button
                 val nextPageIntent = Intent(context, AmberWidgetMediumProvider::class.java).apply {
@@ -479,14 +601,44 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     val task = pageTasks[i]
                     views.setViewVisibility(taskIds[i], View.VISIBLE)
                     views.setTextViewText(titleIds[i], task.title)
+                    views.setTextColor(titleIds[i], skinConfig.textColor)
                     views.setImageViewResource(checkboxIds[i], R.drawable.ic_checkbox_unchecked)
 
-                    // Priority flag icon
+                    // Set checkbox click listener for direct task toggle
+                    val toggleIntent = Intent(context, AmberWidgetMediumProvider::class.java).apply {
+                        action = ACTION_TOGGLE_TASK_DIRECT
+                        putExtra(EXTRA_TASK_ID, task.id)
+                    }
+                    val togglePendingIntent = PendingIntent.getBroadcast(
+                        context, 3000 + i, toggleIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(checkboxIds[i], togglePendingIntent)
+
+                    // Task title/row click behavior based on tapTextToComplete setting
+                    if (tapTextToComplete) {
+                        // Clicking title also toggles task completion
+                        views.setOnClickPendingIntent(titleIds[i], togglePendingIntent)
+                        views.setOnClickPendingIntent(taskIds[i], togglePendingIntent)
+                    } else {
+                        // Clicking title opens app
+                        val openAppIntent = Intent(context, AmberWidgetMediumProvider::class.java).apply {
+                            action = ACTION_OPEN_APP
+                        }
+                        val openAppPendingIntent = PendingIntent.getBroadcast(
+                            context, 5000 + i, openAppIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        views.setOnClickPendingIntent(titleIds[i], openAppPendingIntent)
+                        views.setOnClickPendingIntent(taskIds[i], openAppPendingIntent)
+                    }
+
+                    // Priority flag icon (uses skin-specific medium priority icon to avoid color clash)
                     val priorityIcon = when (task.priority) {
-                        3 -> R.drawable.ic_flag_high    // High - Red flag
-                        2 -> R.drawable.ic_flag_medium  // Medium - Orange flag
-                        1 -> R.drawable.ic_flag_low     // Low - Green flag
-                        else -> R.drawable.ic_flag_none // None - Gray flag
+                        3 -> R.drawable.ic_flag_high         // High - Red flag
+                        2 -> skinConfig.mediumPriorityIconRes // Medium - skin-specific
+                        1 -> R.drawable.ic_flag_low          // Low - Green flag
+                        else -> R.drawable.ic_flag_none      // None - Gray flag
                     }
                     if (task.priority > 0) {
                         views.setViewVisibility(priorityIds[i], View.VISIBLE)
@@ -500,6 +652,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
             }
         } else {
             views.setViewVisibility(R.id.empty_state, View.VISIBLE)
+            views.setTextColor(R.id.empty_state, skinConfig.secondaryTextColor)
             views.setViewVisibility(R.id.page_indicator, View.GONE)
             views.setViewVisibility(R.id.btn_next_page, View.GONE)
             for (i in 0 until tasksPerPage) {
@@ -524,9 +677,17 @@ open class AmberWidgetProvider : AppWidgetProvider() {
     /**
      * Create Large Widget (4x4): Calendar Month View
      * Shows a full month calendar with Chinese holidays and task indicators
+     * Supports multiple skin themes with dynamic background and text colors.
      */
     private fun createLargeWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_large)
+
+        // Load skin setting from SharedPreferences
+        val skinConfig = loadWidgetSkin(context)
+
+        // Apply skin background
+        views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+        views.setInt(R.id.widget_header, "setBackgroundResource", skinConfig.headerBackgroundRes)
 
         // Get month offset from prefs (0 = current month)
         val prefs = context.getSharedPreferences("amber_widget_prefs", Context.MODE_PRIVATE)
@@ -539,8 +700,14 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val displayYear = displayCal.get(java.util.Calendar.YEAR)
         val displayMonth = displayCal.get(java.util.Calendar.MONTH) + 1 // 1-12
 
-        // Set header year-month text
+        // Set header year-month text with skin color
         views.setTextViewText(R.id.header_year_month, "${displayYear}年${displayMonth}月")
+        views.setTextColor(R.id.header_year_month, skinConfig.headerTextColor)
+
+        // Apply header navigation button colors
+        views.setTextColor(R.id.btn_prev_month, skinConfig.headerTextColor)
+        views.setTextColor(R.id.btn_today, skinConfig.headerTextColor)
+        views.setTextColor(R.id.btn_next_month, skinConfig.headerTextColor)
 
         // Set navigation button click handlers
         setupCalendarNavigation(context, views)
@@ -599,7 +766,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 dayCellIds, dayNumIds, dayBadgeIds, dayCircleIds,
                 prevYear, prevMonth, dayNum,
                 todayYear, todayMonth, todayDay,
-                taskDates, isCurrentMonth = false
+                taskDates, isCurrentMonth = false, skinConfig
             )
             cellIndex++
         }
@@ -611,7 +778,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 dayCellIds, dayNumIds, dayBadgeIds, dayCircleIds,
                 displayYear, displayMonth, day,
                 todayYear, todayMonth, todayDay,
-                taskDates, isCurrentMonth = true
+                taskDates, isCurrentMonth = true, skinConfig
             )
             cellIndex++
         }
@@ -624,7 +791,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 dayCellIds, dayNumIds, dayBadgeIds, dayCircleIds,
                 nextYear, nextMonth, dayNum,
                 todayYear, todayMonth, todayDay,
-                taskDates, isCurrentMonth = false
+                taskDates, isCurrentMonth = false, skinConfig
             )
             cellIndex++
         }
@@ -679,6 +846,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
     /**
      * Populate a single day cell with date, holiday badge, and circle indicator
+     * Supports skin-based text colors for dark/light themes
      */
     private fun populateDayCell(
         views: RemoteViews,
@@ -695,7 +863,8 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         todayMonth: Int,
         todayDay: Int,
         taskDates: Set<String>,
-        isCurrentMonth: Boolean
+        isCurrentMonth: Boolean,
+        skinConfig: WidgetSkinConfig
     ) {
         val dayNumId = dayNumIds[cellIndex]
         val dayBadgeId = dayBadgeIds[cellIndex]
@@ -710,7 +879,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val hasTask = taskDates.contains(dateKey)
 
         // Determine text color and circle based on:
-        // 1. Current month vs other months (gray for other months)
+        // 1. Current month vs other months (dimmed color from skin)
         // 2. Today (white text with amber circle background)
         // 3. Has task (red hand-drawn circle)
         // 4. Weekend (Sunday = red, Saturday = blue)
@@ -718,11 +887,11 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val dayOfWeek = (cellIndex % 7) // 0=Sun, 6=Sat
 
         val textColor = when {
-            !isCurrentMonth -> Color.parseColor("#AAAAAA") // Gray for other months
+            !isCurrentMonth -> skinConfig.secondaryTextColor // Dimmed for other months
             isToday -> Color.parseColor("#FFFFFF") // White for today
             dayOfWeek == 0 -> Color.parseColor("#E53935") // Red for Sunday
-            dayOfWeek == 6 -> Color.parseColor("#1976D2") // Blue for Saturday
-            else -> Color.parseColor("#5C3D1E") // Default brown
+            dayOfWeek == 6 -> Color.parseColor("#64B5F6") // Light blue for Saturday (visible on dark)
+            else -> skinConfig.textColor // Use skin text color
         }
         views.setTextColor(dayNumId, textColor)
 
@@ -851,6 +1020,30 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val priority: Int,
         val dueTime: String? = null
     )
+
+    /**
+     * Filter tasks for today view (Small/Medium widgets)
+     * Returns incomplete tasks with dueDate == today (only today's tasks)
+     *
+     * Note: Overdue tasks are NOT shown in the widget.
+     * The auto-postpone feature (which moves overdue tasks to today) is handled
+     * by the Flutter app on startup, not by the widget.
+     */
+    private fun filterTodayTasks(tasks: List<WidgetTask>): List<WidgetTask> {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+
+        return tasks.filter { task ->
+            // Must be incomplete
+            if (task.isCompleted) return@filter false
+
+            // Must have due date
+            val dueTime = task.dueTime ?: return@filter false
+
+            // Due date == today (only today's tasks, not overdue)
+            dueTime == today
+        }
+    }
 
     /**
      * Get full lunar date info (month + day) from calendar
@@ -1092,61 +1285,107 @@ open class AmberWidgetProvider : AppWidgetProvider() {
     }
 
     /**
-     * Small Widget skin configuration
+     * Widget skin configuration
      * Contains background drawable resource and text colors for each skin
+     * Used by Small, Medium, and Large widgets
      */
-    protected data class SmallWidgetSkinConfig(
+    protected data class WidgetSkinConfig(
         val backgroundRes: Int,
+        val headerBackgroundRes: Int,  // For Large widget header
         val textColor: Int,
-        val secondaryTextColor: Int
+        val secondaryTextColor: Int,
+        val headerTextColor: Int,      // For header title (white on colored background)
+        val dividerColor: Int,         // For Medium widget divider
+        val mediumPriorityIconRes: Int // Medium priority flag icon (avoids clash with background)
     )
 
     /**
-     * Load Small Widget skin configuration from SharedPreferences
-     * Returns default white skin if no setting found
+     * Load "tap text to complete" setting from SharedPreferences
+     * Returns true (default) if setting not found
      */
-    private fun loadSmallWidgetSkin(context: Context): SmallWidgetSkinConfig {
+    protected fun loadTapTextToComplete(context: Context): Boolean {
+        return try {
+            val prefs = HomeWidgetPlugin.getData(context)
+            // SharedPreferences 的 getBoolean 默认返回 true
+            prefs.getBoolean(KEY_TAP_TEXT_TO_COMPLETE, true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading tap text setting", e)
+            true // 默认开启
+        }
+    }
+
+    /**
+     * Load Widget skin configuration from SharedPreferences
+     * Returns default white skin if no setting found
+     * Used by all widget sizes (Small, Medium, Large)
+     */
+    protected fun loadWidgetSkin(context: Context): WidgetSkinConfig {
         return try {
             val prefs = HomeWidgetPlugin.getData(context)
             val skinName = prefs.getString(KEY_SMALL_WIDGET_SKIN, "white") ?: "white"
 
-            Log.d(TAG, "Loading small widget skin: $skinName")
+            Log.d(TAG, "Loading widget skin: $skinName")
 
             when (skinName) {
-                "amber" -> SmallWidgetSkinConfig(
+                "amber" -> WidgetSkinConfig(
+                    // 琥珀橙 - 活力品牌色
                     backgroundRes = R.drawable.widget_small_background,
-                    textColor = Color.parseColor("#5C3D1E"),
-                    secondaryTextColor = Color.parseColor("#8B6914")
+                    headerBackgroundRes = R.drawable.widget_header_background,
+                    textColor = Color.parseColor("#4E342E"),       // 深棕色文字
+                    secondaryTextColor = Color.parseColor("#6D4C41"), // 中棕色
+                    headerTextColor = Color.parseColor("#FFFFFF"),
+                    dividerColor = Color.parseColor("#FFAB40"),    // 活力橙分隔线
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium_amber  // 深红色（避免与橙色背景撞色）
                 )
-                "dark" -> SmallWidgetSkinConfig(
+                "dark" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_dark,
+                    headerBackgroundRes = R.drawable.widget_small_bg_dark,
                     textColor = Color.parseColor("#E0E0E0"),
-                    secondaryTextColor = Color.parseColor("#9E9E9E")
+                    secondaryTextColor = Color.parseColor("#9E9E9E"),
+                    headerTextColor = Color.parseColor("#FFFFFF"),
+                    dividerColor = Color.parseColor("#616161"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
                 )
-                "mint" -> SmallWidgetSkinConfig(
+                "mint" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_mint,
+                    headerBackgroundRes = R.drawable.widget_small_bg_mint,
                     textColor = Color.parseColor("#1B3B38"),
-                    secondaryTextColor = Color.parseColor("#2E5752")
+                    secondaryTextColor = Color.parseColor("#2E5752"),
+                    headerTextColor = Color.parseColor("#FFFFFF"),
+                    dividerColor = Color.parseColor("#4DB6AC"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
                 )
-                "pink" -> SmallWidgetSkinConfig(
+                "pink" -> WidgetSkinConfig(
                     backgroundRes = R.drawable.widget_small_bg_pink,
-                    textColor = Color.parseColor("#4A0D2B"),
-                    secondaryTextColor = Color.parseColor("#6D1B42")
+                    headerBackgroundRes = R.drawable.widget_small_bg_pink,
+                    textColor = Color.parseColor("#2D0A1A"),
+                    secondaryTextColor = Color.parseColor("#4A1228"),
+                    headerTextColor = Color.parseColor("#FFFFFF"),
+                    dividerColor = Color.parseColor("#F48FB1"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
                 )
-                else -> SmallWidgetSkinConfig(
+                else -> WidgetSkinConfig(
                     // Default white skin
                     backgroundRes = R.drawable.widget_small_bg_white,
+                    headerBackgroundRes = R.drawable.widget_small_bg_white,
                     textColor = Color.parseColor("#212121"),
-                    secondaryTextColor = Color.parseColor("#757575")
+                    secondaryTextColor = Color.parseColor("#757575"),
+                    headerTextColor = Color.parseColor("#212121"),
+                    dividerColor = Color.parseColor("#E0E0E0"),
+                    mediumPriorityIconRes = R.drawable.ic_flag_medium  // 标准橙色
                 )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading skin config", e)
-            // Return default amber skin on error
-            SmallWidgetSkinConfig(
+            // Return default amber orange skin on error
+            WidgetSkinConfig(
                 backgroundRes = R.drawable.widget_small_background,
-                textColor = Color.parseColor("#5C3D1E"),
-                secondaryTextColor = Color.parseColor("#8B6914")
+                headerBackgroundRes = R.drawable.widget_header_background,
+                textColor = Color.parseColor("#4E342E"),
+                secondaryTextColor = Color.parseColor("#6D4C41"),
+                headerTextColor = Color.parseColor("#FFFFFF"),
+                dividerColor = Color.parseColor("#FFAB40"),
+                mediumPriorityIconRes = R.drawable.ic_flag_medium_amber
             )
         }
     }

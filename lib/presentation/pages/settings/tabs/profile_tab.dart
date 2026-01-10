@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/constants.dart';
 import '../../../providers/user_profile_provider.dart';
+import '../../../widgets/activation_dialog.dart';
 import '../../../widgets/animated_logo.dart';
 import '../../../widgets/common/toast/toast_manager.dart';
 import '../widgets/settings_section.dart';
@@ -22,6 +23,20 @@ class ProfileTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AmberDimens.spacingLg),
       children: [
+        // 激活状态区块
+        SettingsSection(
+          title: '激活状态',
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: AmberDimens.spacingMd,
+                vertical: AmberDimens.spacingSm,
+              ),
+              child: ActivationStatusCard(),
+            ),
+          ],
+        ),
+        const SizedBox(height: AmberDimens.spacingLg),
         // 头像设置区域
         SettingsSection(
           title: '头像',

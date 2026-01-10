@@ -32,7 +32,7 @@ enum SettingsTabType {
       case SettingsTabType.profile:
         return '个人信息';
       case SettingsTabType.display:
-        return '显示';
+        return '显示偏好';
       case SettingsTabType.taskManagement:
         return '任务管理';
       case SettingsTabType.quickAdd:

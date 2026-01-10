@@ -12,6 +12,49 @@ import 'database_provider.dart';
 /// ============================================================
 /// 管理云同步的全局状态（支持 WebDAV 和 OSS）
 
+/// 首次同步冲突检测结果
+/// 用于在首次同步时检测双端都有数据的情况
+@immutable
+class FirstSyncConflict {
+  /// 本地任务数量
+  final int localTaskCount;
+
+  /// 云端版本号
+  final int remoteVersion;
+
+  /// 云端最后同步设备
+  final String? remoteDevice;
+
+  /// 云端最后同步时间
+  final DateTime? remoteLastSync;
+
+  const FirstSyncConflict({
+    required this.localTaskCount,
+    required this.remoteVersion,
+    this.remoteDevice,
+    this.remoteLastSync,
+  });
+}
+
+/// 首次同步冲突用户选择
+enum FirstSyncChoice {
+  /// 从云端恢复（覆盖本地）
+  downloadFromCloud,
+
+  /// 上传到云端（覆盖云端）
+  uploadToCloud,
+
+  /// 取消同步
+  cancel,
+}
+
+/// 首次同步冲突决策回调
+/// 当检测到首次同步且双端都有数据时调用
+/// 返回用户的选择
+typedef FirstSyncConflictCallback = Future<FirstSyncChoice?> Function(
+  FirstSyncConflict conflict,
+);
+
 /// 同步状态数据类
 @immutable
 class SyncState {
@@ -75,6 +118,10 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
   /// 冲突决策回调（由 UI 层设置）
   /// 当检测到冲突时，通过此回调让 UI 弹窗让用户选择
   ConflictResolutionCallback? onConflictDetected;
+
+  /// 首次同步冲突决策回调（由 UI 层设置）
+  /// 当检测到首次同步且双端都有数据时调用
+  FirstSyncConflictCallback? onFirstSyncConflict;
 
   SyncStateNotifier(this._ref) : super(const SyncState()) {
     _initialize();
@@ -159,6 +206,11 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     _syncManager = SyncManager();
     _syncManager!.onBeforeSync = () async {
       await _ref.read(databaseProvider).checkpoint();
+    };
+    // 数据库替换前回调：关闭数据库连接
+    _syncManager!.onBeforeDbReplace = () async {
+      debugPrint('[SyncProvider] 关闭数据库连接以准备替换...');
+      await _ref.read(databaseProvider).close();
     };
     await _syncManager!.initialize();
     _syncManager!.onSyncComplete = (success) {
@@ -411,7 +463,13 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
 
   /// 手动触发同步
   /// [forceDownload] 强制从云端下载（忽略本地状态，用于数据恢复场景）
-  Future<bool> manualSync({bool forceDownload = false}) async {
+  /// [forceUpload] 强制上传本地数据（清除本地同步状态后上传）
+  /// [skipFirstSyncCheck] 跳过首次同步冲突检测（用户已确认选择后）
+  Future<bool> manualSync({
+    bool forceDownload = false,
+    bool forceUpload = false,
+    bool skipFirstSyncCheck = false,
+  }) async {
     final syncType = _ref.read(syncTypeProvider);
 
     // 检查是否有配置
@@ -437,6 +495,12 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     _syncManager!.onBeforeSync = () async {
       await _ref.read(databaseProvider).checkpoint();
     };
+    // 数据库替换前回调：关闭数据库连接
+    // 这是解决 "database disk image is malformed" 错误的关键
+    _syncManager!.onBeforeDbReplace = () async {
+      debugPrint('[SyncProvider] 关闭数据库连接以准备替换...');
+      await _ref.read(databaseProvider).close();
+    };
     await _syncManager!.initialize();
     _syncManager!.onSyncComplete = (success) {
       if (success) {
@@ -448,6 +512,45 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     _syncManager!.onConflictDetected = onConflictDetected;
 
     try {
+      // ========== 首次同步冲突检测 ==========
+      // 如果不是强制操作，且设置了回调，检测首次同步冲突
+      if (!forceDownload && !forceUpload && !skipFirstSyncCheck && onFirstSyncConflict != null) {
+        final conflictInfo = await _syncManager!.detectFirstSyncConflict();
+
+        if (conflictInfo != null) {
+          // 检测到首次同步冲突，询问用户
+          final conflict = FirstSyncConflict(
+            localTaskCount: conflictInfo.localTaskCount,
+            remoteVersion: conflictInfo.remoteVersion,
+            remoteDevice: conflictInfo.remoteDevice,
+            remoteLastSync: conflictInfo.remoteLastSync,
+          );
+
+          final choice = await onFirstSyncConflict!(conflict);
+
+          if (choice == null || choice == FirstSyncChoice.cancel) {
+            debugPrint('[SyncProvider] 用户取消首次同步');
+            return false;
+          }
+
+          if (choice == FirstSyncChoice.downloadFromCloud) {
+            // 用户选择从云端恢复
+            debugPrint('[SyncProvider] 用户选择从云端恢复');
+            return manualSync(forceDownload: true, skipFirstSyncCheck: true);
+          } else if (choice == FirstSyncChoice.uploadToCloud) {
+            // 用户选择上传到云端
+            debugPrint('[SyncProvider] 用户选择上传到云端');
+            return manualSync(forceUpload: true, skipFirstSyncCheck: true);
+          }
+        }
+      }
+
+      // 强制上传：清除本地同步状态，让系统认为"本地有变化，远程没变化"
+      if (forceUpload) {
+        debugPrint('[SyncProvider] 强制上传模式：清除本地同步状态');
+        await SyncStateService.clearState();
+      }
+
       state = state.copyWith(
         isSyncing: true,
         clearError: true,

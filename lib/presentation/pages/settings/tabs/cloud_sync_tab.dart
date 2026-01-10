@@ -156,7 +156,9 @@ class CloudSyncTab extends ConsumerWidget {
             currentType: currentType,
             isConfigured: amberCloudConfigured,
             title: '琥珀云托管',
-            subtitle: amberCloudConfigured ? '官方服务，开箱即用' : '需先激活 App',
+            subtitle: currentType == SyncType.amberCloud
+                ? '官方服务，开箱即用'
+                : (amberCloudConfigured ? '请在下方点击启用' : '需先激活 App'),
           ),
           _buildSyncOption(
             context: context,
@@ -183,10 +185,18 @@ class CloudSyncTab extends ConsumerWidget {
     required String subtitle,
   }) {
     final isSelected = type == currentType;
-    final canSelect = isConfigured || type == null; // "不同步"总是可选
+    // 琥珀云特殊处理：只有当前已经是琥珀云时才能在选择器里选中
+    // 因为选中琥珀云需要先点"启用琥珀云"按钮获取 token
+    // 其他同步方式：配置好了就能选
+    final canSelect = type == null // "不同步"总是可选
+        || (type == SyncType.amberCloud && isSelected) // 琥珀云：只有已选中时才能保持选中
+        || (type != SyncType.amberCloud && isConfigured); // 其他：已配置就能选
+
+    // 已选中的选项不能再点击（避免重复触发切换）
+    final canTap = canSelect && !isSelected;
 
     return InkWell(
-      onTap: canSelect ? () => _onSyncTypeChanged(ref, type, context) : null,
+      onTap: canTap ? () => _onSyncTypeChanged(ref, type, context) : null,
       borderRadius: BorderRadius.circular(AmberDimens.radiusSm),
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -196,11 +206,18 @@ class CloudSyncTab extends ConsumerWidget {
         child: Row(
           children: [
             // Radio 按钮
+            // 注意：用 canSelect 而非 canTap，确保已选中项不会变灰
+            // 已选中时 onChanged 仍然有值，但回调里不做任何操作
             Radio<SyncType?>(
               value: type,
               groupValue: currentType,
               onChanged: canSelect
-                  ? (value) => _onSyncTypeChanged(ref, value, context)
+                  ? (value) {
+                      // 只有在非已选中状态才触发切换
+                      if (!isSelected) {
+                        _onSyncTypeChanged(ref, value, context);
+                      }
+                    }
                   : null,
               activeColor: AmberColors.primary,
             ),
@@ -231,8 +248,8 @@ class CloudSyncTab extends ConsumerWidget {
                 ],
               ),
             ),
-            // 状态图标
-            if (isSelected && type != null)
+            // 状态图标（已选中的同步方式显示 ✓，包括"不同步"）
+            if (isSelected)
               Icon(
                 Icons.check_circle,
                 color: AmberColors.success,

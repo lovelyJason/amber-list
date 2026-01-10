@@ -278,6 +278,106 @@ class AppNavState {
 
 ## 数据库存储
 
+### SQLite 表结构
+
+使用 Flutter Drift ORM，数据库文件名：`amber_list.db`
+
+#### tasks 表
+
+```sql
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  list_id TEXT REFERENCES task_lists(id),
+  due_date INTEGER,           -- Unix 时间戳（秒级！不是毫秒）
+  priority INTEGER DEFAULT 0,
+  is_completed INTEGER DEFAULT 0,
+  is_in_progress INTEGER DEFAULT 0,
+  is_deleted INTEGER DEFAULT 0,
+  completed_at INTEGER,       -- Unix 时间戳（秒级）
+  tags TEXT DEFAULT '[]',     -- JSON 数组
+  sort_order INTEGER DEFAULT 0,
+  parent_id TEXT,
+  auto_postpone INTEGER DEFAULT 1,
+  created_at INTEGER NOT NULL, -- Unix 时间戳（秒级）
+  updated_at INTEGER NOT NULL  -- Unix 时间戳（秒级）
+);
+```
+
+#### task_lists 表
+
+```sql
+CREATE TABLE task_lists (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  icon TEXT DEFAULT 'list',
+  color INTEGER NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  parent_id TEXT,
+  is_folder INTEGER DEFAULT 0,
+  tags TEXT DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+```
+
+#### notes 表
+
+```sql
+CREATE TABLE notes (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT DEFAULT '',
+  folder_id TEXT,
+  tags TEXT DEFAULT '[]',
+  is_pinned INTEGER DEFAULT 0,
+  sort_order INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+```
+
+#### tags 表
+
+```sql
+CREATE TABLE tags (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+```
+
+### 时间戳格式
+
+**重要**：所有 `DateTime` 类型字段在 SQLite 中存储为 **秒级 Unix 时间戳**（INTEGER），不是毫秒！
+
+```dart
+// Flutter Drift 存储示例
+// due_date = 1768003200 表示 2026-01-09 00:00:00 UTC
+
+// 转换为 DateTime
+final dueDate = DateTime.fromMillisecondsSinceEpoch(dbValue * 1000);
+
+// 或使用秒级转换
+final dueDate = DateTime.fromMicrosecondsSinceEpoch(dbValue * 1000000);
+```
+
+```swift
+// iOS Swift 读取示例
+let dueDateSeconds = sqlite3_column_int64(statement, 4)
+let dueDate = Date(timeIntervalSince1970: Double(dueDateSeconds))
+```
+
+```kotlin
+// Android Kotlin 读取示例
+val dueDateSeconds = cursor.getLong(cursor.getColumnIndex("due_date"))
+val dueDate = Date(dueDateSeconds * 1000)
+```
+
+### JSON 字段
+
 标签列表在数据库中以 JSON 字符串形式存储：
 
 ```sql
@@ -289,3 +389,13 @@ tags TEXT DEFAULT '[]'
 ```
 
 读取和写入时进行 JSON 序列化/反序列化。
+
+### iOS Widget 数据共享
+
+iOS Widget Extension 通过 App Group 共享目录直接访问 SQLite 数据库：
+
+- **App Group ID**: `group.com.amberlist.amberList`
+- **数据库路径**: `{AppGroupContainer}/amber_list.db`
+- **访问方式**: SQLite3 C API 直接读写
+
+详见 [iOS Home Widget 架构文档](../context/ios-home-widget-architecture.md)

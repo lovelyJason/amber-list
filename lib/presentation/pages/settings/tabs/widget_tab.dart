@@ -11,7 +11,7 @@ import '../widgets/settings_section.dart';
 /// 小组件设置标签页
 ///
 /// 配置 Android/iOS 桌面小组件的皮肤和样式
-/// 目前支持 Small Widget 皮肤切换
+/// 皮肤设置对 Small/Medium/Large 三种尺寸的组件都生效
 class WidgetTab extends ConsumerWidget {
   const WidgetTab({super.key});
 
@@ -27,17 +27,74 @@ class WidgetTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AmberDimens.spacingLg),
       children: [
-        // Small Widget 皮肤设置
+        // 小组件皮肤设置
         SettingsSection(
-          title: 'Small Widget 皮肤',
+          title: '小组件皮肤',
           children: [
             _buildSkinSelector(context, ref, settings),
+          ],
+        ),
+        const SizedBox(height: AmberDimens.spacingMd),
+        // 交互设置
+        SettingsSection(
+          title: '交互设置',
+          children: [
+            _buildTapTextToCompleteSwitch(context, ref, settings),
           ],
         ),
         const SizedBox(height: AmberDimens.spacingMd),
         // 说明文字
         _buildHelpText(),
       ],
+    );
+  }
+
+  /// 构建"点击文字完成任务"开关
+  Widget _buildTapTextToCompleteSwitch(
+    BuildContext context,
+    WidgetRef ref,
+    WidgetSettings settings,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AmberDimens.spacingMd,
+        vertical: AmberDimens.spacingSm,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '点击文字完成任务',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  settings.tapTextToComplete
+                      ? '点击任务文字或复选框都能切换完成状态'
+                      : '仅点击复选框可切换，点击文字打开 App',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AmberColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: settings.tapTextToComplete,
+            activeTrackColor: AmberColors.primary,
+            onChanged: (value) {
+              ref.read(widgetSettingsProvider.notifier).setTapTextToComplete(value);
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -197,7 +254,8 @@ class WidgetTab extends ConsumerWidget {
   ) {
     return GestureDetector(
       onTap: () {
-        ref.read(widgetSettingsProvider.notifier).setSmallWidgetSkin(config.type);
+        // 统一设置所有尺寸 Widget 的皮肤
+        ref.read(widgetSettingsProvider.notifier).setAllWidgetSkin(config.type);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -289,11 +347,70 @@ class WidgetTab extends ConsumerWidget {
           const Text(
             '• 选择皮肤后，桌面小组件会自动更新\n'
             '• 如果小组件未更新，请尝试移除后重新添加\n'
-            '• 皮肤设置仅对 Small Widget (2x2) 生效',
+            '• 皮肤设置对所有尺寸的小组件生效',
             style: TextStyle(
               fontSize: 12,
               color: AmberColors.textSecondary,
               height: 1.6,
+            ),
+          ),
+          // iOS 平台特有提示
+          if (Platform.isIOS) ...[
+            const SizedBox(height: 16),
+            _buildIOSHint(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 构建 iOS 平台特有提示
+  ///
+  /// iOS 小组件支持两种换肤方式：
+  /// 1. App 设置 - 在此页面选择皮肤
+  /// 2. 长按配置 - 长按桌面小组件选择皮肤（会覆盖 App 设置）
+  Widget _buildIOSHint() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AmberColors.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AmberColors.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.lightbulb_outline,
+            size: 18,
+            color: AmberColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'iOS 小组件换肤提示',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AmberColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '长按桌面小组件 → 编辑小组件 → 也可选择皮肤\n'
+                  '长按配置的皮肤会覆盖此处的设置',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AmberColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

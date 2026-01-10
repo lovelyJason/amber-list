@@ -9,6 +9,7 @@ import '../../core/constants/constants.dart';
 import '../providers/providers.dart';
 import '../pages/settings/settings_page.dart';
 import 'animated_logo.dart';
+import 'common/toast/toast_manager.dart';
 import 'mac_traffic_lights.dart';
 import 'sync_conflict_dialog.dart';
 
@@ -250,11 +251,42 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
         return showSyncConflictDialog(context, conflicts: conflicts);
       };
 
+      // 设置首次同步冲突回调（检测到双端都有数据时弹窗）
+      ref.read(syncStateProvider.notifier).onFirstSyncConflict = (conflict) async {
+        if (!mounted) return null;
+        return showFirstSyncConflictDialog(
+          context,
+          localTaskCount: conflict.localTaskCount,
+          remoteVersion: conflict.remoteVersion,
+          remoteDevice: conflict.remoteDevice,
+          remoteLastSync: conflict.remoteLastSync,
+        );
+      };
+
       final success = await ref.read(syncStateProvider.notifier).manualSync();
 
       // 同步成功播放音效
       if (success && mounted) {
         ref.read(soundServiceProvider).playSuccess();
+      } else if (!success && mounted) {
+        // 同步失败，检查错误信息并提示
+        final syncState = ref.read(syncStateProvider);
+        final errorMsg = syncState.lastError ?? '同步失败';
+
+        // 针对 429 错误特殊处理
+        if (errorMsg.contains('429')) {
+          ToastManager().show(
+            context,
+            '请求太频繁，请稍后再试',
+            type: ToastType.warning,
+          );
+        } else {
+          ToastManager().show(
+            context,
+            errorMsg,
+            type: ToastType.error,
+          );
+        }
       }
     }
 

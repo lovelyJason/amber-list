@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Small widget background - lighter amber gradient
-    Adjusted to be lighter and less saturated for better readability
+    Small widget background - Amber Orange gradient
+    Warm and vibrant orange theme for brand identity
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
         android:angle="315"
-        android:startColor="#E8D494"
-        android:centerColor="#DDBE6F"
-        android:endColor="#D9B560"
+        android:startColor="#FFE0B2"
+        android:centerColor="#FFB74D"
+        android:endColor="#FFA726"
         android:type="linear" />
     <corners android:radius="24dp" />
 </shape>

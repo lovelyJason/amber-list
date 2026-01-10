@@ -47,3 +47,7 @@
 - 自动生成的代码（如 freezed、json_serializable）
 - 复杂动画序列代码
 - 大量静态配置数据
+
+### 数据库说明
+
+涉及到新建sqlite表或者修改表结构必须同步设计文档到docs/api中

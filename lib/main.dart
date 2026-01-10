@@ -16,6 +16,7 @@ import 'core/services/home_widget_service.dart';
 import 'core/services/logger_service.dart';
 import 'core/theme/amber_theme.dart';
 import 'core/utils/startup_logger.dart';
+import 'data/datasources/local/database.dart';
 import 'presentation/pages/settings/settings_page.dart';
 import 'presentation/pages/sticky_note/sticky_note_page.dart';
 
@@ -73,6 +74,11 @@ Future<void> _startApp(List<String> args) async {
 
   // 移动端直接启动主应用，不需要窗口管理
   if (Platform.isAndroid || Platform.isIOS) {
+    // iOS: 迁移数据库到 App Group 共享目录（首次升级时执行）
+    if (Platform.isIOS) {
+      await _migrateIOSDatabase();
+    }
+
     // 初始化桌面小组件服务（Android/iOS Home Screen Widget）
     await HomeWidgetService().init();
 
@@ -232,6 +238,25 @@ Future<void> _launchMainWindow() async {
       child: AmberListApp(),
     ),
   );
+}
+
+/// iOS 数据库迁移到 App Group 共享目录
+/// 首次升级时将旧数据库从 Documents 目录迁移到 App Group 目录
+/// 以便 Widget Extension 可以直接访问数据库
+Future<void> _migrateIOSDatabase() async {
+  try {
+    // 先初始化 App Group 路径（确保 MethodChannel 可用后立即缓存路径）
+    // 这必须在任何数据库操作之前完成
+    await AppDatabase.initAppGroupPath();
+
+    // 然后执行数据库迁移（从 Documents 到 App Group）
+    final migrated = await AppDatabase.migrateToAppGroup();
+    if (migrated) {
+      debugPrint('[Main] iOS database migration completed');
+    }
+  } catch (e) {
+    debugPrint('[Main] iOS database migration failed: $e');
+  }
 }
 
 /// 设置窗口 App

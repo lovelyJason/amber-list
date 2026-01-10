@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Medium priority flag icon for AMBER skin (brown) - weaker than red, visible on orange background -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Flag with pole - Material Design filled flag style -->
+    <path
+        android:fillColor="#8D6E63"
+        android:pathData="M14.4,6L14,4H5v17h2v-7h5.6l0.4,2h7V6z" />
+</vector>

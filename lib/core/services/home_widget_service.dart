@@ -19,11 +19,14 @@ import '../models/widget_skins.dart';
 class HomeWidgetService {
   /// Android Widget 的类名（相对于包名，插件会自动拼接 "包名." 前缀）
   /// 注意：不要以点开头，否则会出现双点问题
-  static const String _androidWidgetName = 'widget.AmberWidgetProvider';
+  static const String _androidWidgetSmall = 'widget.AmberWidgetProvider';
+  static const String _androidWidgetMedium = 'widget.AmberWidgetMediumProvider';
+  static const String _androidWidgetLarge = 'widget.AmberWidgetLargeProvider';
 
   /// iOS Widget 的 App Group ID（iOS 特有，用于跨进程数据共享）
   /// 格式：group.com.你的包名
-  static const String _iOSAppGroupId = 'group.com.example.amberlist';
+  /// 注意：此 ID 必须与 Xcode 中配置的 App Group 完全一致（大小写敏感！）
+  static const String _iOSAppGroupId = 'group.com.amberlist.amberList';
 
   /// SharedPreferences 中存储任务数据的 Key
   static const String _keyWidgetTasks = 'widget_tasks';
@@ -31,8 +34,13 @@ class HomeWidgetService {
   /// SharedPreferences 中存储待处理操作的 Key（用户在 Widget 上的点击）
   static const String _keyPendingAction = 'widget_pending_action';
 
-  /// SharedPreferences 中存储 Small Widget 皮肤设置的 Key
+  /// SharedPreferences 中存储各尺寸 Widget 皮肤设置的 Key
   static const String _keySmallWidgetSkin = 'widget_small_skin';
+  static const String _keyMediumWidgetSkin = 'widget_medium_skin';
+  static const String _keyLargeWidgetSkin = 'widget_large_skin';
+
+  /// SharedPreferences 中存储"点击文字完成任务"设置的 Key
+  static const String _keyTapTextToComplete = 'widget_tap_text_to_complete';
 
   /// 单例实例
   static final HomeWidgetService _instance = HomeWidgetService._internal();
@@ -183,19 +191,38 @@ class HomeWidgetService {
   }
 
   /// 触发原生小组件刷新
+  ///
+  /// 刷新所有三种尺寸的 Widget（Small/Medium/Large）
   Future<void> _refreshWidget() async {
     try {
       if (Platform.isAndroid) {
-        // Android: 刷新指定类名的 Widget
+        // Android: 刷新所有三种尺寸的 Widget
         await HomeWidget.updateWidget(
-          name: _androidWidgetName,
-          androidName: _androidWidgetName,
+          name: _androidWidgetSmall,
+          androidName: _androidWidgetSmall,
+        );
+        await HomeWidget.updateWidget(
+          name: _androidWidgetMedium,
+          androidName: _androidWidgetMedium,
+        );
+        await HomeWidget.updateWidget(
+          name: _androidWidgetLarge,
+          androidName: _androidWidgetLarge,
         );
       } else if (Platform.isIOS) {
-        // iOS: 刷新所有 Widget Timeline
+        // iOS: 刷新所有三种尺寸的 Widget Timeline
+        // iOSName 必须与 Swift 中 Widget 的 kind 属性完全一致！
         await HomeWidget.updateWidget(
-          name: 'AmberWidget',
-          iOSName: 'AmberWidget',
+          name: 'SmallAmberWidget',
+          iOSName: 'SmallAmberWidget',
+        );
+        await HomeWidget.updateWidget(
+          name: 'MediumAmberWidget',
+          iOSName: 'MediumAmberWidget',
+        );
+        await HomeWidget.updateWidget(
+          name: 'LargeAmberWidget',
+          iOSName: 'LargeAmberWidget',
         );
       }
       debugPrint('[HomeWidgetService] 已触发小组件刷新');
@@ -278,5 +305,71 @@ class HomeWidgetService {
     } catch (e) {
       debugPrint('[HomeWidgetService] 更新皮肤失败: $e');
     }
+  }
+
+  /// 更新 Medium Widget 皮肤设置
+  ///
+  /// 将皮肤类型名称存储到 SharedPreferences，供原生 Widget 读取
+  /// [skinType] 皮肤类型枚举
+  Future<void> updateMediumWidgetSkin(WidgetSkinType skinType) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    try {
+      final skinName = skinType.name;
+      await HomeWidget.saveWidgetData<String>(_keyMediumWidgetSkin, skinName);
+      await _refreshWidget();
+      debugPrint('[HomeWidgetService] 已更新 Medium Widget 皮肤: $skinName');
+    } catch (e) {
+      debugPrint('[HomeWidgetService] 更新皮肤失败: $e');
+    }
+  }
+
+  /// 更新 Large Widget 皮肤设置
+  ///
+  /// 将皮肤类型名称存储到 SharedPreferences，供原生 Widget 读取
+  /// [skinType] 皮肤类型枚举
+  Future<void> updateLargeWidgetSkin(WidgetSkinType skinType) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    try {
+      final skinName = skinType.name;
+      await HomeWidget.saveWidgetData<String>(_keyLargeWidgetSkin, skinName);
+      await _refreshWidget();
+      debugPrint('[HomeWidgetService] 已更新 Large Widget 皮肤: $skinName');
+    } catch (e) {
+      debugPrint('[HomeWidgetService] 更新皮肤失败: $e');
+    }
+  }
+
+  /// 更新"点击文字完成任务"设置
+  ///
+  /// 控制 Widget 上点击任务文字的行为：
+  /// - true: 点击文字也能切换任务完成状态
+  /// - false: 点击文字打开 App，只有点击复选框才能切换状态
+  Future<void> updateTapTextToComplete(bool enabled) async {
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+
+    try {
+      await HomeWidget.saveWidgetData<bool>(_keyTapTextToComplete, enabled);
+      await _refreshWidget();
+      debugPrint('[HomeWidgetService] 已更新点击文字完成任务设置: $enabled');
+    } catch (e) {
+      debugPrint('[HomeWidgetService] 更新设置失败: $e');
+    }
+  }
+
+  // ========== 以下方法已废弃（iOS Widget 现在直接操作 SQLite 数据库）==========
+  //
+  // iOS Widget 通过 App Group 共享目录直接访问 SQLite 数据库，
+  // 不再需要通过 UserDefaults 中转和待同步队列机制。
+  // 保留这些方法仅为兼容性考虑，新版本不会使用它们。
+  //
+  // @deprecated 使用 SQLite 直接访问替代
+
+  /// 强制刷新 Widget（公开方法）
+  ///
+  /// 当 App 内数据变化时调用此方法立即刷新 Widget
+  Future<void> forceRefreshWidget() async {
+    await _refreshWidget();
   }
 }

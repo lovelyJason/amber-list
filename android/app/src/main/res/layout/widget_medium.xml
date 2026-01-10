@@ -30,6 +30,7 @@
                 android:contentDescription="Amber List" />
 
             <TextView
+                android:id="@+id/header_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
@@ -89,10 +90,10 @@
                 android:layout_height="wrap_content"
                 android:text="1月"
                 android:textColor="#FFFFFF"
-                android:textSize="9sp"
+                android:textSize="11sp"
                 android:background="@drawable/widget_time_background"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="2dp" />
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="3dp" />
 
             <!-- Big day number -->
             <TextView
@@ -102,7 +103,7 @@
                 android:layout_marginTop="2dp"
                 android:text="08"
                 android:textColor="#5C3D1E"
-                android:textSize="34sp"
+                android:textSize="42sp"
                 android:textStyle="bold"
                 android:fontFamily="sans-serif-medium"
                 android:includeFontPadding="false" />
@@ -114,7 +115,7 @@
                 android:layout_height="wrap_content"
                 android:text="腊月二十"
                 android:textColor="#8B5A2B"
-                android:textSize="10sp" />
+                android:textSize="12sp" />
 
             <!-- Weekday -->
             <TextView
@@ -123,7 +124,7 @@
                 android:layout_height="wrap_content"
                 android:text="星期三"
                 android:textColor="#8B5A2B"
-                android:textSize="11sp" />
+                android:textSize="13sp" />
 
         </LinearLayout>
 
@@ -154,20 +155,10 @@
                 android:paddingVertical="4dp"
                 android:visibility="gone">
 
-                <!-- Priority flag icon -->
-                <ImageView
-                    android:id="@+id/task_priority_1"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="5dp"
-                    android:src="@drawable/ic_flag_none"
-                    android:contentDescription="Priority"
-                    android:visibility="gone" />
-
                 <ImageView
                     android:id="@+id/task_checkbox_1"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_checkbox_unchecked"
                     android:contentDescription="Toggle task" />
 
@@ -182,6 +173,16 @@
                     android:text=""
                     android:textColor="#5C3D1E"
                     android:textSize="13sp" />
+
+                <!-- Priority flag icon (at end) -->
+                <ImageView
+                    android:id="@+id/task_priority_1"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_flag_none"
+                    android:contentDescription="Priority"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Task Item 2 -->
@@ -194,20 +195,10 @@
                 android:paddingVertical="4dp"
                 android:visibility="gone">
 
-                <!-- Priority flag icon -->
-                <ImageView
-                    android:id="@+id/task_priority_2"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="5dp"
-                    android:src="@drawable/ic_flag_none"
-                    android:contentDescription="Priority"
-                    android:visibility="gone" />
-
                 <ImageView
                     android:id="@+id/task_checkbox_2"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_checkbox_unchecked"
                     android:contentDescription="Toggle task" />
 
@@ -222,6 +213,16 @@
                     android:text=""
                     android:textColor="#5C3D1E"
                     android:textSize="13sp" />
+
+                <!-- Priority flag icon (at end) -->
+                <ImageView
+                    android:id="@+id/task_priority_2"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_flag_none"
+                    android:contentDescription="Priority"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Task Item 3 -->
@@ -234,20 +235,10 @@
                 android:paddingVertical="4dp"
                 android:visibility="gone">
 
-                <!-- Priority flag icon -->
-                <ImageView
-                    android:id="@+id/task_priority_3"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="5dp"
-                    android:src="@drawable/ic_flag_none"
-                    android:contentDescription="Priority"
-                    android:visibility="gone" />
-
                 <ImageView
                     android:id="@+id/task_checkbox_3"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_checkbox_unchecked"
                     android:contentDescription="Toggle task" />
 
@@ -262,6 +253,16 @@
                     android:text=""
                     android:textColor="#5C3D1E"
                     android:textSize="13sp" />
+
+                <!-- Priority flag icon (at end) -->
+                <ImageView
+                    android:id="@+id/task_priority_3"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_flag_none"
+                    android:contentDescription="Priority"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Task Item 4 -->
@@ -274,20 +275,10 @@
                 android:paddingVertical="4dp"
                 android:visibility="gone">
 
-                <!-- Priority flag icon -->
-                <ImageView
-                    android:id="@+id/task_priority_4"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="5dp"
-                    android:src="@drawable/ic_flag_none"
-                    android:contentDescription="Priority"
-                    android:visibility="gone" />
-
                 <ImageView
                     android:id="@+id/task_checkbox_4"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_checkbox_unchecked"
                     android:contentDescription="Toggle task" />
 
@@ -302,6 +293,16 @@
                     android:text=""
                     android:textColor="#5C3D1E"
                     android:textSize="13sp" />
+
+                <!-- Priority flag icon (at end) -->
+                <ImageView
+                    android:id="@+id/task_priority_4"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_flag_none"
+                    android:contentDescription="Priority"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Task Item 5 -->
@@ -314,20 +315,10 @@
                 android:paddingVertical="4dp"
                 android:visibility="gone">
 
-                <!-- Priority flag icon -->
-                <ImageView
-                    android:id="@+id/task_priority_5"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="5dp"
-                    android:src="@drawable/ic_flag_none"
-                    android:contentDescription="Priority"
-                    android:visibility="gone" />
-
                 <ImageView
                     android:id="@+id/task_checkbox_5"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
                     android:src="@drawable/ic_checkbox_unchecked"
                     android:contentDescription="Toggle task" />
 
@@ -342,6 +333,16 @@
                     android:text=""
                     android:textColor="#5C3D1E"
                     android:textSize="13sp" />
+
+                <!-- Priority flag icon (at end) -->
+                <ImageView
+                    android:id="@+id/task_priority_5"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="4dp"
+                    android:src="@drawable/ic_flag_none"
+                    android:contentDescription="Priority"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Empty state -->

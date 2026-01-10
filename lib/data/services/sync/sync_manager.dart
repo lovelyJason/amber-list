@@ -95,6 +95,11 @@ class SyncManager {
   /// 同步前回调（用于执行 Checkpoint 等操作）
   Future<void> Function()? onBeforeSync;
 
+  /// 数据库替换前回调（用于关闭数据库连接）
+  /// 在下载远程数据库并覆盖本地之前调用
+  /// 必须确保数据库连接已关闭，否则会导致 "database disk image is malformed" 错误
+  Future<void> Function()? onBeforeDbReplace;
+
   /// 同步完成回调 (bool success)
   void Function(bool success)? onSyncComplete;
 
@@ -114,6 +119,9 @@ class SyncManager {
 
   /// 网络状态订阅
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  /// 强制下载模式标志（用于数据恢复场景）
+  bool _forceDownloadMode = false;
 
   /// 是否正在同步
   bool _isSyncing = false;
@@ -137,13 +145,17 @@ class SyncManager {
 
   /// 生成设备 ID
   String _generateDeviceId() {
-    final platform = Platform.isMacOS
-        ? 'mac'
-        : Platform.isWindows
-            ? 'win'
-            : Platform.isLinux
-                ? 'linux'
-                : 'unknown';
+    final platform = Platform.isAndroid
+        ? 'android'
+        : Platform.isIOS
+            ? 'ios'
+            : Platform.isMacOS
+                ? 'mac'
+                : Platform.isWindows
+                    ? 'win'
+                    : Platform.isLinux
+                        ? 'linux'
+                        : 'unknown';
     final uuid = const Uuid().v4().substring(0, 8);
     return '$platform-$uuid';
   }
@@ -250,10 +262,11 @@ class SyncManager {
       return false;
     }
 
-    // 强制下载模式：清除本地同步状态，让系统认为"远程有变化"
+    // 保存 forceDownload 标志，后续流程会用到
+    _forceDownloadMode = forceDownload;
+
     if (forceDownload) {
-      debugPrint('[Sync] 强制下载模式：清除本地同步状态');
-      await SyncStateService.clearState();
+      debugPrint('[Sync] 强制下载模式：将直接下载云端数据覆盖本地');
     }
 
     _isSyncing = true;
@@ -338,7 +351,10 @@ class SyncManager {
 
           debugPrint('[Sync] 预检查: 本地checksum=$localChecksum, 远程checksum=${remoteMeta.checksum}');
 
-          if (remoteMeta.checksum.isNotEmpty &&
+          // 强制下载模式下跳过预检查优化，必须走完整流程
+          if (_forceDownloadMode) {
+            debugPrint('[Sync] 强制下载模式，跳过预检查优化');
+          } else if (remoteMeta.checksum.isNotEmpty &&
               localChecksum == remoteMeta.checksum) {
             // 快速路径：checksum 一致，无需获取锁
             debugPrint('[Sync] 双端无变化 (远程v${remoteMeta.version}, 本地checksum一致)');
@@ -403,6 +419,9 @@ class SyncManager {
     _updateStatus(SyncStatus.downloading, '检查远程状态...');
 
     final metaResult = await provider.readMetadata();
+    debugPrint('[Sync] readMetadata 结果: success=${metaResult.success}, '
+        'hasData=${metaResult.data != null}, error=${metaResult.error}');
+
     if (!metaResult.success) {
       _updateStatus(SyncStatus.failed, metaResult.error ?? '读取元数据失败');
       return false;
@@ -411,6 +430,8 @@ class SyncManager {
     final remoteMeta = metaResult.data != null
         ? RemoteSyncMetadata.fromJson(metaResult.data!)
         : null;
+
+    debugPrint('[Sync] remoteMeta 解析结果: ${remoteMeta != null ? "version=${remoteMeta.version}" : "null（云端无元数据）"}');
 
     // 加载本地状态
     final localState = await SyncStateService.loadState();
@@ -438,6 +459,20 @@ class SyncManager {
     debugPrint('[Sync] 本地: lastSyncedVersion=$localVer, lastSyncedChecksum=${localState.lastSyncedChecksum}');
     debugPrint('[Sync] 当前本地checksum=$localChecksum');
     debugPrint('[Sync] remoteHasChanges=$remoteHasChanges, localHasChanges=$localHasChanges');
+    debugPrint('[Sync] _forceDownloadMode=$_forceDownloadMode');
+
+    // ========== 强制下载模式：跳过所有判断，直接下载覆盖 ==========
+    if (_forceDownloadMode) {
+      debugPrint('[Sync] 强制下载模式激活，跳过变化检测，直接下载云端数据');
+      _forceDownloadMode = false; // 重置标志，避免影响后续同步
+
+      if (remoteMeta == null) {
+        _updateStatus(SyncStatus.failed, '云端无数据，无法恢复');
+        return false;
+      }
+
+      return await _downloadOnlyWithProvider(provider, localDbPath, remoteMeta);
+    }
 
     // ========== 情况 A：都没变化 ==========
     if (!remoteHasChanges && !localHasChanges) {
@@ -481,6 +516,19 @@ class SyncManager {
     RemoteSyncMetadata? remoteMeta,
     String localChecksum,
   ) async {
+    // ========== 上传前验证本地数据库完整性 ==========
+    // 确保不会上传损坏的数据库到云端，避免污染其他设备
+    _updateStatus(SyncStatus.uploading, '验证本地数据库...');
+    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(localDbPath);
+    if (!integrityResult.isOk) {
+      debugPrint('[Sync] ❌ 本地数据库损坏，取消上传: ${integrityResult.message}');
+      _updateStatus(
+        SyncStatus.failed,
+        '本地数据库损坏，无法上传。请尝试重启应用或清除数据',
+      );
+      return false;
+    }
+
     _updateStatus(SyncStatus.uploading, '上传本地数据...');
 
     // 上传 DB 文件
@@ -542,6 +590,47 @@ class SyncManager {
       return false;
     }
 
+    // ========== 关键步骤 0：验证下载的数据库完整性 ==========
+    // 在替换本地数据库之前，必须先验证下载的文件是否损坏
+    // 避免用损坏的数据库覆盖正常的本地数据
+    _updateStatus(SyncStatus.downloading, '验证数据库完整性...');
+    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(remoteDbPath);
+    if (!integrityResult.isOk) {
+      debugPrint('[Sync] ❌ 下载的数据库损坏: ${integrityResult.message}');
+      // 清理损坏的临时文件
+      try {
+        await File(remoteDbPath).delete();
+      } catch (_) {}
+      _updateStatus(
+        SyncStatus.failed,
+        '云端数据库已损坏，请在上传设备重新同步或联系支持',
+      );
+      return false;
+    }
+
+    // ========== 关键步骤 1：关闭数据库连接 ==========
+    // 在覆盖本地数据库之前，必须先关闭现有的数据库连接
+    // 否则 SQLite 可能在内存中持有旧状态，导致覆盖不完整或损坏
+    if (onBeforeDbReplace != null) {
+      debugPrint('[Sync] 关闭数据库连接...');
+      await onBeforeDbReplace!();
+    }
+
+    // ========== 关键步骤 2：删除本地 WAL 和 SHM 文件 ==========
+    // SQLite 的 WAL (Write-Ahead Logging) 模式会创建 .db-wal 和 .db-shm 文件
+    // 如果不删除这些文件，新下载的 DB 会尝试应用旧的 WAL 日志
+    // 导致 "database disk image is malformed" 错误
+    final walFile = File('$localDbPath-wal');
+    final shmFile = File('$localDbPath-shm');
+    if (await walFile.exists()) {
+      await walFile.delete();
+      debugPrint('[Sync] 已删除本地 WAL 文件');
+    }
+    if (await shmFile.exists()) {
+      await shmFile.delete();
+      debugPrint('[Sync] 已删除本地 SHM 文件');
+    }
+
     // 用远程 DB 覆盖本地
     await File(remoteDbPath).copy(localDbPath);
 
@@ -586,6 +675,22 @@ class SyncManager {
     if (downloadResult.data == false) {
       // 远程没有 DB，直接上传本地
       return await _uploadOnlyWithProvider(provider, localDbPath, null, localChecksum);
+    }
+
+    // ========== 验证下载的数据库完整性 ==========
+    _updateStatus(SyncStatus.downloading, '验证数据库完整性...');
+    final integrityResult = await DatabaseIntegrityUtils.verifyDatabase(remoteDbPath);
+    if (!integrityResult.isOk) {
+      debugPrint('[Sync] ❌ 下载的远程数据库损坏: ${integrityResult.message}');
+      // 清理损坏的临时文件
+      try {
+        await File(remoteDbPath).delete();
+      } catch (_) {}
+      _updateStatus(
+        SyncStatus.failed,
+        '云端数据库已损坏，请在上传设备重新同步或联系支持',
+      );
+      return false;
     }
 
     // 执行三向合并
@@ -646,6 +751,17 @@ class SyncManager {
 
     // 上传合并后的 DB
     _updateStatus(SyncStatus.uploading, '上传合并结果...');
+
+    // ========== 上传前验证合并后的数据库完整性 ==========
+    final mergedIntegrity = await DatabaseIntegrityUtils.verifyDatabase(localDbPath);
+    if (!mergedIntegrity.isOk) {
+      debugPrint('[Sync] ❌ 合并后的数据库损坏，取消上传: ${mergedIntegrity.message}');
+      _updateStatus(
+        SyncStatus.failed,
+        '合并后数据库损坏，请重试或联系支持',
+      );
+      return false;
+    }
 
     // 验证冲突解决后的数据（调试用）
     if (mergeResult.stats.hasPendingConflicts) {
@@ -815,4 +931,109 @@ class SyncManager {
     );
     return client.testConnection();
   }
+
+  /// 检测首次同步冲突
+  /// 用于在首次同步时检测双端都有数据的情况
+  /// 返回: null 表示无冲突（可以正常同步），否则返回冲突信息
+  Future<FirstSyncConflictInfo?> detectFirstSyncConflict() async {
+    try {
+      // 1. 创建同步提供者
+      final provider = await _createProvider();
+      if (provider == null) {
+        return null; // 未配置同步，无需检测
+      }
+
+      // 2. 加载本地同步状态
+      final localState = await SyncStateService.loadState();
+
+      // 如果已经同步过（版本号 > 0），则不是首次同步
+      if (localState.lastSyncedVersion > 0) {
+        debugPrint('[Sync] 非首次同步，跳过冲突检测');
+        return null;
+      }
+
+      // 3. 测试连接
+      final testResult = await provider.testConnection();
+      if (!testResult.success) {
+        debugPrint('[Sync] 连接失败，跳过冲突检测');
+        return null;
+      }
+
+      // 4. 读取远程元数据
+      final metaResult = await provider.readMetadata();
+      if (!metaResult.success || metaResult.data == null) {
+        debugPrint('[Sync] 远程无数据，首次同步将上传本地');
+        return null;
+      }
+
+      final remoteMeta = RemoteSyncMetadata.fromJson(metaResult.data!);
+
+      // 如果远程版本号为 0，说明云端也是空的
+      if (remoteMeta.version == 0) {
+        debugPrint('[Sync] 远程版本为0，首次同步将上传本地');
+        return null;
+      }
+
+      // 5. 检查本地是否有数据
+      final paths = await _getSyncPaths();
+      final localDbPath = paths['local']!;
+      final localDbFile = File(localDbPath);
+
+      if (!localDbFile.existsSync()) {
+        debugPrint('[Sync] 本地无数据，首次同步将下载云端');
+        return null;
+      }
+
+      // 6. 计算本地数据校验和
+      final localChecksum = await ChecksumUtils.computeFileChecksum(localDbPath);
+
+      // 如果本地和远程校验和一致，说明数据一样，无需询问
+      if (localChecksum == remoteMeta.checksum) {
+        debugPrint('[Sync] 本地与云端数据一致，无需询问');
+        return null;
+      }
+
+      // 7. 统计本地任务数量（打开数据库查询）
+      int localTaskCount = 0;
+      try {
+        final db = sqlite3.open(localDbPath);
+        final result = db.select('SELECT COUNT(*) as count FROM tasks');
+        if (result.isNotEmpty) {
+          localTaskCount = result.first['count'] as int;
+        }
+        db.dispose();
+      } catch (e) {
+        debugPrint('[Sync] 统计本地任务数失败: $e');
+      }
+
+      // 8. 检测到首次同步冲突！
+      debugPrint('[Sync] 检测到首次同步冲突：'
+          '本地 $localTaskCount 条任务，云端版本 ${remoteMeta.version}');
+
+      return FirstSyncConflictInfo(
+        localTaskCount: localTaskCount,
+        remoteVersion: remoteMeta.version,
+        remoteDevice: remoteMeta.deviceId,
+        remoteLastSync: remoteMeta.lastModified,
+      );
+    } catch (e) {
+      debugPrint('[Sync] 首次同步冲突检测失败: $e');
+      return null;
+    }
+  }
+}
+
+/// 首次同步冲突信息
+class FirstSyncConflictInfo {
+  final int localTaskCount;
+  final int remoteVersion;
+  final String? remoteDevice;
+  final DateTime? remoteLastSync;
+
+  FirstSyncConflictInfo({
+    required this.localTaskCount,
+    required this.remoteVersion,
+    this.remoteDevice,
+    this.remoteLastSync,
+  });
 }

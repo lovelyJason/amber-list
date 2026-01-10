@@ -2,6 +2,8 @@ import 'dart:convert'; // Added for JSON
 import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../../../core/constants/colors.dart'; // Added for Colors
@@ -631,10 +633,146 @@ class AppDatabase extends _$AppDatabase {
   Future<void> clearPomodoroQueue() => delete(pomodoroQueue).go();
 
   // ===== 导入导出 =====
+
+  /// iOS App Group ID（与 Widget Extension 共享数据）
+  /// 必须与 Xcode 中配置的 App Group 完全一致
+  static const String _iOSAppGroupId = 'group.com.amberlist.amberList';
+
   /// 获取数据库文件路径
+  ///
+  /// iOS: 必须使用 App Group 共享目录，Widget Extension 直接访问同一个数据库
+  /// 其他平台: 使用默认的 Documents 目录
   static Future<String> getDatabasePath() async {
+    if (Platform.isIOS) {
+      // iOS 必须使用 App Group 共享目录，不 fallback 到 Documents
+      final appGroupDir = await _getAppGroupDirectory();
+      if (appGroupDir != null) {
+        final dbPath = p.join(appGroupDir, 'amber_list.db');
+        debugPrint('[Database] iOS using App Group path: $dbPath');
+        return dbPath;
+      }
+      // 获取失败则抛异常，避免数据写到 Documents 导致 Widget 读不到
+      throw Exception('[Database] iOS App Group directory not available');
+    }
+    // 其他平台使用默认目录
     final dbFolder = await getApplicationDocumentsDirectory();
     return p.join(dbFolder.path, 'amber_list.db');
+  }
+
+  /// 缓存 App Group 目录路径
+  /// 避免每次都调用 MethodChannel
+  static String? _cachedAppGroupPath;
+
+  /// 获取 iOS App Group 共享目录
+  /// 返回 null 表示获取失败（非 iOS 平台或配置错误）
+  static Future<String?> _getAppGroupDirectory() async {
+    if (!Platform.isIOS) return null;
+
+    // 使用缓存
+    if (_cachedAppGroupPath != null) {
+      return _cachedAppGroupPath;
+    }
+
+    try {
+      // 使用 MethodChannel 获取 App Group 路径
+      const channel = MethodChannel('com.amberlist.database');
+      final String? path = await channel.invokeMethod<String>('getAppGroupPath', {
+        'groupId': _iOSAppGroupId,
+      });
+      if (path != null) {
+        _cachedAppGroupPath = path;
+        debugPrint('[Database] App Group path: $path');
+      }
+      return path;
+    } catch (e) {
+      debugPrint('[Database] Failed to get App Group directory: $e');
+      // MethodChannel 失败时，尝试直接构造路径
+      // iOS App Group 路径可以通过 HOME 环境变量推算
+      // 但更可靠的方式是在 main() 中预先初始化
+      return null;
+    }
+  }
+
+  /// 预初始化 App Group 路径
+  /// 在 main() 中 WidgetsFlutterBinding 初始化后调用
+  /// 确保数据库连接前 MethodChannel 已可用
+  static Future<void> initAppGroupPath() async {
+    if (!Platform.isIOS) return;
+
+    try {
+      const channel = MethodChannel('com.amberlist.database');
+      final String? path = await channel.invokeMethod<String>('getAppGroupPath', {
+        'groupId': _iOSAppGroupId,
+      });
+      if (path != null) {
+        _cachedAppGroupPath = path;
+        debugPrint('[Database] App Group path initialized: $path');
+      } else {
+        debugPrint('[Database] Warning: App Group path is null');
+      }
+    } catch (e) {
+      debugPrint('[Database] Failed to initialize App Group path: $e');
+    }
+  }
+
+  /// 迁移旧数据库到 App Group 目录（仅 iOS）
+  /// 首次升级时调用，将 Documents 目录的数据库迁移到 App Group
+  static Future<bool> migrateToAppGroup() async {
+    if (!Platform.isIOS) return false;
+
+    final appGroupDir = await _getAppGroupDirectory();
+    if (appGroupDir == null) {
+      debugPrint('[Database] App Group directory not available, skip migration');
+      return false;
+    }
+
+    // 检查新路径是否已有数据库（已迁移过）
+    final newDbPath = p.join(appGroupDir, 'amber_list.db');
+    final newDbFile = File(newDbPath);
+    if (await newDbFile.exists()) {
+      debugPrint('[Database] Database already in App Group, skip migration');
+      return true;
+    }
+
+    // 检查旧路径是否有数据库
+    final oldDbFolder = await getApplicationDocumentsDirectory();
+    final oldDbPath = p.join(oldDbFolder.path, 'amber_list.db');
+    final oldDbFile = File(oldDbPath);
+    if (!await oldDbFile.exists()) {
+      debugPrint('[Database] No old database to migrate');
+      return true;
+    }
+
+    try {
+      // 确保目标目录存在
+      final targetDir = Directory(appGroupDir);
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      // 复制数据库文件
+      await oldDbFile.copy(newDbPath);
+
+      // 复制 WAL 和 SHM 文件（如果存在）
+      final walFile = File('$oldDbPath-wal');
+      final shmFile = File('$oldDbPath-shm');
+      if (await walFile.exists()) {
+        await walFile.copy('$newDbPath-wal');
+      }
+      if (await shmFile.exists()) {
+        await shmFile.copy('$newDbPath-shm');
+      }
+
+      debugPrint('[Database] Migration to App Group completed');
+
+      // 删除旧文件（可选，暂时保留作为备份）
+      // await oldDbFile.delete();
+
+      return true;
+    } catch (e) {
+      debugPrint('[Database] Migration failed: $e');
+      return false;
+    }
   }
 
   /// 导出数据库

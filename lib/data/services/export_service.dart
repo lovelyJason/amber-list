@@ -4,6 +4,40 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
+/// 数据库导入结果
+class ImportResult {
+  /// 是否成功
+  final bool success;
+
+  /// 是否被用户取消
+  final bool cancelled;
+
+  /// 错误信息（失败时）
+  final String? errorMessage;
+
+  /// 备份文件路径（成功时，如果有备份）
+  final String? backupPath;
+
+  ImportResult._({
+    required this.success,
+    this.cancelled = false,
+    this.errorMessage,
+    this.backupPath,
+  });
+
+  /// 成功
+  factory ImportResult.success({String? backupPath}) =>
+      ImportResult._(success: true, backupPath: backupPath);
+
+  /// 用户取消
+  factory ImportResult.cancelled() =>
+      ImportResult._(success: false, cancelled: true);
+
+  /// 错误
+  factory ImportResult.error(String message) =>
+      ImportResult._(success: false, errorMessage: message);
+}
+
 /// 导出服务
 class ExportService {
   /// 导出数据库文件
@@ -35,39 +69,84 @@ class ExportService {
   }
 
   /// 导入数据库文件
-  static Future<bool> importDatabase() async {
+  /// 注意：调用前必须先关闭数据库连接，否则文件可能被锁定
+  ///
+  /// 返回值：
+  /// - null: 用户取消或选择无效文件
+  /// - String: 成功时返回备份文件路径（如有）
+  static Future<ImportResult> importDatabase() async {
     try {
       // 选择数据库文件
+      // 注意：allowedExtensions 只有在 FileType.custom 时才生效
       final result = await FilePicker.platform.pickFiles(
         dialogTitle: '导入数据库',
-        type: FileType.any,
-        allowedExtensions: ['db'],
+        type: FileType.custom,
+        allowedExtensions: ['db', 'sqlite', 'sqlite3'],
       );
 
-      if (result == null || result.files.isEmpty) return false;
+      if (result == null || result.files.isEmpty) {
+        return ImportResult.cancelled();
+      }
 
       final importPath = result.files.first.path;
-      if (importPath == null) return false;
+      if (importPath == null) {
+        return ImportResult.error('无法读取文件路径');
+      }
 
       final importFile = File(importPath);
-      if (!await importFile.exists()) return false;
+      if (!await importFile.exists()) {
+        return ImportResult.error('文件不存在');
+      }
+
+      // 简单校验：检查文件头是否是 SQLite 格式
+      // SQLite 文件头的前 16 字节是 "SQLite format 3\0"
+      final header = await importFile.openRead(0, 16).first;
+      final sqliteHeader = 'SQLite format 3'.codeUnits;
+      bool isValidSqlite = header.length >= 15;
+      if (isValidSqlite) {
+        for (int i = 0; i < 15; i++) {
+          if (header[i] != sqliteHeader[i]) {
+            isValidSqlite = false;
+            break;
+          }
+        }
+      }
+      if (!isValidSqlite) {
+        return ImportResult.error('文件格式无效，请选择正确的 SQLite 数据库文件');
+      }
 
       // 获取目标路径
       final dbDir = await getApplicationDocumentsDirectory();
       final dbPath = '${dbDir.path}/amber_list.db';
+      final walPath = '${dbDir.path}/amber_list.db-wal';
+      final shmPath = '${dbDir.path}/amber_list.db-shm';
+
+      String? backupPath;
 
       // 备份现有数据库
       final currentDb = File(dbPath);
       if (await currentDb.exists()) {
-        final backupPath = '${dbDir.path}/amber_list_backup_${DateTime.now().millisecondsSinceEpoch}.db';
+        backupPath = '${dbDir.path}/amber_list_backup_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.db';
         await currentDb.copy(backupPath);
+      }
+
+      // 删除 WAL 和 SHM 文件（如果存在）
+      // 这些是 SQLite 的 Write-Ahead Logging 文件，导入新数据库时必须清理
+      final walFile = File(walPath);
+      final shmFile = File(shmPath);
+      if (await walFile.exists()) {
+        await walFile.delete();
+      }
+      if (await shmFile.exists()) {
+        await shmFile.delete();
       }
 
       // 复制导入文件
       await importFile.copy(dbPath);
-      return true;
+
+      return ImportResult.success(backupPath: backupPath);
     } catch (e) {
-      return false;
+      return ImportResult.error('导入失败: $e');
     }
   }
 

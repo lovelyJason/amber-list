@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/constants.dart';
 import '../../data/services/sync/three_way_merge.dart';
+import '../providers/sync_provider.dart';
 
 /// ============================================================
 /// 同步冲突决策弹窗
@@ -602,4 +603,335 @@ Future<List<ConflictResolution>?> showSyncConflictDialog(
     barrierDismissible: false,
     builder: (context) => SyncConflictDialog(conflicts: conflicts),
   );
+}
+
+/// ============================================================
+/// 首次同步冲突弹窗
+/// ============================================================
+/// 当检测到首次同步且双端都有数据时，询问用户如何处理：
+/// - 从云端恢复（覆盖本地）
+/// - 上传到云端（覆盖云端）
+/// - 取消同步
+///
+/// 这通常发生在：
+/// - 换新设备后首次同步
+/// - 重装 App 后首次同步
+/// - 切换到新的同步服务商后首次同步
+
+/// 显示首次同步冲突弹窗
+/// 返回用户选择，如果用户取消则返回 null
+Future<FirstSyncChoice?> showFirstSyncConflictDialog(
+  BuildContext context, {
+  required int localTaskCount,
+  required int remoteVersion,
+  String? remoteDevice,
+  DateTime? remoteLastSync,
+}) {
+  final screenWidth = MediaQuery.of(context).size.width;
+  final isMobile = screenWidth < 600;
+
+  return showDialog<FirstSyncChoice>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+      ),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 16 : 40,
+        vertical: 24,
+      ),
+      child: Container(
+        width: isMobile ? double.infinity : 480,
+        padding: EdgeInsets.all(isMobile ? AmberDimens.spacingMd : AmberDimens.spacingLg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题
+            Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  color: AmberColors.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: AmberDimens.spacingSm),
+                Expanded(
+                  child: Text(
+                    '检测到数据差异',
+                    style: TextStyle(
+                      fontSize: isMobile ? 18 : 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AmberDimens.spacingMd),
+
+            // 说明文字
+            Text(
+              '这是本设备首次同步，检测到本地和云端数据不一致。请选择如何处理：',
+              style: TextStyle(
+                fontSize: isMobile ? 13 : 14,
+                color: AmberColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: AmberDimens.spacingLg),
+
+            // 本地数据信息
+            _buildInfoCard(
+              icon: Icons.phone_android,
+              title: '本地数据',
+              subtitle: '共 $localTaskCount 条任务',
+              color: Colors.blue,
+            ),
+            const SizedBox(height: AmberDimens.spacingSm),
+
+            // 云端数据信息
+            _buildInfoCard(
+              icon: Icons.cloud_outlined,
+              title: '云端数据',
+              subtitle: _buildRemoteDescription(remoteVersion, remoteDevice, remoteLastSync),
+              color: Colors.green,
+            ),
+            const SizedBox(height: AmberDimens.spacingLg),
+
+            // 选项按钮
+            // 从云端恢复
+            _buildChoiceButton(
+              context: context,
+              icon: Icons.cloud_download_outlined,
+              title: '从云端恢复',
+              subtitle: '用云端数据覆盖本地（推荐换设备时使用）',
+              color: Colors.green,
+              onTap: () => Navigator.of(context).pop(FirstSyncChoice.downloadFromCloud),
+            ),
+            const SizedBox(height: AmberDimens.spacingSm),
+
+            // 上传到云端
+            _buildChoiceButtonWithWarning(
+              context: context,
+              icon: Icons.cloud_upload_outlined,
+              title: '上传到云端',
+              subtitle: '用本地数据覆盖云端',
+              warning: '请谨慎操作！',
+              color: Colors.blue,
+              onTap: () => Navigator.of(context).pop(FirstSyncChoice.uploadToCloud),
+            ),
+            const SizedBox(height: AmberDimens.spacingMd),
+
+            // 取消按钮
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(FirstSyncChoice.cancel),
+                child: const Text('暂不同步'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// 构建信息卡片
+Widget _buildInfoCard({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required Color color,
+}) {
+  return Container(
+    padding: const EdgeInsets.all(AmberDimens.spacingMd),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+      border: Border.all(color: color.withValues(alpha: 0.3)),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(width: AmberDimens.spacingSm),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AmberColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 构建选择按钮
+Widget _buildChoiceButton({
+  required BuildContext context,
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required Color color,
+  required VoidCallback onTap,
+}) {
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+    child: Container(
+      padding: const EdgeInsets.all(AmberDimens.spacingMd),
+      decoration: BoxDecoration(
+        border: Border.all(color: AmberColors.divider),
+        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: AmberDimens.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AmberColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: AmberColors.textSecondary.withValues(alpha: 0.5),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 构建带警告文字的选择按钮
+Widget _buildChoiceButtonWithWarning({
+  required BuildContext context,
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required String warning,
+  required Color color,
+  required VoidCallback onTap,
+}) {
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+    child: Container(
+      padding: const EdgeInsets.all(AmberDimens.spacingMd),
+      decoration: BoxDecoration(
+        border: Border.all(color: AmberColors.divider),
+        borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: AmberDimens.spacingMd),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AmberColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      warning,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.red,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right,
+            color: AmberColors.textSecondary.withValues(alpha: 0.5),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 构建云端描述
+String _buildRemoteDescription(int version, String? device, DateTime? lastSync) {
+  final parts = <String>[];
+  parts.add('版本 $version');
+  if (device != null) {
+    parts.add('来自 $device');
+  }
+  if (lastSync != null) {
+    final now = DateTime.now();
+    final diff = now.difference(lastSync);
+    if (diff.inDays > 0) {
+      parts.add('${diff.inDays} 天前同步');
+    } else if (diff.inHours > 0) {
+      parts.add('${diff.inHours} 小时前同步');
+    } else {
+      parts.add('刚刚同步');
+    }
+  }
+  return parts.join(' · ');
 }

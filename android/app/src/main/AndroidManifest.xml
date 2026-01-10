@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 网络权限：用于云同步、激活码验证等网络请求 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 网络状态检测：用于判断网络是否可用 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application
         android:label="琥珀清单"
         android:name="${applicationName}"

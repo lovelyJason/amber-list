@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/constants.dart';
 import '../../core/utils/responsive_helper.dart';
@@ -26,6 +27,7 @@ import '../pages/sticky_note/sticky_note_page.dart';
 import '../widgets/debug/sticky_note_debugger.dart';
 import '../widgets/debug/prefs_editor.dart';
 import '../../core/services/splash_service.dart';
+import '../../data/datasources/local/database.dart' show AppDatabase;
 import '../widgets/common/kept_alive_wrapper.dart';
 
 /// 主页面
@@ -75,8 +77,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   void initState() {
     super.initState();
 
-    // 初始化 PageController，默认显示第一页（inbox）
-    _pageController = PageController(initialPage: 0);
+    // 初始化 PageController，默认显示 today 页面
+    // 注意：initialPage 必须与 AppNavState.currentView 的默认值（NavView.today）对应
+    // NavView.today 在 _keepAliveViews 中的 index 是 1
+    _pageController = PageController(initialPage: 1);
 
     // 桌面端：初始化便签事件通道（单向模式：主窗口注册处理器，所有便签都可以发送消息）
     // 移动端不支持 desktop_multi_window，跳过
@@ -314,12 +318,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget _buildMobileSyncButton(WidgetRef ref) {
     // 监听同步状态和配置
     final syncState = ref.watch(syncStateProvider);
-    final isConfigured =
-        ref.watch(syncConfigProvider) != null ||
-        ref.watch(qiniuConfigProvider) != null;
+    final syncType = ref.watch(syncTypeProvider);
 
-    // 未配置同步则隐藏
-    if (!isConfigured) {
+    // 未配置同步则隐藏（syncType 为 null 表示未选择任何同步方式）
+    if (syncType == null) {
       return const SizedBox.shrink();
     }
 
@@ -357,9 +359,41 @@ class _HomePageState extends ConsumerState<HomePage> {
           return showSyncConflictDialog(context, conflicts: conflicts);
         };
 
+        // 设置首次同步冲突回调（检测到双端都有数据时弹窗）
+        ref.read(syncStateProvider.notifier).onFirstSyncConflict = (conflict) async {
+          if (!mounted) return null;
+          // 弹出首次同步冲突弹窗
+          return showFirstSyncConflictDialog(
+            context,
+            localTaskCount: conflict.localTaskCount,
+            remoteVersion: conflict.remoteVersion,
+            remoteDevice: conflict.remoteDevice,
+            remoteLastSync: conflict.remoteLastSync,
+          );
+        };
+
         final success = await ref.read(syncStateProvider.notifier).manualSync();
         if (success) {
           ref.read(soundServiceProvider).playSuccess();
+        } else if (mounted) {
+          // 同步失败，检查错误信息并提示
+          final syncState = ref.read(syncStateProvider);
+          final errorMsg = syncState.lastError ?? '同步失败';
+
+          // 针对 429 错误特殊处理
+          if (errorMsg.contains('429')) {
+            ToastManager().show(
+              context,
+              '请求太频繁，请稍后再试',
+              type: ToastType.warning,
+            );
+          } else {
+            ToastManager().show(
+              context,
+              errorMsg,
+              type: ToastType.error,
+            );
+          }
         }
       },
     );
@@ -515,17 +549,23 @@ class _HomePageState extends ConsumerState<HomePage> {
                 _buildDebugOption(
                   context,
                   icon: Icons.restore_page,
-                  label: '重置本地数据',
-                  description: '清空所有数据并恢复初始状态',
+                  label: '恢复出厂设置',
+                  description: '清空所有数据、配置，恢复初始安装状态',
                   color: Colors.red,
                   onTap: () async {
                     // Double check dialog
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
-                        title: const Text('确认重置？'),
+                        title: const Text('⚠️ 恢复出厂设置'),
                         content: const Text(
-                          '此操作将永久删除所有本地数据，\n不仅限于任务，还包括笔记和统计。\n\n此操作无法撤销。',
+                          '此操作将清除所有数据和设置：\n\n'
+                          '• 所有任务、笔记、番茄钟记录\n'
+                          '• 所有设置和偏好配置\n'
+                          '• 云同步配置和登录状态\n'
+                          '• 激活状态\n\n'
+                          '应用将恢复到首次安装时的状态。\n'
+                          '此操作无法撤销！',
                         ),
                         actions: [
                           TextButton(
@@ -545,18 +585,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
                     if (confirm == true) {
                       Navigator.pop(context);
-                      await ref.read(databaseProvider).resetDatabase();
-                      // 重新同步标签（因 resetDatabase 不会重置 Tags 表，但 Tasks 表已重置并包含 JSON 标签）
-                      await ref.read(tagsProvider.notifier).syncTags();
-
-                      if (context.mounted) {
-                        ToastManager().show(
-                          context,
-                          '数据已重置',
-                          type: ToastType.success,
-                          position: ToastPosition.top,
-                        );
-                      }
+                      await _performFactoryReset(context);
                     }
                   },
                 ),
@@ -578,6 +607,74 @@ class _HomePageState extends ConsumerState<HomePage> {
         );
       },
     );
+  }
+
+  /// 执行出厂重置
+  ///
+  /// 清除所有本地数据和配置，恢复到首次安装状态：
+  /// 1. 关闭数据库连接
+  /// 2. 删除数据库文件（包括 WAL 和 SHM）
+  /// 3. 清除 SharedPreferences（所有设置和配置）
+  /// 4. 刷新所有 Provider，重新创建数据库
+  Future<void> _performFactoryReset(BuildContext context) async {
+    try {
+      // 1. 关闭数据库连接
+      await ref.read(databaseProvider).close();
+
+      // 2. 删除数据库文件（包括 WAL 和 SHM 文件）
+      final dbPath = await AppDatabase.getDatabasePath();
+      final dbFile = File(dbPath);
+      final walFile = File('$dbPath-wal');
+      final shmFile = File('$dbPath-shm');
+
+      if (await dbFile.exists()) {
+        await dbFile.delete();
+        debugPrint('[FactoryReset] 已删除数据库文件: $dbPath');
+      }
+      if (await walFile.exists()) {
+        await walFile.delete();
+        debugPrint('[FactoryReset] 已删除 WAL 文件');
+      }
+      if (await shmFile.exists()) {
+        await shmFile.delete();
+        debugPrint('[FactoryReset] 已删除 SHM 文件');
+      }
+
+      // 3. 清除所有 SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      debugPrint('[FactoryReset] 已清除 SharedPreferences');
+
+      // 4. 刷新关键 Provider，让它们重新从空状态开始
+      // 注意：invalidate databaseProvider 会触发数据库重建
+      ref.invalidate(databaseProvider);
+      ref.invalidate(taskProvider);
+      ref.invalidate(tagsProvider);
+      ref.invalidate(syncTypeProvider);
+      ref.invalidate(syncConfigProvider);
+      ref.invalidate(activationProvider);
+      ref.invalidate(displaySettingsProvider);
+      ref.invalidate(userProfileProvider);
+
+      if (context.mounted) {
+        ToastManager().show(
+          context,
+          '已恢复出厂设置，请重启应用',
+          type: ToastType.success,
+          position: ToastPosition.top,
+        );
+      }
+    } catch (e) {
+      debugPrint('[FactoryReset] 重置失败: $e');
+      if (context.mounted) {
+        ToastManager().show(
+          context,
+          '重置失败: $e',
+          type: ToastType.error,
+          position: ToastPosition.top,
+        );
+      }
+    }
   }
 
   /// 生成激活码

@@ -5,7 +5,7 @@ import '../../core/constants/constants.dart';
 import '../../data/repositories/amber_cloud_repository.dart';
 import '../../data/services/activation/activation_service.dart';
 import '../../data/services/sync/sync_config.dart';
-import '../providers/sync_provider.dart';
+import '../providers/providers.dart';
 import 'common/toast/toast_manager.dart';
 
 /// ============================================================
@@ -235,6 +235,85 @@ class _AmberCloudConfigSectionState
     }
   }
 
+  /// 手动同步（双向同步）
+  Future<void> _manualSync() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final success = await ref.read(syncStateProvider.notifier).manualSync();
+
+      if (mounted) {
+        if (success) {
+          ref.read(soundServiceProvider).playSuccess();
+          ToastManager().show(context, '同步完成', type: ToastType.success);
+        } else {
+          // 读取实际错误信息
+          final syncState = ref.read(syncStateProvider);
+          final errorMsg = syncState.lastError ?? '同步失败';
+          ToastManager().show(context, errorMsg, type: ToastType.error);
+        }
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  /// 强制从云端恢复数据
+  /// 会先弹窗确认，因为这会覆盖本地数据
+  Future<void> _forceDownloadFromCloud() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('从云端恢复'),
+        content: const Text(
+          '⚠️ 此操作会用云端数据完全覆盖本地数据！\n\n'
+          '适用场景：\n'
+          '• 本地数据被误删或损坏\n'
+          '• 换设备后想恢复数据\n'
+          '• 本地显示"已是最新"但数据不对\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('确认恢复'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final success = await ref.read(syncStateProvider.notifier).manualSync(
+        forceDownload: true,
+      );
+
+      if (mounted) {
+        if (success) {
+          ref.read(soundServiceProvider).playSuccess();
+          ToastManager().show(context, '已从云端恢复数据', type: ToastType.success);
+        } else {
+          // 读取实际错误信息
+          final syncState = ref.read(syncStateProvider);
+          final errorMsg = syncState.lastError ?? '恢复失败';
+          ToastManager().show(context, errorMsg, type: ToastType.error);
+        }
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -349,25 +428,51 @@ class _AmberCloudConfigSectionState
   /// 构建操作按钮
   Widget _buildActions() {
     if (_status == AmberCloudStatus.connected) {
-      return Row(
+      return Column(
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _isLoading ? null : _testConnection,
-              icon: const Icon(Icons.wifi_tethering, size: 18),
-              label: const Text('测试连接'),
-            ),
-          ),
-          const SizedBox(width: AmberDimens.spacingSm),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _isLoading ? null : _disableAmberCloud,
-              icon: const Icon(Icons.cloud_off_outlined, size: 18),
-              label: const Text('禁用'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
+          // 第一行：同步和从云端恢复
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _manualSync,
+                  icon: const Icon(Icons.sync, size: 18),
+                  label: const Text('同步'),
+                ),
               ),
-            ),
+              const SizedBox(width: AmberDimens.spacingSm),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _forceDownloadFromCloud,
+                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: const Text('从云端恢复'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AmberDimens.spacingSm),
+          // 第二行：测试连接和禁用
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _testConnection,
+                  icon: const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('测试连接'),
+                ),
+              ),
+              const SizedBox(width: AmberDimens.spacingSm),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _disableAmberCloud,
+                  icon: const Icon(Icons.cloud_off_outlined, size: 18),
+                  label: const Text('禁用'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       );

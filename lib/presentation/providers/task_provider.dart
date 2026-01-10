@@ -267,11 +267,53 @@ class TaskNotifier extends StateNotifier<List<Task>> {
 
   /// 更新移动端桌面小组件数据
   /// 仅在 Android/iOS 平台生效
-  void _updateHomeWidget(List<Task> tasks) {
+  ///
+  /// 数据流：
+  /// - iOS Widget：直接从 App Group 共享目录的 SQLite 数据库读取
+  /// - Android Widget：直接从 app_flutter 目录的 SQLite 数据库读取
+  ///
+  /// 重要：Flutter Drift 使用 WAL 模式，新写入的数据可能还在 .db-wal 文件中。
+  /// Android 必须先执行 checkpoint 将数据合并到主数据库文件，否则 Widget 读到旧数据。
+  /// iOS 不受此影响，因为数据库在 App Group 共享目录中，Widget 和 App 用同一个数据库连接。
+  Future<void> _updateHomeWidget(List<Task> tasks) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
 
-    // 异步更新，不阻塞主线程
-    HomeWidgetService().updateWidgetData(tasks);
+    try {
+      // Android 平台：先执行 checkpoint 确保 WAL 数据写入主数据库
+      // 这样 Widget 直接读取 SQLite 时能获取到最新数据
+      if (Platform.isAndroid) {
+        await database.checkpoint();
+      }
+    } catch (e) {
+      // checkpoint 失败不影响后续操作
+      debugPrint('[TaskNotifier] checkpoint 失败: $e');
+    }
+
+    // 触发 Widget 刷新（HomeWidgetService 内部还会写 SharedPreferences，
+    // 这是历史遗留代码，Android/iOS Widget 实际都从 SQLite 读数据）
+    await HomeWidgetService().updateWidgetData(tasks);
+  }
+
+  /// 强制刷新任务数据
+  ///
+  /// 当外部（如 iOS/Android Widget）直接修改了数据库时调用
+  /// 手动从数据库重新查询，更新内存状态
+  Future<void> refresh() async {
+    final dbTasks = await database.getAllTasks();
+    final tasks = dbTasks.map(_mapDbTaskToModel).toList()
+      ..sort((a, b) {
+        if (a.isCompleted != b.isCompleted) {
+          return a.isCompleted ? 1 : -1;
+        }
+        if (a.priority.value != b.priority.value) {
+          return b.priority.value.compareTo(a.priority.value);
+        }
+        return b.createdAt.compareTo(a.createdAt);
+      });
+    state = tasks;
+    // 同步更新 Widget 数据（Android 使用 SharedPreferences）
+    _updateHomeWidget(tasks);
+    debugPrint('[TaskNotifier] 手动刷新完成，共 ${tasks.length} 个任务');
   }
 
   /// 切换任务完成状态
@@ -373,6 +415,10 @@ class TaskNotifier extends StateNotifier<List<Task>> {
   }
 
   /// 创建新任务
+  ///
+  /// 新任务的 autoPostpone 字段会根据全局设置 enableAutoPostpone 来决定：
+  /// - 开关打开：新任务 autoPostpone=true，过期后会自动顺延到今天
+  /// - 开关关闭：新任务 autoPostpone=false，过期后显示在"已过期"区域
   Future<Task> createTask({
     required String title,
     String? description,
@@ -383,6 +429,10 @@ class TaskNotifier extends StateNotifier<List<Task>> {
   }) async {
     final now = DateTime.now();
     final id = _uuid.v4();
+
+    // 从设置中读取自动顺延开关状态，决定新任务的 autoPostpone 值
+    final enableAutoPostpone =
+        ref.read(taskManagementSettingsProvider).enableAutoPostpone;
 
     await database.insertTask(
       db.TasksCompanion.insert(
@@ -395,6 +445,7 @@ class TaskNotifier extends StateNotifier<List<Task>> {
         tags: drift.Value(jsonEncode(tags)),
         isCompleted: const drift.Value(false),
         isDeleted: const drift.Value(false),
+        autoPostpone: drift.Value(enableAutoPostpone),
         createdAt: now,
         updatedAt: now,
       ),
@@ -418,6 +469,7 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       priority: priority,
       tags: tags,
       isCompleted: false,
+      autoPostpone: enableAutoPostpone,
       createdAt: now,
       updatedAt: now,
     );

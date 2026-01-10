@@ -1,16 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Medium priority flag icon (orange/amber) -->
+<!-- Medium priority flag icon (orange/amber) - iOS style filled flag -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="14dp"
     android:height="14dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Flag pole -->
+    <!-- Flag with pole - Material Design filled flag style -->
     <path
         android:fillColor="#F5A623"
-        android:pathData="M5,3v18h2V3H5z" />
-    <!-- Flag -->
-    <path
-        android:fillColor="#F5A623"
-        android:pathData="M7,3l12,5l-12,5V3z" />
+        android:pathData="M14.4,6L14,4H5v17h2v-7h5.6l0.4,2h7V6z" />
 </vector>
