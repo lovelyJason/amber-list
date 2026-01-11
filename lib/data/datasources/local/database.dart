@@ -51,6 +51,18 @@ class Tasks extends Table {
   /// - 新任务默认为 true（自动顺延）
   /// - 旧数据迁移后为 false（不自动顺延，显示在已过期区域）
   BoolColumn get autoPostpone => boolean().withDefault(const Constant(true))();
+
+  /// 任务首次设置的截止日期（用于统计达成率）
+  /// - 首次设置 dueDate 时记录此值，之后顺延不修改
+  /// - 用于判断任务是否按时完成：completedAt <= originalDueDate 为达成
+  DateTimeColumn get originalDueDate => dateTime().nullable()();
+
+  /// 任务被顺延的次数（用于统计达成率）
+  /// - 新任务默认为 0
+  /// - 每次自动/手动顺延时 +1
+  /// - postponeCount > 0 表示任务未按时完成
+  IntColumn get postponeCount => integer().withDefault(const Constant(0))();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -117,7 +129,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 9; // Bump version for tasks autoPostpone column
+  int get schemaVersion => 11; // Fix millisecond timestamps in date columns
 
 
   @override
@@ -186,6 +198,71 @@ class AppDatabase extends _$AppDatabase {
               'ALTER TABLE tasks ADD COLUMN auto_postpone INTEGER NOT NULL DEFAULT 0',
             );
           }
+        }
+        if (from < 10) {
+          // 添加统计相关字段：originalDueDate 和 postponeCount
+          final columns = await customSelect(
+            "PRAGMA table_info(tasks)",
+          ).get();
+
+          // 添加 original_due_date 列（首次设置的截止日期，用于统计达成率）
+          final hasOriginalDueDate = columns.any(
+            (row) => row.read<String>('name') == 'original_due_date',
+          );
+          if (!hasOriginalDueDate) {
+            await customStatement(
+              'ALTER TABLE tasks ADD COLUMN original_due_date INTEGER',
+            );
+            // 迁移：将现有任务的 dueDate 复制到 originalDueDate
+            await customStatement(
+              'UPDATE tasks SET original_due_date = due_date WHERE due_date IS NOT NULL',
+            );
+          }
+
+          // 添加 postpone_count 列（顺延次数，用于统计达成率）
+          final hasPostponeCount = columns.any(
+            (row) => row.read<String>('name') == 'postpone_count',
+          );
+          if (!hasPostponeCount) {
+            await customStatement(
+              'ALTER TABLE tasks ADD COLUMN postpone_count INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+        }
+        if (from < 11) {
+          // 修复毫秒时间戳问题
+          // Drift 的 dateTime() 使用秒级时间戳（10位），但某些数据可能被错误存储为毫秒级（13位）
+          // 判断标准：如果时间戳 > 10000000000（2286年），则认为是毫秒级，需要除以1000
+          // 修复 completed_at 列
+          await customStatement('''
+            UPDATE tasks
+            SET completed_at = completed_at / 1000
+            WHERE completed_at IS NOT NULL AND completed_at > 10000000000
+          ''');
+          // 修复 created_at 列
+          await customStatement('''
+            UPDATE tasks
+            SET created_at = created_at / 1000
+            WHERE created_at IS NOT NULL AND created_at > 10000000000
+          ''');
+          // 修复 updated_at 列
+          await customStatement('''
+            UPDATE tasks
+            SET updated_at = updated_at / 1000
+            WHERE updated_at IS NOT NULL AND updated_at > 10000000000
+          ''');
+          // 修复 due_date 列
+          await customStatement('''
+            UPDATE tasks
+            SET due_date = due_date / 1000
+            WHERE due_date IS NOT NULL AND due_date > 10000000000
+          ''');
+          // 修复 original_due_date 列
+          await customStatement('''
+            UPDATE tasks
+            SET original_due_date = original_due_date / 1000
+            WHERE original_due_date IS NOT NULL AND original_due_date > 10000000000
+          ''');
         }
       },
     );

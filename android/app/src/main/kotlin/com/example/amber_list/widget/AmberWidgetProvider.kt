@@ -5,7 +5,16 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import android.view.View
@@ -67,6 +76,7 @@ open class AmberWidgetProvider : AppWidgetProvider() {
 
         // Max tasks to show in small widget (uses StackView for rotation)
         private const val SMALL_WIDGET_MAX_TASKS = 6
+
     }
 
     override fun onUpdate(
@@ -263,6 +273,22 @@ open class AmberWidgetProvider : AppWidgetProvider() {
     }
 
     /**
+     * Called when widget is resized by dragging
+     * This is crucial for contrast skins - we need to regenerate the rounded corner bitmap
+     * at the new size to prevent corner deformation
+     */
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        // Re-render widget with new size - this will regenerate the bitmap with correct dimensions
+        updateAppWidget(context, appWidgetManager, appWidgetId)
+    }
+
+    /**
      * Update a single widget instance
      * Subclasses can override getWidgetSize() to force a specific size
      */
@@ -275,11 +301,30 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Load tasks from SharedPreferences
         val tasks = loadTasks(context)
 
+        // Get actual widget size from AppWidgetManager (for dynamic resizing support)
+        // Note: MIN values represent the current size when widget is resized
+        // We add extra padding to ensure the bitmap covers the full widget area
+        val widgetOptions = appWidgetManager.getAppWidgetOptions(appWidgetId)
+        val density = context.resources.displayMetrics.density
+        val minWidthDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+        val minHeightDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+        val maxWidthDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, minWidthDp)
+        val maxHeightDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minHeightDp)
+
+        // Use max of min/max to ensure we cover the full widget area
+        // This handles cases where widget is expanded beyond minimum size
+        val widthDp = maxOf(minWidthDp, maxWidthDp)
+        val heightDp = maxOf(minHeightDp, maxHeightDp)
+        val widthPx = (widthDp * density).toInt()
+        val heightPx = (heightDp * density).toInt()
+
+        Log.d(TAG, "Widget size: min=${minWidthDp}x${minHeightDp}dp, max=${maxWidthDp}x${maxHeightDp}dp, using=${widthDp}x${heightDp}dp = ${widthPx}x${heightPx}px")
+
         // Create appropriate RemoteViews based on widget size
         val views = when (getWidgetSize()) {
-            WidgetSize.SMALL -> createSmallWidget(context, tasks)
-            WidgetSize.MEDIUM -> createMediumWidget(context, tasks)
-            WidgetSize.LARGE -> createLargeWidget(context, tasks)
+            WidgetSize.SMALL -> createSmallWidget(context, tasks, widthPx, heightPx)
+            WidgetSize.MEDIUM -> createMediumWidget(context, tasks, widthPx, heightPx)
+            WidgetSize.LARGE -> createLargeWidget(context, tasks, widthPx, heightPx)
         }
 
         // Update the widget
@@ -334,8 +379,16 @@ open class AmberWidgetProvider : AppWidgetProvider() {
      * Task row click behavior controlled by tapTextToComplete setting:
      * - true: clicking anywhere on task row (including title) toggles completion
      * - false: only checkbox toggles completion, clicking title opens app
+     *
+     * @param widgetWidth Actual widget width in pixels (for dynamic background sizing)
+     * @param widgetHeight Actual widget height in pixels (for dynamic background sizing)
      */
-    private fun createSmallWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
+    private fun createSmallWidget(
+        context: Context,
+        tasks: List<WidgetTask>,
+        widgetWidth: Int = 0,
+        widgetHeight: Int = 0
+    ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_small)
 
         // Load skin setting from SharedPreferences
@@ -344,24 +397,32 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Load tap text to complete setting
         val tapTextToComplete = loadTapTextToComplete(context)
 
-        // Apply skin background and colors
-        views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
-
-        // Text & Background Image Config
+        // Background Image Config (contrast skins use background image)
+        // Use setImageViewBitmap with code-drawn rounded corners (clipToOutline doesn't work in RemoteViews)
         if (skinConfig.backgroundImageRes != 0) {
+            // Contrast skin: create bitmap with rounded corners via code
             views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
-            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
-            // Make layout background transparent or semi-transparent if needed, 
-            // but keeping it as fallback/tint is often good. 
-            // Let's hide the container background if we have an image? 
-            // Or change it to a generic gradient?
-            // Existing logic sets 'widget_container' background. 
-            // For now, allow both (layering). Use transparent if image covers all.
-            // But let's set container bg to transparent to avoid tinting the image weirdly.
+
+            // Use actual widget size for bitmap, fallback to reasonable defaults
+            val bitmapWidth = if (widgetWidth > 0) widgetWidth else 400
+            val bitmapHeight = if (widgetHeight > 0) widgetHeight else 400
+
+            val roundedBitmap = getScaledBitmap(context, skinConfig.backgroundImageRes, bitmapWidth, bitmapHeight)
+            if (roundedBitmap != null) {
+                views.setImageViewBitmap(R.id.widget_bg_image, roundedBitmap)
+            } else {
+                // Fallback: use resource directly if bitmap creation fails
+                views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+            }
+
+            // Make root and container transparent since image has its own rounded corners
+            views.setInt(R.id.widget_root, "setBackgroundResource", android.R.color.transparent)
             views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
         } else {
+            // Normal skin: set gradient background on root (XML drawable handles corners)
             views.setViewVisibility(R.id.widget_bg_image, View.GONE)
-            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_root, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
         }
 
         // Apply skin color to header title
@@ -511,8 +572,16 @@ open class AmberWidgetProvider : AppWidgetProvider() {
      * Task row click behavior controlled by tapTextToComplete setting:
      * - true: clicking anywhere on task row (including title) toggles completion
      * - false: only checkbox toggles completion, clicking title opens app
+     *
+     * @param widgetWidth Actual widget width in pixels (for dynamic background sizing)
+     * @param widgetHeight Actual widget height in pixels (for dynamic background sizing)
      */
-    private fun createMediumWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
+    private fun createMediumWidget(
+        context: Context,
+        tasks: List<WidgetTask>,
+        widgetWidth: Int = 0,
+        widgetHeight: Int = 0
+    ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_medium)
 
         // Load skin setting from SharedPreferences
@@ -521,14 +590,32 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         // Load tap text to complete setting
         val tapTextToComplete = loadTapTextToComplete(context)
 
-        // Apply skin background
-        if (skinConfig.backgroundImageRes != 0) {
+        // Apply skin background (contrast skins use Medium-specific image)
+        // Use setImageViewBitmap with code-drawn rounded corners (clipToOutline doesn't work in RemoteViews)
+        if (skinConfig.backgroundImageMediumRes != 0) {
+            // Contrast skin: create bitmap with rounded corners via code
             views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
-            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+
+            // Use actual widget size for bitmap, fallback to reasonable defaults for 4x2 ratio
+            val bitmapWidth = if (widgetWidth > 0) widgetWidth else 800
+            val bitmapHeight = if (widgetHeight > 0) widgetHeight else 400
+
+            val roundedBitmap = getScaledBitmap(context, skinConfig.backgroundImageMediumRes, bitmapWidth, bitmapHeight)
+            if (roundedBitmap != null) {
+                views.setImageViewBitmap(R.id.widget_bg_image, roundedBitmap)
+            } else {
+                // Fallback: use resource directly if bitmap creation fails
+                views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageMediumRes)
+            }
+
+            // Make root and container transparent since image has its own rounded corners
+            views.setInt(R.id.widget_root, "setBackgroundResource", android.R.color.transparent)
             views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
         } else {
+            // Normal skin: set gradient background on root (XML drawable handles corners)
             views.setViewVisibility(R.id.widget_bg_image, View.GONE)
-            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_root, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
         }
 
         // Apply skin color to header title (今日任务)
@@ -681,26 +768,48 @@ open class AmberWidgetProvider : AppWidgetProvider() {
      * Create Large Widget (4x4): Calendar Month View
      * Shows a full month calendar with Chinese holidays and task indicators
      * Supports multiple skin themes with dynamic background and text colors.
+     *
+     * @param widgetWidth Actual widget width in pixels (for dynamic background sizing)
+     * @param widgetHeight Actual widget height in pixels (for dynamic background sizing)
      */
-    private fun createLargeWidget(context: Context, tasks: List<WidgetTask>): RemoteViews {
+    private fun createLargeWidget(
+        context: Context,
+        tasks: List<WidgetTask>,
+        widgetWidth: Int = 0,
+        widgetHeight: Int = 0
+    ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_large)
 
         // Load skin setting from SharedPreferences
         val skinConfig = loadWidgetSkin(context)
 
-        // Apply skin background
-        if (skinConfig.backgroundImageRes != 0) {
+        // Apply skin background (contrast skins use Large-specific image)
+        // Use setImageViewBitmap with code-drawn rounded corners (clipToOutline doesn't work in RemoteViews)
+        if (skinConfig.backgroundImageLargeRes != 0) {
+            // Contrast skin: create bitmap with rounded corners via code
             views.setViewVisibility(R.id.widget_bg_image, View.VISIBLE)
-            views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageRes)
+
+            // Use actual widget size for bitmap, fallback to reasonable defaults for 4x4 ratio
+            val bitmapWidth = if (widgetWidth > 0) widgetWidth else 800
+            val bitmapHeight = if (widgetHeight > 0) widgetHeight else 800
+
+            val roundedBitmap = getScaledBitmap(context, skinConfig.backgroundImageLargeRes, bitmapWidth, bitmapHeight)
+            if (roundedBitmap != null) {
+                views.setImageViewBitmap(R.id.widget_bg_image, roundedBitmap)
+            } else {
+                // Fallback: use resource directly if bitmap creation fails
+                views.setImageViewResource(R.id.widget_bg_image, skinConfig.backgroundImageLargeRes)
+            }
+
+            // Make root and container transparent since image has its own rounded corners
+            views.setInt(R.id.widget_root, "setBackgroundResource", android.R.color.transparent)
             views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
-            // Also handle header background for large widget?
-            // If using full image, header might need to be transparent or semi-transparent.
-            // Let's make header background transparent too if image is used?
-            // Or keep it as a scrim.
-            views.setInt(R.id.widget_header, "setBackgroundResource", R.drawable.widget_header_background) // Keep scrim
+            views.setInt(R.id.widget_header, "setBackgroundResource", R.drawable.widget_header_background)
         } else {
+            // Normal skin: set gradient background on root (XML drawable handles corners)
             views.setViewVisibility(R.id.widget_bg_image, View.GONE)
-            views.setInt(R.id.widget_container, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_root, "setBackgroundResource", skinConfig.backgroundRes)
+            views.setInt(R.id.widget_container, "setBackgroundResource", android.R.color.transparent)
             views.setInt(R.id.widget_header, "setBackgroundResource", skinConfig.headerBackgroundRes)
         }
 
@@ -1312,7 +1421,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
         val headerTextColor: Int,      // For header title (white on colored background)
         val dividerColor: Int,         // For Medium widget divider
         val mediumPriorityIconRes: Int, // Medium priority flag icon (avoids clash with background)
-        val backgroundImageRes: Int = 0 // Resource ID for image background (0 = none)
+        val backgroundImageRes: Int = 0, // Resource ID for Small widget image background (0 = none)
+        val backgroundImageMediumRes: Int = 0, // Resource ID for Medium widget (4x2 ratio)
+        val backgroundImageLargeRes: Int = 0   // Resource ID for Large widget (1:1 ratio)
     )
 
     /**
@@ -1401,7 +1512,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     headerTextColor = Color.parseColor("#4A3B5C"),
                     dividerColor = Color.parseColor("#8A7A9A"),
                     mediumPriorityIconRes = R.drawable.ic_flag_medium,  // 标准橙色
-                    backgroundImageRes = R.drawable.widget_skin_contrast_01
+                    backgroundImageRes = R.drawable.widget_skin_contrast_01,
+                    backgroundImageMediumRes = R.drawable.widget_skin_contrast_01_medium,
+                    backgroundImageLargeRes = R.drawable.widget_skin_contrast_01_large
                 )
                 // 撞色02：浅天蓝/绿萝纱（蓝绿水墨渐变）- 浅色背景需深色文字
                 "contrast02" -> WidgetSkinConfig(
@@ -1412,7 +1525,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     headerTextColor = Color.parseColor("#2A4A4A"),
                     dividerColor = Color.parseColor("#6A8A8A"),
                     mediumPriorityIconRes = R.drawable.ic_flag_medium,
-                    backgroundImageRes = R.drawable.widget_skin_contrast_02
+                    backgroundImageRes = R.drawable.widget_skin_contrast_02,
+                    backgroundImageMediumRes = R.drawable.widget_skin_contrast_02_medium,
+                    backgroundImageLargeRes = R.drawable.widget_skin_contrast_02_large
                 )
                 // 撞色03：柔雾蓝/群青（蓝色水墨渐变）- 浅色背景需深色文字
                 "contrast03" -> WidgetSkinConfig(
@@ -1423,7 +1538,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     headerTextColor = Color.parseColor("#1A3A5A"),
                     dividerColor = Color.parseColor("#5A7A9A"),
                     mediumPriorityIconRes = R.drawable.ic_flag_medium,
-                    backgroundImageRes = R.drawable.widget_skin_contrast_03
+                    backgroundImageRes = R.drawable.widget_skin_contrast_03,
+                    backgroundImageMediumRes = R.drawable.widget_skin_contrast_03_medium,
+                    backgroundImageLargeRes = R.drawable.widget_skin_contrast_03_large
                 )
                 // 撞色04：远天蓝/天水碧（青蓝水墨渐变）- 浅色背景需深色文字
                 "contrast04" -> WidgetSkinConfig(
@@ -1434,7 +1551,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     headerTextColor = Color.parseColor("#1A4A5A"),
                     dividerColor = Color.parseColor("#5A8A9A"),
                     mediumPriorityIconRes = R.drawable.ic_flag_medium,
-                    backgroundImageRes = R.drawable.widget_skin_contrast_04
+                    backgroundImageRes = R.drawable.widget_skin_contrast_04,
+                    backgroundImageMediumRes = R.drawable.widget_skin_contrast_04_medium,
+                    backgroundImageLargeRes = R.drawable.widget_skin_contrast_04_large
                 )
                 // 撞色05：晴山/盈盈（蓝紫粉水墨渐变）- 浅色背景需深色文字
                 "contrast05" -> WidgetSkinConfig(
@@ -1445,7 +1564,9 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                     headerTextColor = Color.parseColor("#3A3A5C"),
                     dividerColor = Color.parseColor("#7A7A9C"),
                     mediumPriorityIconRes = R.drawable.ic_flag_medium,
-                    backgroundImageRes = R.drawable.widget_skin_contrast_05
+                    backgroundImageRes = R.drawable.widget_skin_contrast_05,
+                    backgroundImageMediumRes = R.drawable.widget_skin_contrast_05_medium,
+                    backgroundImageLargeRes = R.drawable.widget_skin_contrast_05_large
                 )
                 else -> WidgetSkinConfig(
                     // Default white skin
@@ -1472,6 +1593,111 @@ open class AmberWidgetProvider : AppWidgetProvider() {
                 mediumPriorityIconRes = R.drawable.ic_flag_medium_amber,
                 backgroundImageRes = 0
             )
+        }
+    }
+
+    /**
+     * Create a bitmap with rounded corners using centerCrop scaling.
+     *
+     * This approach:
+     * 1. Uses centerCrop to scale the image (maintains aspect ratio, fills target area)
+     * 2. Applies fixed corner radius via code (corners stay circular regardless of widget size)
+     *
+     * This ensures corners look good even when widget is resized by dragging.
+     *
+     * @param context Android context
+     * @param resId Drawable resource ID
+     * @param targetWidth Target width in pixels (0 = use original)
+     * @param targetHeight Target height in pixels (0 = use original)
+     * @return Bitmap with rounded corners, or null if failed
+     */
+    private fun getScaledBitmap(
+        context: Context,
+        resId: Int,
+        targetWidth: Int = 0,
+        targetHeight: Int = 0
+    ): Bitmap? {
+        return try {
+            // First, get image dimensions without loading full bitmap
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeResource(context.resources, resId, options)
+
+            // Determine final output size
+            val outputWidth = if (targetWidth > 0) targetWidth else options.outWidth
+            val outputHeight = if (targetHeight > 0) targetHeight else options.outHeight
+
+            // Calculate sample size based on target size to reduce memory usage
+            val maxDimension = maxOf(outputWidth, outputHeight)
+            var sampleSize = 1
+            if (options.outWidth > maxDimension * 2 || options.outHeight > maxDimension * 2) {
+                val halfWidth = options.outWidth / 2
+                val halfHeight = options.outHeight / 2
+                while ((halfWidth / sampleSize) >= maxDimension && (halfHeight / sampleSize) >= maxDimension) {
+                    sampleSize *= 2
+                }
+            }
+
+            // Decode with sample size
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val original = BitmapFactory.decodeResource(context.resources, resId, decodeOptions)
+                ?: return null
+
+            Log.d(TAG, "Loaded skin bitmap: ${original.width}x${original.height} -> target: ${outputWidth}x${outputHeight}")
+
+            // Create output bitmap at target size
+            val output = Bitmap.createBitmap(outputWidth, outputHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+
+            // Fixed corner radius: 20dp converted to pixels (smaller for cleaner look)
+            val density = context.resources.displayMetrics.density
+            val cornerRadius = 20f * density
+
+            // Paint with full anti-aliasing for smooth corners
+            val paint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+                isDither = true
+            }
+
+            // Draw rounded rect first as mask
+            val rect = RectF(0f, 0f, outputWidth.toFloat(), outputHeight.toFloat())
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+            // Set xfermode to clip the source image
+            paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+
+            // Calculate centerCrop transformation
+            // centerCrop: scale to fill, crop excess (maintains aspect ratio)
+            val scaleX = outputWidth.toFloat() / original.width
+            val scaleY = outputHeight.toFloat() / original.height
+            val scale = maxOf(scaleX, scaleY) // Use max to ensure full coverage
+
+            val scaledWidth = original.width * scale
+            val scaledHeight = original.height * scale
+            val offsetX = (outputWidth - scaledWidth) / 2f
+            val offsetY = (outputHeight - scaledHeight) / 2f
+
+            val matrix = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(offsetX, offsetY)
+            }
+
+            // Draw the original bitmap with centerCrop transformation (clipped by rounded rect)
+            canvas.drawBitmap(original, matrix, paint)
+
+            // Clean up original bitmap
+            original.recycle()
+
+            output
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create rounded corner bitmap: ${e.message}")
+            e.printStackTrace()
+            null
         }
     }
 }

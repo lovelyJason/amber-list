@@ -200,12 +200,12 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    debugPrint('[App] 生命周期变化: $state');
+    // debugPrint('[App] 生命周期变化: $state');
 
     if (state == AppLifecycleState.resumed) {
       // App 回到前台，重新从数据库加载任务数据
       // 这样 Widget 上的勾选操作就能同步到 App 界面
-      debugPrint('[App] 回到前台，刷新任务数据...');
+      // debugPrint('[App] 回到前台，刷新任务数据...');
       ref.read(taskProvider.notifier).refresh();
     }
   }
@@ -423,9 +423,9 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
       if (syncType != null) {
         debugPrint('[Startup] 移动端开始后台同步: ${syncType.displayName}');
-        // 执行同步
+        // 执行同步（标记为启动时同步，触发限流检查）
         final syncSuccess =
-            await ref.read(syncStateProvider.notifier).manualSync();
+            await ref.read(syncStateProvider.notifier).manualSync(isStartupSync: true);
         if (syncSuccess && mounted) {
           debugPrint('[Startup] 移动端同步成功');
           // Toast 可能因 Overlay 未准备好而失败，不影响后续逻辑

@@ -1,18 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Medium Widget Layout (4x2): Header + Left(Date) + Right(Tasks) -->
-<!-- Outer FrameLayout for background image to cover full widget area -->
+<!-- Outer FrameLayout: transparent by default, background set dynamically in Kotlin -->
+<!-- For contrast skins: uses setImageViewBitmap with code-drawn rounded corners -->
+<!-- For normal skins: uses XML drawable with built-in rounded corners -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_small_background">
+    android:background="@android:color/transparent">
 
-    <!-- Background Image Layer - must be outside padding container to cover full area -->
+    <!-- Background Image Layer for contrast skins -->
+    <!-- Rounded corners are drawn in Kotlin code via getScaledBitmap(), not via XML -->
     <ImageView
         android:id="@+id/widget_bg_image"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:scaleType="centerCrop"
+        android:scaleType="fitXY"
         android:importantForAccessibility="no"
         android:visibility="gone" />
 

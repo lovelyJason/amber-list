@@ -87,7 +87,7 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
           state = profile;
         }
 
-        debugPrint('[UserProfile] 已加载用户信息');
+        // debugPrint('[UserProfile] 已加载用户信息');
       }
     } catch (e) {
       debugPrint('[UserProfile] 加载用户信息失败: $e');

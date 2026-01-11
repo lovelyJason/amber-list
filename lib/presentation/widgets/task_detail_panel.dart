@@ -108,6 +108,9 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
     }
   }
 
+  /// 是否为只读模式（已完成或已删除的任务）
+  bool get _isReadOnly => widget.task.isCompleted || widget.task.isDeleted;
+
   @override
   Widget build(BuildContext context) {
     final taskLists = ref.watch(taskListProvider);
@@ -130,14 +133,15 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 标题输入框：失焦或回车时保存，关闭时丢弃修改
+                  // 已完成/已删除任务为只读模式
                   TextField(
                     controller: _titleController,
                     focusNode: _titleFocusNode,
-                    readOnly: widget.task.isDeleted,
+                    readOnly: _isReadOnly,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: widget.task.isDeleted
+                      color: _isReadOnly
                           ? AmberColors.textSecondary
                           : AmberColors.textPrimary,
                     ),
@@ -149,21 +153,21 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     ),
                     maxLines: null,
                     keyboardType: TextInputType.multiline,
-                    // 回车键保存标题并移除焦点
-                    onSubmitted: widget.task.isDeleted ? null : (_) {
+                    // 回车键保存标题并移除焦点（只读模式下禁用）
+                    onSubmitted: _isReadOnly ? null : (_) {
                       _saveTitleIfChanged();
                       _titleFocusNode.unfocus();
                     },
                   ),
                   const SizedBox(height: AmberDimens.spacingMd),
-                  // 属性列表
+                  // 属性列表（只读模式下禁用点击）
                   _buildPropertyRow(
                     icon: Icons.calendar_today_outlined,
                     label: '截止日期',
                     value: widget.task.dueDate != null
                         ? DateFormat('yyyy年M月d日').format(widget.task.dueDate!)
                         : '未设置',
-                    onTap: widget.task.isDeleted
+                    onTap: _isReadOnly
                         ? null
                         : () => _showDatePicker(context),
                   ),
@@ -172,7 +176,7 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     label: '清单',
                     value: currentList?.name ?? '收集箱',
                     valueColor: currentList?.color,
-                    onTap: widget.task.isDeleted
+                    onTap: _isReadOnly
                         ? null
                         : () => _showListPicker(context, taskLists),
                   ),
@@ -181,7 +185,7 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     label: '优先级',
                     value: _getPriorityText(widget.task.priority),
                     valueColor: _getPriorityColor(widget.task.priority),
-                    onTap: widget.task.isDeleted
+                    onTap: _isReadOnly
                         ? null
                         : () => _showPriorityPicker(context),
                   ),
@@ -191,12 +195,28 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                     value: widget.task.tags.isEmpty
                         ? '添加标签'
                         : widget.task.tags.join(', '),
-                    onTap: widget.task.isDeleted
+                    onTap: _isReadOnly
                         ? null
                         : () {
                             _showTagsDialog(context);
                           },
                   ),
+                  // 创建时间（精确到时分秒，不可编辑）
+                  _buildPropertyRow(
+                    icon: Icons.access_time_outlined,
+                    label: '创建时间',
+                    value: DateFormat('yyyy年M月d日 HH:mm:ss').format(widget.task.createdAt),
+                    showArrow: false,
+                  ),
+                  // 已完成任务显示完成时间
+                  if (widget.task.isCompleted && widget.task.completedAt != null)
+                    _buildPropertyRow(
+                      icon: Icons.check_circle_outline,
+                      label: '完成时间',
+                      value: DateFormat('yyyy年M月d日 HH:mm').format(widget.task.completedAt!),
+                      valueColor: AmberColors.success,
+                      showArrow: false,
+                    ),
                   const SizedBox(height: AmberDimens.spacingLg),
                   // 描述
                   const Text(
@@ -209,14 +229,15 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                   ),
                   const SizedBox(height: AmberDimens.spacingSm),
                   // 描述输入框：失焦时保存，关闭时丢弃修改
+                  // 已完成/已删除任务为只读模式
                   TextField(
                     controller: _descController,
                     focusNode: _descFocusNode,
-                    readOnly: widget.task.isDeleted,
+                    readOnly: _isReadOnly,
                     maxLines: null,
                     minLines: 4,
                     decoration: InputDecoration(
-                      hintText: widget.task.isDeleted ? null : '添加描述...',
+                      hintText: _isReadOnly ? null : '添加描述...',
                       filled: false,
                       border: InputBorder.none,
                       enabledBorder: InputBorder.none,
@@ -267,13 +288,19 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
     );
   }
 
+  /// 构建属性行
+  /// - [showArrow] 控制是否显示右侧箭头，默认根据 onTap 是否为 null 决定
   Widget _buildPropertyRow({
     required IconData icon,
     required String label,
     required String value,
     Color? valueColor,
     VoidCallback? onTap,
+    bool? showArrow,
   }) {
+    // 只读模式下不显示箭头，除非明确指定
+    final shouldShowArrow = showArrow ?? (onTap != null);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
@@ -298,8 +325,11 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                 color: valueColor ?? AmberColors.textPrimary,
               ),
             ),
-            const SizedBox(width: AmberDimens.spacingXs),
-            const Icon(Icons.chevron_right, size: 18, color: AmberColors.textDisabled),
+            // 只读模式下隐藏箭头
+            if (shouldShowArrow) ...[
+              const SizedBox(width: AmberDimens.spacingXs),
+              const Icon(Icons.chevron_right, size: 18, color: AmberColors.textDisabled),
+            ],
           ],
         ),
       ),
@@ -322,7 +352,8 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
             ),
           ),
           const Spacer(),
-          if (!widget.task.isDeleted)
+          // 只读模式（已完成/已删除）下隐藏删除按钮
+          if (!_isReadOnly)
             IconButton(
               onPressed: () {
                 _deleteTask();
@@ -374,11 +405,16 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         insetPadding: const EdgeInsets.all(24),
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: SingleChildScrollView(
-            child: Column(
+        child: ConstrainedBox(
+          // 限制最大高度，防止清单过多时弹窗撑爆屏幕
+          constraints: BoxConstraints(
+            maxWidth: 400,
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: SingleChildScrollView(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -438,24 +474,23 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                       ),
                       child: Row(
                         children: [
-                          Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: list.color,
-                              shape: BoxShape.circle,
+                          // 目录显示文件夹图标，普通清单显示颜色圆点
+                          if (list.isFolder)
+                            const Icon(
+                              Icons.folder_outlined,
+                              size: 20,
+                              color: AmberColors.textSecondary,
+                            )
+                          else
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: list.color,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          ),
-                          const SizedBox(
-                            width: 20,
-                          ), // Align with icon center (20px icon / 2 = 10; 12px dot / 2 = 6; diff ~4, plus gap) -> roughly
-                          // Actually icon is 20, dot is 12. Center alignment:
-                          // Icon center at 10. Dot center at 6.
-                          // To align text start:
-                          // IconRow: Icon(20) + Gap(16) -> Text starts at 36
-                          // DotRow: Dot(12) + Gap(?) -> Text starts at 36?
-                          // Gap = 36 - 12 = 24.
-                          // Let's use SizedBox(width: 24) for dot.
+                          SizedBox(width: list.isFolder ? 16 : 20),
                           Text(
                             list.name,
                             style: const TextStyle(
@@ -471,6 +506,7 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
               ],
             ),
           ),
+        ),
         ),
       ),
     );

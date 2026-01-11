@@ -772,6 +772,30 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     ),
     defaultValue: const Constant(true),
   );
+  static const VerificationMeta _originalDueDateMeta = const VerificationMeta(
+    'originalDueDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> originalDueDate =
+      GeneratedColumn<DateTime>(
+        'original_due_date',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _postponeCountMeta = const VerificationMeta(
+    'postponeCount',
+  );
+  @override
+  late final GeneratedColumn<int> postponeCount = GeneratedColumn<int>(
+    'postpone_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -810,6 +834,8 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     sortOrder,
     parentId,
     autoPostpone,
+    originalDueDate,
+    postponeCount,
     createdAt,
     updatedAt,
   ];
@@ -925,6 +951,24 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
         ),
       );
     }
+    if (data.containsKey('original_due_date')) {
+      context.handle(
+        _originalDueDateMeta,
+        originalDueDate.isAcceptableOrUnknown(
+          data['original_due_date']!,
+          _originalDueDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('postpone_count')) {
+      context.handle(
+        _postponeCountMeta,
+        postponeCount.isAcceptableOrUnknown(
+          data['postpone_count']!,
+          _postponeCountMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1006,6 +1050,14 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
         DriftSqlType.bool,
         data['${effectivePrefix}auto_postpone'],
       )!,
+      originalDueDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}original_due_date'],
+      ),
+      postponeCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}postpone_count'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1042,6 +1094,17 @@ class Task extends DataClass implements Insertable<Task> {
   /// - 新任务默认为 true（自动顺延）
   /// - 旧数据迁移后为 false（不自动顺延，显示在已过期区域）
   final bool autoPostpone;
+
+  /// 任务首次设置的截止日期（用于统计达成率）
+  /// - 首次设置 dueDate 时记录此值，之后顺延不修改
+  /// - 用于判断任务是否按时完成：completedAt <= originalDueDate 为达成
+  final DateTime? originalDueDate;
+
+  /// 任务被顺延的次数（用于统计达成率）
+  /// - 新任务默认为 0
+  /// - 每次自动/手动顺延时 +1
+  /// - postponeCount > 0 表示任务未按时完成
+  final int postponeCount;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Task({
@@ -1059,6 +1122,8 @@ class Task extends DataClass implements Insertable<Task> {
     required this.sortOrder,
     this.parentId,
     required this.autoPostpone,
+    this.originalDueDate,
+    required this.postponeCount,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1089,6 +1154,10 @@ class Task extends DataClass implements Insertable<Task> {
       map['parent_id'] = Variable<String>(parentId);
     }
     map['auto_postpone'] = Variable<bool>(autoPostpone);
+    if (!nullToAbsent || originalDueDate != null) {
+      map['original_due_date'] = Variable<DateTime>(originalDueDate);
+    }
+    map['postpone_count'] = Variable<int>(postponeCount);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1120,6 +1189,10 @@ class Task extends DataClass implements Insertable<Task> {
           ? const Value.absent()
           : Value(parentId),
       autoPostpone: Value(autoPostpone),
+      originalDueDate: originalDueDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalDueDate),
+      postponeCount: Value(postponeCount),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1145,6 +1218,8 @@ class Task extends DataClass implements Insertable<Task> {
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       parentId: serializer.fromJson<String?>(json['parentId']),
       autoPostpone: serializer.fromJson<bool>(json['autoPostpone']),
+      originalDueDate: serializer.fromJson<DateTime?>(json['originalDueDate']),
+      postponeCount: serializer.fromJson<int>(json['postponeCount']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1167,6 +1242,8 @@ class Task extends DataClass implements Insertable<Task> {
       'sortOrder': serializer.toJson<int>(sortOrder),
       'parentId': serializer.toJson<String?>(parentId),
       'autoPostpone': serializer.toJson<bool>(autoPostpone),
+      'originalDueDate': serializer.toJson<DateTime?>(originalDueDate),
+      'postponeCount': serializer.toJson<int>(postponeCount),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1187,6 +1264,8 @@ class Task extends DataClass implements Insertable<Task> {
     int? sortOrder,
     Value<String?> parentId = const Value.absent(),
     bool? autoPostpone,
+    Value<DateTime?> originalDueDate = const Value.absent(),
+    int? postponeCount,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Task(
@@ -1204,6 +1283,10 @@ class Task extends DataClass implements Insertable<Task> {
     sortOrder: sortOrder ?? this.sortOrder,
     parentId: parentId.present ? parentId.value : this.parentId,
     autoPostpone: autoPostpone ?? this.autoPostpone,
+    originalDueDate: originalDueDate.present
+        ? originalDueDate.value
+        : this.originalDueDate,
+    postponeCount: postponeCount ?? this.postponeCount,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1233,6 +1316,12 @@ class Task extends DataClass implements Insertable<Task> {
       autoPostpone: data.autoPostpone.present
           ? data.autoPostpone.value
           : this.autoPostpone,
+      originalDueDate: data.originalDueDate.present
+          ? data.originalDueDate.value
+          : this.originalDueDate,
+      postponeCount: data.postponeCount.present
+          ? data.postponeCount.value
+          : this.postponeCount,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1255,6 +1344,8 @@ class Task extends DataClass implements Insertable<Task> {
           ..write('sortOrder: $sortOrder, ')
           ..write('parentId: $parentId, ')
           ..write('autoPostpone: $autoPostpone, ')
+          ..write('originalDueDate: $originalDueDate, ')
+          ..write('postponeCount: $postponeCount, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1277,6 +1368,8 @@ class Task extends DataClass implements Insertable<Task> {
     sortOrder,
     parentId,
     autoPostpone,
+    originalDueDate,
+    postponeCount,
     createdAt,
     updatedAt,
   );
@@ -1298,6 +1391,8 @@ class Task extends DataClass implements Insertable<Task> {
           other.sortOrder == this.sortOrder &&
           other.parentId == this.parentId &&
           other.autoPostpone == this.autoPostpone &&
+          other.originalDueDate == this.originalDueDate &&
+          other.postponeCount == this.postponeCount &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1317,6 +1412,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
   final Value<int> sortOrder;
   final Value<String?> parentId;
   final Value<bool> autoPostpone;
+  final Value<DateTime?> originalDueDate;
+  final Value<int> postponeCount;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -1335,6 +1432,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.sortOrder = const Value.absent(),
     this.parentId = const Value.absent(),
     this.autoPostpone = const Value.absent(),
+    this.originalDueDate = const Value.absent(),
+    this.postponeCount = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1354,6 +1453,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.sortOrder = const Value.absent(),
     this.parentId = const Value.absent(),
     this.autoPostpone = const Value.absent(),
+    this.originalDueDate = const Value.absent(),
+    this.postponeCount = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -1376,6 +1477,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Expression<int>? sortOrder,
     Expression<String>? parentId,
     Expression<bool>? autoPostpone,
+    Expression<DateTime>? originalDueDate,
+    Expression<int>? postponeCount,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -1395,6 +1498,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
       if (sortOrder != null) 'sort_order': sortOrder,
       if (parentId != null) 'parent_id': parentId,
       if (autoPostpone != null) 'auto_postpone': autoPostpone,
+      if (originalDueDate != null) 'original_due_date': originalDueDate,
+      if (postponeCount != null) 'postpone_count': postponeCount,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1416,6 +1521,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Value<int>? sortOrder,
     Value<String?>? parentId,
     Value<bool>? autoPostpone,
+    Value<DateTime?>? originalDueDate,
+    Value<int>? postponeCount,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -1435,6 +1542,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
       sortOrder: sortOrder ?? this.sortOrder,
       parentId: parentId ?? this.parentId,
       autoPostpone: autoPostpone ?? this.autoPostpone,
+      originalDueDate: originalDueDate ?? this.originalDueDate,
+      postponeCount: postponeCount ?? this.postponeCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1486,6 +1595,12 @@ class TasksCompanion extends UpdateCompanion<Task> {
     if (autoPostpone.present) {
       map['auto_postpone'] = Variable<bool>(autoPostpone.value);
     }
+    if (originalDueDate.present) {
+      map['original_due_date'] = Variable<DateTime>(originalDueDate.value);
+    }
+    if (postponeCount.present) {
+      map['postpone_count'] = Variable<int>(postponeCount.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1515,6 +1630,8 @@ class TasksCompanion extends UpdateCompanion<Task> {
           ..write('sortOrder: $sortOrder, ')
           ..write('parentId: $parentId, ')
           ..write('autoPostpone: $autoPostpone, ')
+          ..write('originalDueDate: $originalDueDate, ')
+          ..write('postponeCount: $postponeCount, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -3684,6 +3801,8 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<int> sortOrder,
       Value<String?> parentId,
       Value<bool> autoPostpone,
+      Value<DateTime?> originalDueDate,
+      Value<int> postponeCount,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -3704,6 +3823,8 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<int> sortOrder,
       Value<String?> parentId,
       Value<bool> autoPostpone,
+      Value<DateTime?> originalDueDate,
+      Value<int> postponeCount,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -3839,6 +3960,16 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<bool> get autoPostpone => $composableBuilder(
     column: $table.autoPostpone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get originalDueDate => $composableBuilder(
+    column: $table.originalDueDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get postponeCount => $composableBuilder(
+    column: $table.postponeCount,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4000,6 +4131,16 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get originalDueDate => $composableBuilder(
+    column: $table.originalDueDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get postponeCount => $composableBuilder(
+    column: $table.postponeCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4089,6 +4230,16 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<bool> get autoPostpone => $composableBuilder(
     column: $table.autoPostpone,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get originalDueDate => $composableBuilder(
+    column: $table.originalDueDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get postponeCount => $composableBuilder(
+    column: $table.postponeCount,
     builder: (column) => column,
   );
 
@@ -4218,6 +4369,8 @@ class $$TasksTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<String?> parentId = const Value.absent(),
                 Value<bool> autoPostpone = const Value.absent(),
+                Value<DateTime?> originalDueDate = const Value.absent(),
+                Value<int> postponeCount = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -4236,6 +4389,8 @@ class $$TasksTableTableManager
                 sortOrder: sortOrder,
                 parentId: parentId,
                 autoPostpone: autoPostpone,
+                originalDueDate: originalDueDate,
+                postponeCount: postponeCount,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -4256,6 +4411,8 @@ class $$TasksTableTableManager
                 Value<int> sortOrder = const Value.absent(),
                 Value<String?> parentId = const Value.absent(),
                 Value<bool> autoPostpone = const Value.absent(),
+                Value<DateTime?> originalDueDate = const Value.absent(),
+                Value<int> postponeCount = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -4274,6 +4431,8 @@ class $$TasksTableTableManager
                 sortOrder: sortOrder,
                 parentId: parentId,
                 autoPostpone: autoPostpone,
+                originalDueDate: originalDueDate,
+                postponeCount: postponeCount,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

@@ -12,6 +12,7 @@ enum NavView {
   list,     // 自定义清单
   completed, // 已完成
   trash, // 垃圾桶
+  statistics, // 统计
 }
 
 /// 应用导航状态
@@ -52,20 +53,27 @@ class AppNavNotifier extends StateNotifier<AppNavState> {
   AppNavNotifier() : super(const AppNavState());
 
   /// 切换视图
+  /// 注意：切换视图时会清空选中任务并关闭详情面板
+  /// 不能用 copyWith 传 null，因为 copyWith 无法区分"显式传 null"和"未传参数"
   void setView(NavView view, {String? listId}) {
-    state = state.copyWith(
+    state = AppNavState(
       currentView: view,
       selectedListId: listId,
-      selectedTaskId: null,
-      isDetailPanelOpen: false,
+      selectedTaskId: null,  // 显式清空
+      isDetailPanelOpen: false,  // 关闭详情面板
+      isListSidebarOpen: state.isListSidebarOpen,  // 保留侧边栏状态
     );
   }
 
   /// 选择任务
+  /// 注意：selectTask(null) 应该清空选中状态，不能用 copyWith
   void selectTask(String? taskId) {
-    state = state.copyWith(
-      selectedTaskId: taskId,
+    state = AppNavState(
+      currentView: state.currentView,
+      selectedListId: state.selectedListId,
+      selectedTaskId: taskId,  // 可以为 null
       isDetailPanelOpen: taskId != null,
+      isListSidebarOpen: state.isListSidebarOpen,
     );
   }
 
@@ -77,10 +85,14 @@ class AppNavNotifier extends StateNotifier<AppNavState> {
   }
 
   /// 关闭详情面板
+  /// 注意：关闭时需要清空 selectedTaskId，不能用 copyWith
   void closeDetailPanel() {
-    state = state.copyWith(
-      selectedTaskId: null,
+    state = AppNavState(
+      currentView: state.currentView,
+      selectedListId: state.selectedListId,
+      selectedTaskId: null,  // 显式清空
       isDetailPanelOpen: false,
+      isListSidebarOpen: state.isListSidebarOpen,
     );
   }
 

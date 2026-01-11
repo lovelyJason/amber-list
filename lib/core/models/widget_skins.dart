@@ -68,6 +68,13 @@ class WidgetSkinConfig {
   /// 复选框颜色
   final Color checkboxColor;
 
+  /// 背景图片资源路径（撞色皮肤专用）
+  /// 普通渐变皮肤为 null，撞色皮肤指向 assets/skins/ 下的图片
+  final String? backgroundImagePath;
+
+  /// 是否为撞色皮肤（有背景图的皮肤）
+  bool get isContrastSkin => backgroundImagePath != null;
+
   /// 预览用的 Flutter 渐变
   LinearGradient get previewGradient => LinearGradient(
         begin: Alignment.topLeft,
@@ -85,6 +92,7 @@ class WidgetSkinConfig {
     required this.secondaryTextColor,
     required this.iconColor,
     required this.checkboxColor,
+    this.backgroundImagePath,
   });
 }
 
@@ -170,7 +178,7 @@ class WidgetSkins {
       checkboxColor: Color(0xFF6D1B42),
     ),
 
-    // 撞色 01 - 蓝紫渐变
+    // 撞色 01 - 蓝紫渐变（水墨风格背景图）
     WidgetSkinType.contrast01: const WidgetSkinConfig(
       type: WidgetSkinType.contrast01,
       displayName: '撞色01',
@@ -181,9 +189,10 @@ class WidgetSkins {
       secondaryTextColor: Colors.white70,
       iconColor: Colors.white,
       checkboxColor: Colors.white,
+      backgroundImagePath: 'assets/skins/contrast_01.png',
     ),
 
-    // 撞色 02 - 红粉渐变
+    // 撞色 02 - 红粉渐变（水墨风格背景图）
     WidgetSkinType.contrast02: const WidgetSkinConfig(
       type: WidgetSkinType.contrast02,
       displayName: '撞色02',
@@ -194,9 +203,10 @@ class WidgetSkins {
       secondaryTextColor: Colors.white70,
       iconColor: Colors.white,
       checkboxColor: Colors.white,
+      backgroundImagePath: 'assets/skins/contrast_02.png',
     ),
 
-    // 撞色 03 - 绿黄渐变
+    // 撞色 03 - 绿黄渐变（水墨风格背景图）
     WidgetSkinType.contrast03: const WidgetSkinConfig(
       type: WidgetSkinType.contrast03,
       displayName: '撞色03',
@@ -207,9 +217,10 @@ class WidgetSkins {
       secondaryTextColor: Colors.white70,
       iconColor: Colors.white,
       checkboxColor: Colors.white,
+      backgroundImagePath: 'assets/skins/contrast_03.png',
     ),
 
-    // 撞色 04 - 橙紫撞色
+    // 撞色 04 - 橙紫撞色（水墨风格背景图）
     WidgetSkinType.contrast04: const WidgetSkinConfig(
       type: WidgetSkinType.contrast04,
       displayName: '撞色04',
@@ -220,9 +231,10 @@ class WidgetSkins {
       secondaryTextColor: Colors.white70,
       iconColor: Colors.white,
       checkboxColor: Colors.white,
+      backgroundImagePath: 'assets/skins/contrast_04.png',
     ),
 
-    // 撞色 05 - 青蓝渐变
+    // 撞色 05 - 青蓝渐变（水墨风格背景图）
     WidgetSkinType.contrast05: const WidgetSkinConfig(
       type: WidgetSkinType.contrast05,
       displayName: '撞色05',
@@ -233,6 +245,7 @@ class WidgetSkins {
       secondaryTextColor: Colors.white70,
       iconColor: Colors.white,
       checkboxColor: Colors.white,
+      backgroundImagePath: 'assets/skins/contrast_05.png',
     ),
   };
 

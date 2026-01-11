@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Large Widget Layout (4x4): Calendar Month View -->
+<!-- Outer FrameLayout: transparent by default, background set dynamically in Kotlin -->
+<!-- For contrast skins: uses setImageViewBitmap with code-drawn rounded corners -->
+<!-- For normal skins: uses XML drawable with built-in rounded corners -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_large_background">
+    android:background="@android:color/transparent">
 
-    <!-- Background Image Layer -->
+    <!-- Background Image Layer - will be clipped by parent's rounded outline -->
     <ImageView
         android:id="@+id/widget_bg_image"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
-        android:background="@drawable/widget_large_background"
-        android:clipToOutline="true"
         android:importantForAccessibility="no"
         android:visibility="gone" />
 

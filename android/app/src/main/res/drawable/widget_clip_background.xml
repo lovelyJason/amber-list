@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Transparent background with rounded corners for clipToOutline
+    Used to clip ImageView content in contrast skin widgets
+    The actual background color/image is set on the ImageView, this just defines the clip shape
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@android:color/transparent" />
+    <corners android:radius="24dp" />
+</shape>

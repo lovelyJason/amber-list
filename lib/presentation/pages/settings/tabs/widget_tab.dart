@@ -141,6 +141,8 @@ class WidgetTab extends ConsumerWidget {
   }
 
   /// 构建当前皮肤预览卡片
+  ///
+  /// 撞色皮肤显示背景图，普通皮肤显示渐变色
   Widget _buildCurrentSkinPreview(WidgetSkinType currentSkin) {
     final config = WidgetSkins.getConfig(currentSkin);
 
@@ -148,7 +150,8 @@ class WidgetTab extends ConsumerWidget {
       width: double.infinity,
       height: 120,
       decoration: BoxDecoration(
-        gradient: config.previewGradient,
+        // 撞色皮肤不用渐变，用背景图；普通皮肤用渐变
+        gradient: config.isContrastSkin ? null : config.previewGradient,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -158,8 +161,16 @@ class WidgetTab extends ConsumerWidget {
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
+        fit: StackFit.expand,
         children: [
+          // 撞色皮肤：显示背景图
+          if (config.isContrastSkin)
+            Image.asset(
+              config.backgroundImagePath!,
+              fit: BoxFit.cover,
+            ),
           // 模拟任务列表
           Padding(
             padding: const EdgeInsets.all(16),
@@ -246,6 +257,8 @@ class WidgetTab extends ConsumerWidget {
   }
 
   /// 构建单个皮肤选项
+  ///
+  /// 撞色皮肤显示背景图，普通皮肤显示渐变色
   Widget _buildSkinOption(
     BuildContext context,
     WidgetRef ref,
@@ -260,7 +273,8 @@ class WidgetTab extends ConsumerWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          gradient: config.previewGradient,
+          // 撞色皮肤不用渐变，用背景图；普通皮肤用渐变
+          gradient: config.isContrastSkin ? null : config.previewGradient,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? AmberColors.primary : Colors.transparent,
@@ -276,8 +290,16 @@ class WidgetTab extends ConsumerWidget {
                 ]
               : null,
         ),
+        clipBehavior: Clip.antiAlias,
         child: Stack(
+          fit: StackFit.expand,
           children: [
+            // 撞色皮肤：显示背景图
+            if (config.isContrastSkin)
+              Image.asset(
+                config.backgroundImagePath!,
+                fit: BoxFit.cover,
+              ),
             // 皮肤名称
             Positioned(
               bottom: 8,

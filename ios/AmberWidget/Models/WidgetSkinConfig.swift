@@ -185,7 +185,36 @@ struct WidgetSkinConfig {
 
 // MARK: - AppIntent 皮肤枚举（用于 Widget 配置界面）
 
-/// 皮肤选择 AppEnum（iOS 17+ Widget 配置界面使用）
+/// Small Widget 皮肤选择枚举（不含撞色皮肤，因为 Small Widget 渲染背景图有问题）
+enum SmallWidgetSkinAppEnum: String, AppEnum {
+    case followApp = "followApp"  // 跟随 App 设置（默认）
+    case amber = "amber"
+    case white = "white"
+    case dark = "dark"
+    case mint = "mint"
+    case pink = "pink"
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "皮肤主题")
+
+    static var caseDisplayRepresentations: [SmallWidgetSkinAppEnum: DisplayRepresentation] = [
+        .followApp: DisplayRepresentation(title: "跟随 App", subtitle: "使用 App 设置中的皮肤"),
+        .amber: DisplayRepresentation(title: "琥珀橙", subtitle: "活力品牌色"),
+        .white: DisplayRepresentation(title: "纯净白", subtitle: "简约风格"),
+        .dark: DisplayRepresentation(title: "深空灰", subtitle: "深色主题"),
+        .mint: DisplayRepresentation(title: "薄荷绿", subtitle: "清新自然"),
+        .pink: DisplayRepresentation(title: "樱花粉", subtitle: "温柔少女")
+    ]
+
+    /// 转换为 WidgetSkinType（followApp 返回 nil，需要从 App 设置读取）
+    var toSkinType: WidgetSkinType? {
+        if self == .followApp {
+            return nil
+        }
+        return WidgetSkinType(rawValue: self.rawValue)
+    }
+}
+
+/// Medium/Large Widget 皮肤选择枚举（包含撞色皮肤）
 enum WidgetSkinAppEnum: String, AppEnum {
     case followApp = "followApp"  // 跟随 App 设置（默认）
     case amber = "amber"

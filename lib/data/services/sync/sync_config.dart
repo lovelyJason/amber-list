@@ -446,7 +446,11 @@ class SyncConfigService {
     }
   }
 
-  /// 更新最后同步状态（WebDAV）
+  /// 更新最后同步状态（WebDAV / 七牛云 / 琥珀云）
+  ///
+  /// 注意：只有同步成功时才更新 lastSyncTime，失败时保持原值。
+  /// 这是为了配合启动限流机制：失败的同步不应计入"有效同步"，
+  /// 否则会导致用户在网络恢复后仍被限流、无法及时同步数据。
   static Future<void> updateLastSyncStatus({
     required bool success,
     String? error,
@@ -455,7 +459,8 @@ class SyncConfigService {
     if (syncType == SyncType.webdav) {
       final config = await loadConfig();
       final updated = config.copyWith(
-        lastSyncTime: DateTime.now(),
+        // 只有成功时才更新 lastSyncTime，失败时保持原值
+        lastSyncTime: success ? DateTime.now() : config.lastSyncTime,
         lastSyncSuccess: success,
         lastSyncError: error,
       );
@@ -463,12 +468,14 @@ class SyncConfigService {
     } else if (syncType == SyncType.qiniuOss) {
       final config = await loadQiniuConfig();
       final updated = config.copyWith(
-        lastSyncTime: DateTime.now(),
+        // 只有成功时才更新 lastSyncTime，失败时保持原值
+        lastSyncTime: success ? DateTime.now() : config.lastSyncTime,
         lastSyncSuccess: success,
         lastSyncError: error,
       );
       await saveQiniuConfig(updated);
     }
+    // 琥珀云的状态通过 SyncStateService 单独管理，不在此处理
   }
 
   // ============================================================

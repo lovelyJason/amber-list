@@ -226,7 +226,7 @@ class QuickAddSettingsNotifier extends StateNotifier<QuickAddSettings> {
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final json = jsonDecode(jsonStr) as Map<String, dynamic>;
         state = QuickAddSettings.fromJson(json);
-        debugPrint('[QuickAddSettings] 已加载快捷键设置: ${state.displayText}');
+        // debugPrint('[QuickAddSettings] 已加载快捷键设置: ${state.displayText}');
       }
     } catch (e) {
       debugPrint('[QuickAddSettings] 加载设置失败: $e');

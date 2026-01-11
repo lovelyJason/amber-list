@@ -64,6 +64,78 @@ const SizedBox(height: AmberDimens.spacingMd), // 仅 16px,会被窗口控制按
 
 ---
 
+## 📦 弹窗高度规范
+
+### 强制规范
+
+**所有弹窗内容区域必须限定最大高度，防止内容过多撑爆屏幕**
+
+#### 实现方式
+
+```dart
+// ✅ 正确 - 使用 ConstrainedBox 限定最大高度
+AlertDialog(
+  title: Text('选择标签'),
+  content: ConstrainedBox(
+    constraints: BoxConstraints(
+      maxWidth: 300,
+      maxHeight: MediaQuery.of(context).size.height * 0.6, // 最大 60% 屏幕高度
+    ),
+    child: SingleChildScrollView(
+      child: /* 弹窗内容 */,
+    ),
+  ),
+)
+
+// ❌ 错误 - 没有高度限制，内容多时会溢出
+AlertDialog(
+  content: SizedBox(
+    width: 300,
+    child: Wrap(children: /* 大量内容 */),
+  ),
+)
+```
+
+#### 推荐最大高度
+
+| 弹窗类型 | 推荐最大高度 | 说明 |
+|---------|------------|------|
+| 选择器弹窗（标签/清单/优先级） | `60%` 屏幕高度 | 内容可滚动 |
+| 任务详情弹窗 | `65%` 屏幕高度 | 包含输入框和列表 |
+| 确认对话框 | 不限制 | 内容固定，通常很短 |
+
+---
+
+## 📱 移动端适配规范
+
+### 强制规范
+
+**移动端（屏幕宽度 < 600px）必须使用简化布局**
+
+#### 实现方式
+
+```dart
+// ✅ 正确 - 判断移动端并调整布局
+final screenWidth = MediaQuery.of(context).size.width;
+final isMobile = screenWidth < 600;
+
+// 移动端强制单列，隐藏布局切换按钮
+final isTwoColumnMode = isMobile ? false : userPreference;
+
+// 移动端弹窗宽度自适应
+width: isMobile ? screenWidth * 0.9 : 550,
+```
+
+#### 移动端规则
+
+| 组件 | 移动端行为 |
+|-----|----------|
+| 日历任务弹窗 | 强制单列模式，隐藏切换按钮 |
+| 弹窗宽度 | 屏幕宽度的 90%，不固定像素 |
+| 复杂表单 | 垂直堆叠，不使用多列 |
+
+---
+
 ## 🎨 图标设计规范
 
 ### 核心原则

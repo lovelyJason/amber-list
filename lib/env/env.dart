@@ -122,4 +122,24 @@ abstract class Env {
   static bool get windowsUseNativeStickyNote {
     return (stickyNoteNativeMode & StickyNoteNativeFlags.windows) != 0;
   }
+
+  // ============================================================
+  // 云同步限流配置
+  // ============================================================
+
+  /// 启动时云同步限流时间（分钟）原始字符串值
+  /// 程序启动时会检查上次同步时间，如果距上次同步不足此时间，则跳过同步
+  /// 默认值：10（分钟），设为 0 表示不限流
+  @EnviedField(varName: 'SYNC_THROTTLE_MINUTES', defaultValue: '10')
+  static const String _syncThrottleMinutesRaw = _Env._syncThrottleMinutesRaw;
+
+  /// 启动时云同步限流时间（解析后的整数，单位：分钟）
+  static int get syncThrottleMinutes {
+    return int.tryParse(_syncThrottleMinutesRaw) ?? 10;
+  }
+
+  /// 启动时云同步限流时间（Duration 格式，方便直接使用）
+  static Duration get syncThrottleDuration {
+    return Duration(minutes: syncThrottleMinutes);
+  }
 }

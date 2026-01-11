@@ -46,6 +46,18 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
     ref.read(appNavProvider.notifier).setView(NavView.calendar);
   }
 
+  /// 判断当前视图是否属于任务列表相关视图
+  /// 包括：收集箱、今天、最近7天、自定义清单、全部、已完成、垃圾桶
+  bool _isTaskListView(NavView view) {
+    return view == NavView.inbox ||
+        view == NavView.today ||
+        view == NavView.upcoming ||
+        view == NavView.list ||
+        view == NavView.all ||
+        view == NavView.completed ||
+        view == NavView.trash;
+  }
+
   @override
   Widget build(BuildContext context) {
     final navState = ref.watch(appNavProvider);
@@ -86,35 +98,22 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
           const SizedBox(height: AmberDimens.spacingLg),
           // 导航图标
           
-          // 1. 清单/任务入口 (Lists) - 包含 Inbox, Today, Upcoming, Lists, All
+          // 1. 清单/任务入口 (Lists) - 包含所有任务相关视图
+          // 已完成和垃圾桶也属于任务列表范畴，需要高亮清单图标
           _buildNavItem(
             context,
             ref,
-            icon:
-                (navState.currentView == NavView.inbox ||
-                    navState.currentView == NavView.today ||
-                    navState.currentView == NavView.upcoming ||
-                    navState.currentView == NavView.list ||
-                    navState.currentView == NavView.all)
+            icon: _isTaskListView(navState.currentView)
                 ? FluentIcons.text_bullet_list_square_24_filled
                 : FluentIcons.text_bullet_list_square_24_regular,
             tooltip: '清单',
-            // 点击默认跳转到 Today，或者保持当前视图如果已经在这些视图中
+            // 点击默认跳转到 Today，或者保持当前视图如果已经在任务列表视图中
             onTap: () {
-              if (navState.currentView != NavView.inbox &&
-                  navState.currentView != NavView.today &&
-                  navState.currentView != NavView.upcoming &&
-                  navState.currentView != NavView.list &&
-                  navState.currentView != NavView.all) {
+              if (!_isTaskListView(navState.currentView)) {
                 ref.read(appNavProvider.notifier).setView(NavView.today);
               }
             },
-            isSelected:
-                navState.currentView == NavView.inbox ||
-                navState.currentView == NavView.today ||
-                navState.currentView == NavView.upcoming ||
-                navState.currentView == NavView.list ||
-                navState.currentView == NavView.all,
+            isSelected: _isTaskListView(navState.currentView),
           ),
 
           // 2. 笔记 (Notes)
@@ -152,6 +151,18 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
             tooltip: '番茄时钟',
             view: NavView.pomodoro,
             isSelected: navState.currentView == NavView.pomodoro,
+          ),
+
+          // 5. 统计 (Statistics)
+          _buildNavItem(
+            context,
+            ref,
+            icon: navState.currentView == NavView.statistics
+                ? FluentIcons.data_histogram_24_filled
+                : FluentIcons.data_histogram_24_regular,
+            tooltip: '统计',
+            view: NavView.statistics,
+            isSelected: navState.currentView == NavView.statistics,
           ),
           const Spacer(),
           // 同步状态指示器

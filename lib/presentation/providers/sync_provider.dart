@@ -7,6 +7,7 @@ import '../../data/services/sync/sync_config.dart';
 import '../../data/services/sync/sync_manager.dart';
 import '../../data/services/sync/sync_metadata.dart';
 import '../../data/services/sync/three_way_merge.dart';
+import '../../env/env.dart';
 import 'database_provider.dart';
 
 /// ============================================================
@@ -150,6 +151,9 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
   /// 返回 true = 同步成功，false = 同步失败或未配置
   ///
   /// 注意：此方法只会触发一次同步，后续调用直接返回缓存结果
+  ///
+  /// 限流机制：如果距离上次同步时间不足 SYNC_THROTTLE_MINUTES（默认10分钟），
+  /// 则跳过本次同步，避免频繁同步消耗资源
   Future<bool> waitForInitialSync() async {
     // 检查是否配置了云同步
     final syncType = _ref.read(syncTypeProvider);
@@ -176,13 +180,33 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
     debugPrint('[SyncProvider] 桌面端启动，触发首次同步...');
 
     try {
-      final success = await manualSync();
+      // 传入 isStartupSync: true 触发限流检查
+      final success = await manualSync(isStartupSync: true);
       _initialSyncCompleter!.complete(success);
       return success;
     } catch (e) {
       debugPrint('[SyncProvider] 首次同步异常: $e');
       _initialSyncCompleter!.complete(false);
       return false;
+    }
+  }
+
+  /// 获取上次同步时间
+  /// 根据同步类型从对应的配置中读取
+  Future<DateTime?> _getLastSyncTime(SyncType syncType) async {
+    switch (syncType) {
+      case SyncType.webdav:
+        final config = await SyncConfigService.loadConfig();
+        return config.lastSyncTime;
+      case SyncType.qiniuOss:
+        final config = await SyncConfigService.loadQiniuConfig();
+        return config.lastSyncTime;
+      case SyncType.amberCloud:
+        // 琥珀云：从本地同步状态获取
+        final localState = await SyncStateService.loadState();
+        return localState.lastSyncTime;
+      default:
+        return null;
     }
   }
 
@@ -535,12 +559,32 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
   /// [forceDownload] 强制从云端下载（忽略本地状态，用于数据恢复场景）
   /// [forceUpload] 强制上传本地数据（清除本地同步状态后上传）
   /// [skipFirstSyncCheck] 跳过首次同步冲突检测（用户已确认选择后）
+  /// [isStartupSync] 是否为启动时的同步（用于限流检查）
   Future<bool> manualSync({
     bool forceDownload = false,
     bool forceUpload = false,
     bool skipFirstSyncCheck = false,
+    bool isStartupSync = false,
   }) async {
     final syncType = _ref.read(syncTypeProvider);
+
+    // ========== 启动同步限流检查（仅启动时的同步触发） ==========
+    // 如果是启动时调用 + 非强制操作 + 限流开启，检查是否需要跳过
+    if (isStartupSync && !forceDownload && !forceUpload && syncType != null) {
+      final throttleMinutes = Env.syncThrottleMinutes;
+      if (throttleMinutes > 0) {
+        final lastSyncTime = await _getLastSyncTime(syncType);
+        if (lastSyncTime != null) {
+          final elapsed = DateTime.now().difference(lastSyncTime);
+          if (elapsed < Env.syncThrottleDuration) {
+            final remainingMinutes = (Env.syncThrottleDuration - elapsed).inMinutes;
+            debugPrint('[SyncProvider] 启动同步限流：距上次同步仅 ${elapsed.inMinutes} 分钟，'
+                '需等待 $remainingMinutes 分钟后再同步（限流阈值: $throttleMinutes 分钟）');
+            return false;
+          }
+        }
+      }
+    }
 
     // 检查是否有配置
     bool isConfigured = false;

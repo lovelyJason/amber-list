@@ -21,6 +21,7 @@ import 'pomodoro/pomodoro_page.dart';
 import 'settings/settings_page.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
 import '../pages/sticky_note/sticky_note_page.dart';
+import '../pages/statistics/statistics_page.dart';
 import '../widgets/debug/debug_toolbox.dart';
 import '../widgets/common/kept_alive_wrapper.dart';
 
@@ -58,6 +59,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     NavView.pomodoro,
     NavView.completed,
     NavView.trash,
+    NavView.statistics,
   ];
 
   /// NavView 到 PageView index 的映射
@@ -135,10 +137,13 @@ class _HomePageState extends ConsumerState<HomePage> {
         final targetIndex = _navViewToPageIndex(next.currentView);
         // 只有目标是 keepAlive 页面时才跳转
         if (_keepAliveViews.contains(next.currentView)) {
-          // 使用 jumpToPage 而不是 animateToPage，避免中间页面被构建
-          if (_pageController.hasClients) {
-            _pageController.jumpToPage(targetIndex);
-          }
+          // 使用 addPostFrameCallback 确保在当前帧渲染完成后再跳转
+          // 避免在 Widget 树更新过程中调用 jumpToPage 导致状态不一致
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(targetIndex);
+            }
+          });
         }
       }
     });
@@ -166,10 +171,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 构建桌面端布局（原有布局，完全保持不变）
   Widget _buildDesktopLayout(
       BuildContext context, AppNavState navState, List<Task> tasks) {
-    // 日历、笔记、番茄时钟页面使用全屏布局
+    // 日历、笔记、番茄时钟、统计页面使用全屏布局
     final isFullScreenView = navState.currentView == NavView.calendar ||
         navState.currentView == NavView.notes ||
-        navState.currentView == NavView.pomodoro;
+        navState.currentView == NavView.pomodoro ||
+        navState.currentView == NavView.statistics;
 
     return Scaffold(
       body: Stack(
@@ -232,15 +238,16 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 构建移动端布局（底部导航栏 + 抽屉）
   ///
   /// 设计说明：
-  /// - 日历、笔记、番茄钟页面有自己的完整 Scaffold（含 AppBar 和 BottomNavigationBar）
+  /// - 日历、笔记、番茄钟、统计页面有自己的完整 Scaffold（含 AppBar 和 BottomNavigationBar）
   /// - 任务列表页面（清单、今天等）使用 HomePage 的 Scaffold 容器
   /// - 这样避免嵌套 Scaffold 导致双重底部导航栏的问题
   Widget _buildMobileLayout(BuildContext context, AppNavState navState, List<Task> tasks) {
-    // 日历、笔记、番茄钟页面自带完整的 Scaffold（含 AppBar 和 BottomNavigationBar）
+    // 日历、笔记、番茄钟、统计页面自带完整的 Scaffold（含 AppBar 和 BottomNavigationBar）
     // 直接返回它们，不再套 HomePage 的 Scaffold，避免双重底部导航栏
     final isFullScreenView = navState.currentView == NavView.calendar ||
         navState.currentView == NavView.notes ||
-        navState.currentView == NavView.pomodoro;
+        navState.currentView == NavView.pomodoro ||
+        navState.currentView == NavView.statistics;
 
     if (isFullScreenView) {
       // 这些页面自己有 Scaffold，直接返回对应的页面组件
@@ -251,6 +258,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           return const NotesPage();
         case NavView.pomodoro:
           return const PomodoroPage();
+        case NavView.statistics:
+          return const StatisticsPage();
         default:
           break;
       }
@@ -336,6 +345,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         return '垃圾桶';
       case NavView.all:
         return '全部';
+      case NavView.statistics:
+        return '统计';
     }
   }
 
@@ -439,15 +450,13 @@ class _HomePageState extends ConsumerState<HomePage> {
         return const NotesPage();
       case NavView.pomodoro:
         return const PomodoroPage();
+      case NavView.statistics:
+        return const StatisticsPage();
       case NavView.completed:
-        final completedTasks = ref.watch(completedTasksProvider);
-        return TaskListView(
-          title: '已完成',
-          tasks: completedTasks,
-          showInput: false,
-          groupCompleted: false,
+        // 已完成页面使用专门的 CompletedTasksView 组件
+        // 提供按完成日期筛选和按完成时间排序功能
+        return CompletedTasksView(
           showHeader: !isMobile,
-          showFilterSort: false, // 已完成页面不需要筛选排序
         );
       case NavView.trash:
         final trashTasks = ref.watch(trashTasksProvider);

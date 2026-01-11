@@ -12,14 +12,15 @@ import AppIntents
 // MARK: - Small Widget 皮肤配置 Intent
 
 /// Small Widget 配置 Intent（用于 Widget 编辑界面选择皮肤）
+/// 注意：Small Widget 不支持撞色皮肤（背景图渲染有问题），使用 SmallWidgetSkinAppEnum
 struct SmallWidgetConfigurationIntent: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "小组件设置"
     static var description = IntentDescription("选择小组件的皮肤主题")
 
     @Parameter(title: "皮肤主题", default: .followApp)
-    var skinType: WidgetSkinAppEnum
+    var skinType: SmallWidgetSkinAppEnum
 
-    init(skinType: WidgetSkinAppEnum = .followApp) {
+    init(skinType: SmallWidgetSkinAppEnum = .followApp) {
         self.skinType = skinType
     }
 

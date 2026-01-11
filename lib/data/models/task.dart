@@ -48,6 +48,18 @@ class Task {
   /// - 新任务默认为 true（自动顺延）
   /// - 旧数据迁移后为 false（不自动顺延，显示在已过期区域）
   final bool autoPostpone;
+
+  /// 任务首次设置的截止日期（用于统计达成率）
+  /// - 首次设置 dueDate 时记录此值，之后顺延不修改
+  /// - 用于判断任务是否按时完成
+  final DateTime? originalDueDate;
+
+  /// 任务被顺延的次数（用于统计达成率）
+  /// - 新任务默认为 0
+  /// - 每次自动/手动顺延时 +1
+  /// - postponeCount > 0 表示任务未按时完成
+  final int postponeCount;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -66,6 +78,8 @@ class Task {
     this.sortOrder = 0,
     this.parentId,
     this.autoPostpone = true, // 新任务默认开启自动顺延
+    this.originalDueDate,
+    this.postponeCount = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -85,6 +99,8 @@ class Task {
     int? sortOrder,
     String? parentId,
     bool? autoPostpone,
+    DateTime? originalDueDate,
+    int? postponeCount,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -103,6 +119,8 @@ class Task {
       sortOrder: sortOrder ?? this.sortOrder,
       parentId: parentId ?? this.parentId,
       autoPostpone: autoPostpone ?? this.autoPostpone,
+      originalDueDate: originalDueDate ?? this.originalDueDate,
+      postponeCount: postponeCount ?? this.postponeCount,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -128,6 +146,8 @@ class Task {
         sortOrder: sortOrder,
         parentId: parentId,
         autoPostpone: autoPostpone, // 保留自动顺延设置
+        originalDueDate: originalDueDate, // 保留原始截止日期
+        postponeCount: postponeCount, // 保留顺延次数
         createdAt: createdAt,
         updatedAt: now,
       );

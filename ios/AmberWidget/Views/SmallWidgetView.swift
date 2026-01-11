@@ -236,13 +236,8 @@ struct SmallWidgetView: View {
             */
         }
         .containerBackground(for: .widget) {
-            if let bgName = skinConfig.backgroundImageName {
-                Image(bgName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                skinConfig.backgroundGradient
-            }
+            // Small Widget 不支持背景图（撞色皮肤），只用渐变背景
+            skinConfig.backgroundGradient
         }
     }
 }
@@ -262,5 +257,6 @@ struct SmallAmberWidget: Widget {
         .configurationDisplayName("琥珀清单")
         .description("显示今日任务，支持皮肤切换")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()  // 禁用 iOS 17+ 系统默认边距
     }
 }

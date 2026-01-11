@@ -128,10 +128,15 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
       return isSameDay(task.dueDate!, widget.day);
     }).toList();
 
-    // 从 Provider 读取布局偏好
+    // 判断是否为移动端（宽度小于 600）
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
+
+    // 从 Provider 读取布局偏好（移动端强制单列模式）
     final calendarPrefs = ref.watch(calendarPreferencesProvider);
-    final isTwoColumnMode =
-        calendarPrefs.dialogLayout == CalendarDialogLayout.twoColumn;
+    final isTwoColumnMode = isMobile
+        ? false
+        : calendarPrefs.dialogLayout == CalendarDialogLayout.twoColumn;
 
     // 如果正在编辑任务，从最新列表中获取更新后的任务数据
     if (_editingTask != null) {
@@ -163,43 +168,47 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          // 布局切换按钮
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 单列模式按钮
-                _buildLayoutToggleButton(
-                  icon: Icons.view_agenda_outlined,
-                  tooltip: '单列模式',
-                  isSelected: !isTwoColumnMode,
-                  onTap: () {
-                    ref
+          // 布局切换按钮（移动端隐藏，强制单列模式）
+          if (!isMobile)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 单列模式按钮
+                  _buildLayoutToggleButton(
+                    icon: Icons.view_agenda_outlined,
+                    tooltip: '单列模式',
+                    isSelected: !isTwoColumnMode,
+                    onTap: () {
+                      ref
+                          .read(calendarPreferencesProvider.notifier)
+                          .setDialogLayout(CalendarDialogLayout.singleColumn);
+                      setState(() => _editingTask = null);
+                    },
+                  ),
+                  // 双列模式按钮
+                  _buildLayoutToggleButton(
+                    icon: Icons.view_sidebar_outlined,
+                    tooltip: '双列模式',
+                    isSelected: isTwoColumnMode,
+                    onTap: () => ref
                         .read(calendarPreferencesProvider.notifier)
-                        .setDialogLayout(CalendarDialogLayout.singleColumn);
-                    setState(() => _editingTask = null);
-                  },
-                ),
-                // 双列模式按钮
-                _buildLayoutToggleButton(
-                  icon: Icons.view_sidebar_outlined,
-                  tooltip: '双列模式',
-                  isSelected: isTwoColumnMode,
-                  onTap: () => ref
-                      .read(calendarPreferencesProvider.notifier)
-                      .setDialogLayout(CalendarDialogLayout.twoColumn),
-                ),
-              ],
+                        .setDialogLayout(CalendarDialogLayout.twoColumn),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
       content: SizedBox(
-        width: showRightPanel ? 900 : 550,
+        // 移动端自适应宽度，桌面端固定宽度
+        width: isMobile
+            ? screenWidth * 0.9
+            : (showRightPanel ? 900 : 550),
         height: MediaQuery.of(context).size.height * 0.65,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -683,6 +692,14 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
             value: task.tags.isEmpty ? '无' : task.tags.join(', '),
             onTap: () => _editTaskTags(task),
           ),
+          // 创建时间（精确到时分秒，不可编辑）
+          _buildEditOptionRow(
+            icon: Icons.access_time_outlined,
+            label: '创建时间',
+            value: DateFormat('yyyy年M月d日 HH:mm:ss').format(task.createdAt),
+            onTap: () {}, // 不可编辑，空操作
+            showArrow: false,
+          ),
         ],
       ),
     );
@@ -695,6 +712,7 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
     required String value,
     Color? valueColor,
     required VoidCallback onTap,
+    bool showArrow = true,
   }) {
     return InkWell(
       onTap: onTap,
@@ -712,9 +730,11 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
               style:
                   TextStyle(fontSize: 14, color: valueColor ?? AmberColors.textSecondary),
             ),
-            const SizedBox(width: 4),
-            const Icon(Icons.chevron_right,
-                size: 18, color: AmberColors.textDisabled),
+            if (showArrow) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right,
+                  size: 18, color: AmberColors.textDisabled),
+            ],
           ],
         ),
       ),

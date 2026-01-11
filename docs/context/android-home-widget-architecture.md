@@ -387,6 +387,116 @@ amberlist://widget/toggle_task?id=<task_id>
 
 需要在 App 中处理此 URI 来执行任务切换（待实现）。
 
+## 技术难点：撞色皮肤圆角实现
+
+### 问题背景
+
+撞色水墨皮肤（contrast01-05）使用 PNG 图片作为背景，与纯色皮肤（amber, white, mint 等）使用 XML Shape Drawable 不同。
+
+**纯色皮肤为什么没问题？**
+- 使用 XML `<shape>` 定义背景，`<corners android:radius="24dp" />` 直接生效
+- Android 系统原生支持，无论 Widget 怎么拖拽，圆角始终正确
+
+**撞色皮肤遇到的问题：**
+- PNG 图片没有内置圆角支持
+- Widget 可以被用户拖拽改变尺寸（2x2 → 3x2 → 4x2 等）
+- 圆角随着拖拽变形、变丑
+
+### 尝试过的失败方案
+
+| 方案 | 描述 | 失败原因 |
+|------|------|---------|
+| `clipToOutline` | XML 设置 `android:clipToOutline="true"` + 圆角背景 Drawable | RemoteViews 跨进程环境不支持此属性 |
+| 固定 Bitmap 圆角 | 用 `MIN_WIDTH/HEIGHT` 获取尺寸，代码绘制圆角 | 获取的是最小尺寸，实际尺寸可能更大，拉伸后圆角变形 |
+| `fitXY` 缩放 | ImageView 设置 `scaleType="fitXY"` | 会拉伸 Bitmap，圆角同样变形 |
+| `centerCrop` 缩放 | 保持比例裁剪 | 圆角依然随 Widget 尺寸变化 |
+
+### 最终解决方案
+
+**核心原理：监听 Widget 尺寸变化，每次变化都重新生成正确尺寸的带圆角 Bitmap**
+
+#### 1. 监听尺寸变化
+
+```kotlin
+override fun onAppWidgetOptionsChanged(
+    context: Context,
+    appWidgetManager: AppWidgetManager,
+    appWidgetId: Int,
+    newOptions: Bundle
+) {
+    super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+    // 尺寸变化时重新渲染 Widget
+    updateAppWidget(context, appWidgetManager, appWidgetId)
+}
+```
+
+#### 2. 获取实际 Widget 尺寸
+
+```kotlin
+// 同时获取 MIN 和 MAX 尺寸，取最大值
+val minWidthDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+val minHeightDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+val maxWidthDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, minWidthDp)
+val maxHeightDp = widgetOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, minHeightDp)
+
+// 使用最大值确保覆盖整个 Widget 区域
+val widthDp = maxOf(minWidthDp, maxWidthDp)
+val heightDp = maxOf(minHeightDp, maxHeightDp)
+val widthPx = (widthDp * density).toInt()
+val heightPx = (heightDp * density).toInt()
+```
+
+#### 3. 代码绘制带圆角的 Bitmap
+
+```kotlin
+private fun getScaledBitmap(context: Context, resId: Int, targetWidth: Int, targetHeight: Int): Bitmap? {
+    // 1. 加载原始图片
+    val original = BitmapFactory.decodeResource(context.resources, resId)
+
+    // 2. 创建目标尺寸的空 Bitmap
+    val output = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
+
+    // 3. 绘制圆角矩形作为遮罩（固定 20dp 圆角）
+    val cornerRadius = 20f * density
+    val rect = RectF(0f, 0f, targetWidth.toFloat(), targetHeight.toFloat())
+    canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+    // 4. 使用 SRC_IN 模式裁剪原图
+    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+
+    // 5. centerCrop 缩放并绘制
+    // ... 计算缩放和偏移 ...
+    canvas.drawBitmap(original, matrix, paint)
+
+    return output
+}
+```
+
+#### 4. 使用 `setImageViewBitmap` 设置
+
+```kotlin
+val roundedBitmap = getScaledBitmap(context, skinConfig.backgroundImageRes, widthPx, heightPx)
+views.setImageViewBitmap(R.id.widget_bg_image, roundedBitmap)
+```
+
+### 关键点总结
+
+| 要素 | 说明 |
+|------|------|
+| `onAppWidgetOptionsChanged` | 监听拖拽导致的尺寸变化 |
+| `MAX_WIDTH/HEIGHT` | 获取实际最大尺寸，而非最小尺寸 |
+| 代码绘制圆角 | 使用 Canvas + PorterDuff 裁剪 |
+| 固定圆角半径 | 20dp 转像素，不随尺寸变化 |
+| `setImageViewBitmap` | 直接设置处理好的 Bitmap，避免二次缩放 |
+
+### 为什么这样能解决问题？
+
+1. **每次尺寸变化都重新生成 Bitmap** → Bitmap 尺寸始终等于 Widget 尺寸
+2. **Bitmap 尺寸 = Widget 尺寸** → ImageView 不需要缩放
+3. **不需要缩放** → 圆角不会变形
+4. **圆角固定 20dp** → 无论 Widget 多大，圆角始终是 20dp 像素
+
 ## 后续优化
 
 - [ ] iOS Widget 支持（使用 WidgetKit）
@@ -394,5 +504,6 @@ amberlist://widget/toggle_task?id=<task_id>
 - [ ] 添加 Widget 预览图（previewImage）
 - [x] ~~支持深色模式~~ → 已通过皮肤系统实现（深空灰皮肤）
 - [x] ~~添加 Widget 配置界面~~ → 已实现皮肤设置界面
+- [x] ~~撞色皮肤圆角问题~~ → 已通过动态 Bitmap 生成解决
 - [ ] Medium/Large Widget 皮肤支持
 - [ ] 更多皮肤选项（用户自定义颜色）

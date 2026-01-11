@@ -149,10 +149,14 @@ class LocalSyncState {
   }
 
   /// 更新同步失败状态
+  ///
+  /// 注意：失败时保持 lastSyncTime 不变，不更新为当前时间。
+  /// 这是为了配合启动限流机制：失败的同步不应计入"有效同步"，
+  /// 否则会导致用户在网络恢复后仍被限流、无法及时同步数据。
   LocalSyncState withSyncFailure(String error) {
     return LocalSyncState(
       lastSyncedVersion: lastSyncedVersion,
-      lastSyncTime: DateTime.now(),
+      lastSyncTime: lastSyncTime, // 保持原值，不更新
       lastSyncedChecksum: lastSyncedChecksum,
       lastSyncSuccess: false,
       lastSyncError: error,

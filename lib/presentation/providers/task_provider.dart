@@ -82,6 +82,8 @@ Task _mapDbTaskToModel(db.Task dbTask) {
     sortOrder: dbTask.sortOrder,
     parentId: dbTask.parentId,
     autoPostpone: dbTask.autoPostpone, // 自动顺延状态
+    originalDueDate: dbTask.originalDueDate, // 首次截止日期（统计用）
+    postponeCount: dbTask.postponeCount, // 顺延次数（统计用）
     createdAt: dbTask.createdAt,
     updatedAt: dbTask.updatedAt,
   );
@@ -342,7 +344,7 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     state = tasks;
     // 同步更新 Widget 数据（Android 使用 SharedPreferences）
     _updateHomeWidget(tasks);
-    debugPrint('[TaskNotifier] 手动刷新完成，共 ${tasks.length} 个任务');
+    // debugPrint('[TaskNotifier] 手动刷新完成，共 ${tasks.length} 个任务');
   }
 
   /// 切换任务完成状态
@@ -475,6 +477,9 @@ class TaskNotifier extends StateNotifier<List<Task>> {
         isCompleted: const drift.Value(false),
         isDeleted: const drift.Value(false),
         autoPostpone: drift.Value(enableAutoPostpone),
+        // 如果创建时设置了截止日期，记录为原始截止日期（统计达成率用）
+        originalDueDate: drift.Value(dueDate),
+        postponeCount: const drift.Value(0),
         createdAt: now,
         updatedAt: now,
       ),
@@ -499,13 +504,24 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       tags: tags,
       isCompleted: false,
       autoPostpone: enableAutoPostpone,
+      originalDueDate: dueDate, // 创建时的截止日期即为原始截止日期
+      postponeCount: 0,
       createdAt: now,
       updatedAt: now,
     );
   }
 
   /// 更新任务
+  /// 注意：如果任务之前没有 originalDueDate，但这次设置了 dueDate，
+  /// 会自动设置 originalDueDate（用于统计达成率）
   Future<void> updateTask(Task updated) async {
+    // 检查是否需要设置 originalDueDate
+    DateTime? originalDueDateToSet;
+    if (updated.dueDate != null && updated.originalDueDate == null) {
+      // 首次设置截止日期，记录为原始截止日期
+      originalDueDateToSet = updated.dueDate;
+    }
+
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(updated.id),
@@ -517,6 +533,10 @@ class TaskNotifier extends StateNotifier<List<Task>> {
         tags: drift.Value(jsonEncode(updated.tags)),
         parentId: drift.Value(updated.parentId),
         isDeleted: drift.Value(updated.isDeleted),
+        // 首次设置截止日期时记录原始日期
+        originalDueDate: originalDueDateToSet != null
+            ? drift.Value(originalDueDateToSet)
+            : const drift.Value.absent(),
         updatedAt: drift.Value(DateTime.now()),
       ),
     );
@@ -672,6 +692,8 @@ class TaskNotifier extends StateNotifier<List<Task>> {
         db.TasksCompanion(
           id: drift.Value(dbTask.id),
           dueDate: drift.Value(today),
+          // 顺延次数 +1（用于统计达成率）
+          postponeCount: drift.Value(dbTask.postponeCount + 1),
           updatedAt: drift.Value(now),
         ),
       );
@@ -689,11 +711,20 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     final today = AmberDateUtils.normalizeToUtcDate(DateTime.now());
     final now = DateTime.now();
 
+    // 获取任务当前的 postponeCount
+    final allDbTasks = await database.getAllTasks();
+    final taskMap = {for (var t in allDbTasks) t.id: t};
+
     for (final taskId in taskIds) {
+      final dbTask = taskMap[taskId];
+      if (dbTask == null) continue;
+
       await database.updateTask(
         db.TasksCompanion(
           id: drift.Value(taskId),
           dueDate: drift.Value(today),
+          // 手动顺延也要增加顺延次数
+          postponeCount: drift.Value(dbTask.postponeCount + 1),
           updatedAt: drift.Value(now),
         ),
       );
@@ -997,6 +1028,9 @@ class TodayViewTasks {
 
 /// 今天视图任务 Provider
 /// 返回今天的任务和已过期的任务，用于"今天"视图显示
+/// 包含：
+/// - todayTasks: 截止日期为今天的任务（包括已完成和未完成）
+/// - overdueTasks: 已过期但未完成的任务
 final todayViewTasksProvider = Provider<TodayViewTasks>((ref) {
   final tasks = ref.watch(taskProvider);
 
@@ -1004,18 +1038,24 @@ final todayViewTasksProvider = Provider<TodayViewTasks>((ref) {
   final overdueTasks = <Task>[];
 
   for (final task in tasks) {
-    if (task.isCompleted || task.isDeleted) continue;
+    if (task.isDeleted) continue;
     if (task.dueDate == null) continue;
 
     if (AmberDateUtils.isToday(task.dueDate!)) {
+      // 今天的任务（包括已完成和未完成）
       todayTasks.add(task);
-    } else if (AmberDateUtils.isOverdue(task.dueDate!)) {
+    } else if (!task.isCompleted && AmberDateUtils.isOverdue(task.dueDate!)) {
+      // 过期任务只显示未完成的
       overdueTasks.add(task);
     }
   }
 
-  // 今天的任务按优先级和创建时间排序
+  // 今天的任务按优先级和创建时间排序（未完成在前）
   todayTasks.sort((a, b) {
+    // 未完成任务排在前面
+    if (a.isCompleted != b.isCompleted) {
+      return a.isCompleted ? 1 : -1;
+    }
     if (a.priority.value != b.priority.value) {
       return b.priority.value.compareTo(a.priority.value);
     }
