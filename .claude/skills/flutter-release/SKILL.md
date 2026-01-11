@@ -132,10 +132,64 @@ const APP_VERSION = '{新版本号}'
 5. 更新 `assets/CHANGELOG.md`
 6. 更新 `update.json`（版本号、构建号、更新说明、下载链接、发布日期）
 7. 更新 `index.html` 中的 `APP_VERSION`
-8. 提示用户检查并提交
+8. 执行 `git add .` 暂存所有变更
+9. 执行 `git commit` 提交版本发布
+10. 执行 `git push` 推送到远程
+11. 执行 `git tag` 创建版本标签
+12. 执行 `git push origin v{版本号}` 推送标签
+
+### Step 8: Git 提交和推送
+
+完成所有文件更新后，执行 Git 操作：
+
+```bash
+# 1. 暂存所有变更
+git add .
+
+# 2. 提交（使用 HEREDOC 格式化 commit message）
+git commit -m "$(cat <<'EOF'
+release: v{版本号} {版本描述}
+
+### 重大更新（仅 major 版本）
+- {重大功能1}
+- {重大功能2}
+
+### 新功能
+- {新功能描述}
+
+### 优化
+- {优化描述}
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+
+# 3. 推送到远程
+git push
+
+# 4. 创建标签
+git tag -a v{版本号} -m "v{版本号} {简短描述}"
+
+# 5. 推送标签到远程
+git push origin v{版本号}
+```
+
+**Commit Message 规范：**
+- `release:` 前缀表示版本发布
+- 标题简洁概括本次发布
+- 正文按分类列出主要改动
+- 包含 Claude Code 署名
+
+**标签命名：**
+- 格式: `v{major}.{minor}.{patch}`
+- 示例: `v2.0.0`, `v1.2.3`
 
 ## 注意事项
 
 - 确保在项目根目录执行
-- 升级后记得提交 `pubspec.yaml` 和 `assets/CHANGELOG.md`
+- 升级后记得提交 `pubspec.yaml`、`assets/CHANGELOG.md`、`update.json`、`index.html`
 - 如果 git 没有 tag，会获取最近 20 条提交
+- 推送标签后，记得在 GitHub Releases 页面创建对应的 Release（可选）
+- 构建完应用后上传到 CDN 对应路径
