@@ -39,6 +39,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2  # 跨平台密码存储（macOS Keychain / Windows Credential Manager）
   connectivity_plus: ^6.1.2       # 网络状态检测
   crypto: ^3.0.6                  # 哈希计算（用于快照校验）
+  encrypt: ^5.0.3                 # AES 加密（用于资源保护）
   shared_preferences: ^2.5.4      # 非敏感配置存储
   qiniu_flutter_sdk: ^0.6.0       # 七牛云 OSS SDK（全平台支持）
   http: ^1.2.2                    # HTTP 客户端（用于 OSS 下载）

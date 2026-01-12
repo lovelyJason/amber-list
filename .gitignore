@@ -100,3 +100,6 @@ remove_bg.py
 # .env.example 应该提交，作为配置模板
 update.json
 index.html
+
+# 加密资源目录（构建时生成，不应提交）
+assets_enc/
