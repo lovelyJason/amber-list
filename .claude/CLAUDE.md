@@ -235,6 +235,55 @@ chore: 构建/配置相关
 
 ---
 
+## ⚠️ Dart/Flutter 常见坑
+
+### 1. copyWith 无法将 nullable 字段设为 null
+
+**问题描述**：
+Dart 的 `copyWith` 方法使用 `??` 运算符处理可选参数，导致无法区分"没传参数"和"传了 null"。
+
+```dart
+// ❌ 错误示例 - 这样写 parentId 永远不会变成 null
+TaskList copyWith({String? parentId}) {
+  return TaskList(
+    parentId: parentId ?? this.parentId,  // null ?? this.parentId = this.parentId
+  );
+}
+
+// 调用时：
+list.copyWith(parentId: null);  // parentId 还是原来的值！
+```
+
+**解决方案**：添加一个 `clearXxx` 布尔参数来显式表示"我要设为 null"
+
+```dart
+// ✅ 正确示例
+TaskList copyWith({
+  String? parentId,
+  bool clearParentId = false,  // 特殊标记：是否清除 parentId
+}) {
+  return TaskList(
+    parentId: clearParentId ? null : (parentId ?? this.parentId),
+  );
+}
+
+// 调用时：
+list.copyWith(clearParentId: true);  // 正确设为 null
+list.copyWith(parentId: 'some-id');  // 正确设为具体值
+list.copyWith();  // 保持原值
+```
+
+**受影响的 Model**：
+- `TaskList.copyWith()` - `parentId` 字段（已修复）
+- `Task.copyWith()` - 注意 `listId`、`parentId`、`dueDate` 等 nullable 字段
+
+**最佳实践**：
+- 所有 Model 的 nullable 字段都要考虑是否需要"设为 null"的场景
+- 如果需要，添加对应的 `clearXxx` 参数
+- 在注释中说明用法
+
+---
+
 ## 📝 更新日志
 
 ### 2025-12-28

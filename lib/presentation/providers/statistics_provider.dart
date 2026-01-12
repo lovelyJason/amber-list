@@ -216,12 +216,113 @@ class StatisticsNotifier extends StateNotifier<WeeklyStatistics> {
   }
 }
 
-/// 统计数据 Provider 实例
+/// 统计数据 Provider 实例（默认为本周）
 final statisticsProvider =
     StateNotifierProvider<StatisticsNotifier, WeeklyStatistics>((ref) {
   final database = ref.watch(databaseProvider);
   return StatisticsNotifier(database);
 });
+
+/// 指定日期的周统计数据 Provider
+/// 使用 family 支持传入任意日期，返回该日期所在周的统计
+///
+/// 用法：ref.watch(weeklyStatisticsForDateProvider(selectedDate))
+final weeklyStatisticsForDateProvider =
+    FutureProvider.family<WeeklyStatistics, DateTime>((ref, targetDate) async {
+  final database = ref.watch(databaseProvider);
+  return _loadWeeklyStatisticsForDate(database, targetDate);
+});
+
+/// 加载指定日期所在周的统计数据
+Future<WeeklyStatistics> _loadWeeklyStatisticsForDate(
+  db.AppDatabase database,
+  DateTime targetDate,
+) async {
+  // 计算目标日期所在周的周一和周日
+  final weekday = targetDate.weekday; // 周一=1, 周日=7
+  final monday = DateTime(targetDate.year, targetDate.month, targetDate.day - (weekday - 1));
+  final sunday = monday.add(const Duration(days: 6));
+  final now = DateTime.now();
+
+  // 获取所有已完成的任务（不包括已删除的）
+  final allTasks = await database.getAllTasks();
+  final completedTasks = allTasks
+      .where((t) => t.isCompleted && !t.isDeleted && t.completedAt != null)
+      .toList();
+
+  // 统计每天完成的任务数（按 completedAt 日期分组）
+  final dailyCompleted = List<int>.filled(7, 0);
+  for (final task in completedTasks) {
+    final completedDate = task.completedAt!;
+    // 检查是否在目标周内（周一 00:00:00 到周日 23:59:59）
+    if (!completedDate.isBefore(monday) &&
+        completedDate.isBefore(sunday.add(const Duration(days: 1)))) {
+      final dayIndex = completedDate.weekday - 1; // 0=周一, 6=周日
+      if (dayIndex >= 0 && dayIndex < 7) {
+        dailyCompleted[dayIndex]++;
+      }
+    }
+  }
+
+  // 计算每天的达成率
+  final dailyRates = List<double>.filled(7, -1);
+  final dailyDetails = <DailyAchievementDetail>[];
+  final activeTasks = allTasks.where((t) => !t.isDeleted).toList();
+
+  for (int dayIndex = 0; dayIndex < 7; dayIndex++) {
+    final dayDate = monday.add(Duration(days: dayIndex));
+    // 只计算已过的天（或者如果是历史周，全部计算）
+    if (dayDate.isAfter(now)) continue;
+
+    int totalDueTasks = 0;
+    int achievedTasks = 0;
+    final taskDetails = <String>[];
+
+    for (final task in activeTasks) {
+      if (task.originalDueDate != null &&
+          _isSameDay(task.originalDueDate!, dayDate)) {
+        totalDueTasks++;
+        final isAchieved = task.isCompleted && task.postponeCount == 0;
+        if (isAchieved) {
+          achievedTasks++;
+        }
+        final status = isAchieved
+            ? '✅ 达成'
+            : (task.isCompleted ? '⚠️ 延期完成(顺延${task.postponeCount}次)' : '❌ 未完成');
+        taskDetails.add('• ${task.title} $status');
+      }
+    }
+
+    double rate;
+    if (totalDueTasks > 0) {
+      rate = achievedTasks / totalDueTasks;
+      dailyRates[dayIndex] = rate;
+    } else {
+      rate = -1;
+      dailyRates[dayIndex] = -1;
+    }
+
+    dailyDetails.add(DailyAchievementDetail(
+      date: dayDate,
+      weekday: dayDate.weekday,
+      totalDueTasks: totalDueTasks,
+      achievedTasks: achievedTasks,
+      rate: rate,
+      taskDetails: taskDetails,
+    ));
+  }
+
+  return WeeklyStatistics(
+    dailyCompletedCounts: dailyCompleted,
+    dailyAchievementRates: dailyRates,
+    dailyAchievementDetails: dailyDetails,
+  );
+}
+
+/// 判断两个日期是否为同一天（顶层函数，供 Provider 使用）
+bool _isSameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
 
 // ============================================================
 // 月统计数据模型和 Provider
@@ -633,9 +734,270 @@ class MonthlyStatisticsNotifier extends StateNotifier<MonthlyStatistics> {
   }
 }
 
-/// 月统计数据 Provider 实例
+/// 月统计数据 Provider 实例（默认为本月）
 final monthlyStatisticsProvider =
     StateNotifierProvider<MonthlyStatisticsNotifier, MonthlyStatistics>((ref) {
   final database = ref.watch(databaseProvider);
   return MonthlyStatisticsNotifier(database);
 });
+
+/// 指定日期的月统计数据 Provider
+/// 使用 family 支持传入任意日期，返回该日期所在月的统计
+///
+/// 用法：ref.watch(monthlyStatisticsForDateProvider(selectedDate))
+final monthlyStatisticsForDateProvider =
+    FutureProvider.family<MonthlyStatistics, DateTime>((ref, targetDate) async {
+  final database = ref.watch(databaseProvider);
+  return _loadMonthlyStatisticsForDate(database, targetDate);
+});
+
+/// 加载指定日期所在月的统计数据
+Future<MonthlyStatistics> _loadMonthlyStatisticsForDate(
+  db.AppDatabase database,
+  DateTime targetDate,
+) async {
+  // 计算目标月的起止日期
+  final monthStart = DateTime(targetDate.year, targetDate.month, 1);
+  final monthEnd = DateTime(targetDate.year, targetDate.month + 1, 0); // 本月最后一天
+
+  // 上月起止日期（用于环比）
+  final lastMonthStart = DateTime(targetDate.year, targetDate.month - 1, 1);
+  final lastMonthEnd = DateTime(targetDate.year, targetDate.month, 0);
+
+  final now = DateTime.now();
+  final daysInMonth = monthEnd.day;
+
+  // 判断是否为当前月（用于计算日均时只算已过天数）
+  final isCurrentMonth = targetDate.year == now.year && targetDate.month == now.month;
+  final currentDay = isCurrentMonth ? now.day : daysInMonth;
+
+  // 获取所有任务和清单
+  final allTasks = await database.getAllTasks();
+  final allLists = await database.getAllTaskLists();
+
+  // 目标月已完成的任务
+  final thisMonthCompleted = allTasks.where((t) =>
+      t.isCompleted &&
+      !t.isDeleted &&
+      t.completedAt != null &&
+      !t.completedAt!.isBefore(monthStart) &&
+      t.completedAt!.isBefore(monthEnd.add(const Duration(days: 1)))).toList();
+
+  // 上月已完成的任务
+  final lastMonthCompletedCount = allTasks.where((t) =>
+      t.isCompleted &&
+      !t.isDeleted &&
+      t.completedAt != null &&
+      !t.completedAt!.isBefore(lastMonthStart) &&
+      t.completedAt!.isBefore(lastMonthEnd.add(const Duration(days: 1)))).length;
+
+  // 每日完成任务数
+  final dailyCompleted = List<int>.filled(daysInMonth, 0);
+  for (final task in thisMonthCompleted) {
+    final day = task.completedAt!.day - 1; // 0-indexed
+    if (day >= 0 && day < daysInMonth) {
+      dailyCompleted[day]++;
+    }
+  }
+
+  // 每日新增任务数
+  final dailyCreated = List<int>.filled(daysInMonth, 0);
+  final thisMonthCreated = allTasks.where((t) =>
+      !t.isDeleted &&
+      !t.createdAt.isBefore(monthStart) &&
+      t.createdAt.isBefore(monthEnd.add(const Duration(days: 1)))).toList();
+  for (final task in thisMonthCreated) {
+    final day = task.createdAt.day - 1;
+    if (day >= 0 && day < daysInMonth) {
+      dailyCreated[day]++;
+    }
+  }
+
+  // 日均完成（只计算已过的天数）
+  final dailyAvg = currentDay > 0 ? thisMonthCompleted.length / currentDay : 0.0;
+
+  // 待办积压（只对当前月及之前的月份计算才有意义）
+  // 对于历史月份，按该月最后一天计算
+  final backlogDate = isCurrentMonth ? now : monthEnd;
+  final backlog = allTasks.where((t) =>
+      !t.isCompleted &&
+      !t.isDeleted &&
+      t.dueDate != null &&
+      t.dueDate!.isBefore(DateTime(backlogDate.year, backlogDate.month, backlogDate.day))).length;
+
+  // 效率指数计算
+  final activeTasks = allTasks.where((t) => !t.isDeleted).toList();
+  int totalDue = 0;
+  int achieved = 0;
+  for (final task in activeTasks) {
+    if (task.originalDueDate != null &&
+        !task.originalDueDate!.isBefore(monthStart) &&
+        task.originalDueDate!.isBefore(monthEnd.add(const Duration(days: 1)))) {
+      totalDue++;
+      if (task.isCompleted && task.postponeCount == 0) {
+        achieved++;
+      }
+    }
+  }
+  final achievementRate = totalDue > 0 ? achieved / totalDue : 0.5;
+  final dailyScore = (dailyAvg / 5).clamp(0.0, 1.0);
+  final efficiencyScore = ((achievementRate * 0.6 + dailyScore * 0.4) * 100).round();
+
+  // 效率等级
+  String grade;
+  if (efficiencyScore >= 90) {
+    grade = 'A+';
+  } else if (efficiencyScore >= 80) {
+    grade = 'A';
+  } else if (efficiencyScore >= 70) {
+    grade = 'B+';
+  } else if (efficiencyScore >= 60) {
+    grade = 'B';
+  } else if (efficiencyScore >= 50) {
+    grade = 'C';
+  } else {
+    grade = 'D';
+  }
+
+  // 任务类型分布（按清单分组）
+  final listCounts = <String, int>{};
+  final listColors = <String, int>{};
+  for (final task in thisMonthCompleted) {
+    final listId = task.listId ?? 'inbox';
+    listCounts[listId] = (listCounts[listId] ?? 0) + 1;
+  }
+  for (final list in allLists) {
+    listColors[list.id] = list.color;
+  }
+  listColors['inbox'] = 0xFF9E9E9E;
+
+  final totalCount = thisMonthCompleted.length;
+  final typeDistribution = listCounts.entries.map((entry) {
+    final listName = allLists.where((l) => l.id == entry.key).map((l) => l.name).firstOrNull ?? '收件箱';
+    return TaskTypeDistribution(
+      name: listName,
+      color: listColors[entry.key] ?? 0xFF9E9E9E,
+      count: entry.value,
+      percentage: totalCount > 0 ? entry.value / totalCount : 0,
+    );
+  }).toList();
+  typeDistribution.sort((a, b) => b.count.compareTo(a.count));
+
+  // 热力图数据
+  final heatmapData = List<int>.from(dailyCompleted);
+
+  // 成就计算（简化版，主要对当前月有意义）
+  final achievements = _calculateAchievementsForDate(
+    allTasks: allTasks,
+    thisMonthCompleted: thisMonthCompleted,
+    dailyCompleted: dailyCompleted,
+    currentDay: currentDay,
+    targetDate: targetDate,
+  );
+
+  return MonthlyStatistics(
+    totalCompleted: thisMonthCompleted.length,
+    lastMonthCompleted: lastMonthCompletedCount,
+    dailyAverage: dailyAvg,
+    efficiencyScore: efficiencyScore,
+    efficiencyGrade: grade,
+    backlogCount: backlog,
+    backlogNeedsAttention: backlog >= 5,
+    dailyCompletedCounts: dailyCompleted,
+    dailyCreatedCounts: dailyCreated,
+    typeDistribution: typeDistribution,
+    heatmapData: heatmapData,
+    achievements: achievements,
+  );
+}
+
+/// 计算指定月份的成就
+List<Achievement> _calculateAchievementsForDate({
+  required List<db.Task> allTasks,
+  required List<db.Task> thisMonthCompleted,
+  required List<int> dailyCompleted,
+  required int currentDay,
+  required DateTime targetDate,
+}) {
+  final achievements = <Achievement>[];
+
+  // 1. 深度工作达人 - 暂时标记为未达成
+  achievements.add(const Achievement(
+    type: AchievementType.deepWorker,
+    name: '深度工作达人',
+    description: '累计连续专注超过4小时，效率惊人！',
+    isAchieved: false,
+    icon: '🎯',
+  ));
+
+  // 2. 清空收件箱
+  final inboxTasks = allTasks.where((t) =>
+      !t.isDeleted &&
+      !t.isCompleted &&
+      (t.listId == null || t.listId!.isEmpty)).length;
+  achievements.add(Achievement(
+    type: AchievementType.inboxZero,
+    name: '清空收件箱',
+    description: inboxTasks == 0 ? '收件箱已清零，继续保持！' : '本周两次达成"收件箱清零"成就。',
+    isAchieved: inboxTasks == 0,
+    icon: '📥',
+  ));
+
+  // 3. 早起鸟
+  final earlyTasks = thisMonthCompleted.where((t) =>
+      t.completedAt != null && t.completedAt!.hour < 8).length;
+  achievements.add(Achievement(
+    type: AchievementType.earlyBird,
+    name: '早起鸟',
+    description: earlyTasks > 0 ? '早起完成了 $earlyTasks 个任务！' : '早上8点前完成任务可获得此成就。',
+    isAchieved: earlyTasks > 0,
+    icon: '🌅',
+  ));
+
+  // 4. 完美周（基于目标月份最后一周）
+  final monthEnd = DateTime(targetDate.year, targetDate.month + 1, 0);
+  final weekAgo = monthEnd.subtract(const Duration(days: 7));
+  final weekTasks = allTasks.where((t) =>
+      !t.isDeleted &&
+      t.originalDueDate != null &&
+      !t.originalDueDate!.isBefore(weekAgo) &&
+      t.originalDueDate!.isBefore(monthEnd.add(const Duration(days: 1)))).toList();
+  final perfectWeek = weekTasks.isNotEmpty &&
+      weekTasks.every((t) => t.isCompleted && t.postponeCount == 0);
+  achievements.add(Achievement(
+    type: AchievementType.perfectWeek,
+    name: '完美周',
+    description: perfectWeek ? '本周所有任务按时完成！' : '本周所有任务按时完成可获得此成就。',
+    isAchieved: perfectWeek,
+    icon: '🏆',
+  ));
+
+  // 5. 效率王者
+  final dailyAvg = currentDay > 0 ? thisMonthCompleted.length / currentDay : 0;
+  achievements.add(Achievement(
+    type: AchievementType.efficiencyKing,
+    name: '效率王者',
+    description: dailyAvg >= 10 ? '日均完成 ${dailyAvg.toStringAsFixed(1)} 个任务！' : '日均完成任务数超过10个可获得此成就。',
+    isAchieved: dailyAvg >= 10,
+    icon: '👑',
+  ));
+
+  // 6. 坚持不懈
+  int consecutiveDays = 0;
+  for (int i = currentDay - 1; i >= 0 && consecutiveDays < 7; i--) {
+    if (dailyCompleted[i] > 0) {
+      consecutiveDays++;
+    } else {
+      break;
+    }
+  }
+  achievements.add(Achievement(
+    type: AchievementType.persistent,
+    name: '坚持不懈',
+    description: consecutiveDays >= 7 ? '连续 $consecutiveDays 天完成任务！' : '连续7天都有完成任务可获得此成就。',
+    isAchieved: consecutiveDays >= 7,
+    icon: '💪',
+  ));
+
+  return achievements;
+}

@@ -174,22 +174,24 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         // 任务列表
         // SlidableAutoCloseBehavior: 滑动一个任务时，其他已打开的会自动关闭（微信风格）
         Expanded(
-          child: SlidableAutoCloseBehavior(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: AmberDimens.spacingLg),
-              children: [
-                if (!widget.groupCompleted)
-                  ...allTasks.map((task) => TaskItem(task: task))
-                else ...[
-                  // 未完成任务
-                  ...incompleteTasks.map((task) => TaskItem(task: task)),
-                  // 已完成任务折叠
-                  if (completedTasks.isNotEmpty && !filterSort.hideCompleted)
-                    _buildCompletedSection(completedTasks),
-                ],
-              ],
-            ),
-          ),
+          child: allTasks.isEmpty && widget.isTrash
+              ? _buildEmptyTrashState()
+              : SlidableAutoCloseBehavior(
+                  child: ListView(
+                    padding: const EdgeInsets.only(bottom: AmberDimens.spacingLg),
+                    children: [
+                      if (!widget.groupCompleted)
+                        ...allTasks.map((task) => TaskItem(task: task))
+                      else ...[
+                        // 未完成任务
+                        ...incompleteTasks.map((task) => TaskItem(task: task)),
+                        // 已完成任务折叠
+                        if (completedTasks.isNotEmpty && !filterSort.hideCompleted)
+                          _buildCompletedSection(completedTasks),
+                      ],
+                    ],
+                  ),
+                ),
         ),
       ],
     );
@@ -540,6 +542,46 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               }
             },
             child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建垃圾桶空状态视图
+  ///
+  /// 设计哲学：
+  /// - 友好的空状态提示，让用户知道垃圾桶是空的
+  /// - 使用柔和的图标和文字，避免冷冰冰的"无数据"
+  Widget _buildEmptyTrashState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 垃圾桶图标 - 使用 outlined 风格保持一致
+          Icon(
+            Icons.delete_outline_rounded,
+            size: 80,
+            color: AmberColors.textDisabled.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: AmberDimens.spacingMd),
+          // 主标题
+          Text(
+            '垃圾桶是空的',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: AmberColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: AmberDimens.spacingSm),
+          // 副标题说明
+          Text(
+            '删除的任务会在这里保留 30 天',
+            style: TextStyle(
+              fontSize: 13,
+              color: AmberColors.textDisabled,
+            ),
           ),
         ],
       ),

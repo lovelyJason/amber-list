@@ -384,11 +384,34 @@ class AboutTab extends ConsumerWidget {
                     width: 1,
                   ),
                 ),
-                child: Image.asset(
-                  'assets/images/wechat-add.jpg',
+                child: Image.network(
+                  'https://cdn.qdovo.com/hupo/images/wechat-add.jpg',
                   width: 200,
                   height: 200,
                   fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.grey,
+                          size: 48,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: AmberDimens.spacingMd),
@@ -705,11 +728,34 @@ class AboutTab extends ConsumerWidget {
                     width: 1,
                   ),
                 ),
-                child: Image.asset(
-                  'assets/images/wechat-receive-code.jpg',
+                child: Image.network(
+                  'https://cdn.qdovo.com/hupo/images/wechat-receive-code.jpg',
                   width: 200,
                   height: 200,
                   fit: BoxFit.contain,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const SizedBox(
+                      width: 200,
+                      height: 200,
+                      child: Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.grey,
+                          size: 48,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: AmberDimens.spacingMd),

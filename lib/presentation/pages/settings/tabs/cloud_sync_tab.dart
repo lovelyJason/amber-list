@@ -156,9 +156,7 @@ class CloudSyncTab extends ConsumerWidget {
             currentType: currentType,
             isConfigured: amberCloudConfigured,
             title: '琥珀云托管',
-            subtitle: currentType == SyncType.amberCloud
-                ? '官方服务，开箱即用'
-                : (amberCloudConfigured ? '请在下方点击启用' : '需先激活 App'),
+            subtitle: amberCloudConfigured ? '已配置' : '需先激活 App',
           ),
           _buildSyncOption(
             context: context,
@@ -185,12 +183,11 @@ class CloudSyncTab extends ConsumerWidget {
     required String subtitle,
   }) {
     final isSelected = type == currentType;
-    // 琥珀云特殊处理：只有当前已经是琥珀云时才能在选择器里选中
-    // 因为选中琥珀云需要先点"启用琥珀云"按钮获取 token
-    // 其他同步方式：配置好了就能选
-    final canSelect = type == null // "不同步"总是可选
-        || (type == SyncType.amberCloud && isSelected) // 琥珀云：只有已选中时才能保持选中
-        || (type != SyncType.amberCloud && isConfigured); // 其他：已配置就能选
+    // 所有同步方式：已配置就能选
+    // - "不同步"总是可选
+    // - 琥珀云：App 已激活即可选（isConfigured = activationState.isActivated）
+    // - 其他：配置好账密就能选
+    final canSelect = type == null || isConfigured;
 
     // 已选中的选项不能再点击（避免重复触发切换）
     final canTap = canSelect && !isSelected;

@@ -208,8 +208,31 @@ class TaskItem extends ConsumerWidget {
   }
 
   /// 处理普通删除（移入垃圾桶）
-  /// 如果任务有番茄记录会弹出确认框
+  /// 先弹出二次确认框，确认后才执行删除
+  /// 如果任务有番茄记录会弹出特殊提示
   Future<void> _handleDelete(BuildContext context, WidgetRef ref) async {
+    // 先弹出二次确认框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定要删除任务「${task.title}」吗？\n任务将被移入垃圾桶。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('删除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
     final success = await ref.read(taskProvider.notifier).deleteTask(task.id);
     if (success) {
       ref.read(soundServiceProvider).playDelete();
@@ -249,7 +272,8 @@ class TaskItem extends ConsumerWidget {
   }
 
   /// 处理彻底删除（从垃圾桶永久删除）
-  /// 如果任务有番茄记录会弹出确认框
+  /// 弹出二次确认框，确认后才执行删除
+  /// 如果任务有番茄记录会弹出特殊提示
   Future<void> _handlePermanentDelete(
     BuildContext context,
     WidgetRef ref,
@@ -290,8 +314,29 @@ class TaskItem extends ConsumerWidget {
         ),
       );
     } else {
-      // 无关联记录，直接删除（不弹确认框，保持一致性）
-      ref.read(taskProvider.notifier).permanentlyDeleteTask(task.id);
+      // 无关联记录，弹出二次确认框
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('确认彻底删除'),
+          content: Text('确定要彻底删除任务「${task.title}」吗？\n此操作不可恢复！'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('彻底删除', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        ref.read(taskProvider.notifier).permanentlyDeleteTask(task.id);
+      }
     }
   }
 

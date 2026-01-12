@@ -55,3 +55,5 @@
 ## 开发规范
 
 参考文档docs，里面有各个功能的指导和设计文档
+
+@include .claude/CLAUDE.md

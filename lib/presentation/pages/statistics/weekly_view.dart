@@ -9,16 +9,21 @@ import '../../../../core/constants/constants.dart';
 import '../../providers/statistics_provider.dart';
 
 /// 周视图统计页面
-/// 显示本周任务完成趋势和达成率
+/// 显示指定周的任务完成趋势和达成率
 ///
 /// 设计说明：
 /// - PC 端：左右分栏布局（柱状图 6:4 折线图）
 /// - 移动端：上下堆叠布局，卡片 2 列，图表全宽
+/// - 支持通过 selectedDate 参数查看任意周的数据
 class WeeklyView extends ConsumerStatefulWidget {
   /// 是否为移动端布局
   final bool isMobile;
 
-  const WeeklyView({super.key, this.isMobile = false});
+  /// 选中的日期（用于确定要显示哪一周的数据）
+  /// 如果为 null，则显示本周数据
+  final DateTime? selectedDate;
+
+  const WeeklyView({super.key, this.isMobile = false, this.selectedDate});
 
   @override
   ConsumerState<WeeklyView> createState() => _WeeklyViewState();
@@ -28,20 +33,34 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
   // 星期标签
   final List<String> _weekDays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-  // 从 Provider 获取的统计数据
+  /// 获取目标日期（优先使用传入的 selectedDate，否则使用今天）
+  DateTime get _targetDate => widget.selectedDate ?? DateTime.now();
+
+  /// 获取统计数据
+  /// 如果指定了 selectedDate，使用 family Provider 获取指定周数据
+  /// 否则使用默认的 statisticsProvider（本周数据）
+  WeeklyStatistics? _getStats() {
+    if (widget.selectedDate != null) {
+      final asyncValue = ref.watch(weeklyStatisticsForDateProvider(_targetDate));
+      return asyncValue.valueOrNull;
+    }
+    return ref.watch(statisticsProvider);
+  }
+
+  // 从 Provider 获取的统计数据（带空值保护）
   List<int> get _weeklyCompletedTasks =>
-      ref.watch(statisticsProvider).dailyCompletedCounts;
+      _getStats()?.dailyCompletedCounts ?? [0, 0, 0, 0, 0, 0, 0];
 
   List<double> get _dailyCompletionRates =>
-      ref.watch(statisticsProvider).dailyAchievementRates;
+      _getStats()?.dailyAchievementRates ?? [-1, -1, -1, -1, -1, -1, -1];
 
   // 获取每日达成率详情（用于调试）
   List<DailyAchievementDetail> get _dailyAchievementDetails =>
-      ref.watch(statisticsProvider).dailyAchievementDetails;
+      _getStats()?.dailyAchievementDetails ?? [];
 
   // 计算周平均达成率
   double get _weeklyAverageRate =>
-      ref.watch(statisticsProvider).weeklyAverageRate;
+      _getStats()?.weeklyAverageRate ?? 0;
 
   // 找到最高完成数的索引
   int get _maxTaskIndex {
@@ -59,6 +78,24 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
 
   @override
   Widget build(BuildContext context) {
+    // 如果使用 family Provider 且数据还在加载中，显示加载指示器
+    if (widget.selectedDate != null) {
+      final asyncValue = ref.watch(weeklyStatisticsForDateProvider(_targetDate));
+      if (asyncValue.isLoading) {
+        return const Center(
+          child: CircularProgressIndicator(color: AmberColors.primary),
+        );
+      }
+      if (asyncValue.hasError) {
+        return Center(
+          child: Text(
+            '加载失败: ${asyncValue.error}',
+            style: const TextStyle(color: AmberColors.textSecondary),
+          ),
+        );
+      }
+    }
+
     if (widget.isMobile) {
       return _buildMobileLayout();
     } else {
@@ -123,9 +160,9 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
 
   /// 构建移动端统计卡片（2 列布局）
   Widget _buildMobileSummaryCards() {
-    final stats = ref.watch(statisticsProvider);
-    final totalCompleted = stats.totalCompleted;
-    final dailyAvg = stats.dailyAverage;
+    final stats = _getStats();
+    final totalCompleted = stats?.totalCompleted ?? 0;
+    final dailyAvg = stats?.dailyAverage ?? 0.0;
 
     return Row(
       children: [
@@ -210,9 +247,9 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
 
   /// 构建顶部统计卡片
   Widget _buildSummaryCards() {
-    final stats = ref.watch(statisticsProvider);
-    final totalCompleted = stats.totalCompleted;
-    final dailyAvg = stats.dailyAverage;
+    final stats = _getStats();
+    final totalCompleted = stats?.totalCompleted ?? 0;
+    final dailyAvg = stats?.dailyAverage ?? 0.0;
 
     return Row(
       children: [
@@ -359,15 +396,15 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
               ),
               const Spacer(),
               // 导出数据按钮
-              TextButton.icon(
-                onPressed: () {},
-                icon: const Icon(FluentIcons.arrow_download_16_regular, size: 16),
-                label: const Text('导出数据'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AmberColors.textSecondary,
-                  textStyle: const TextStyle(fontSize: 13),
-                ),
-              ),
+              // TextButton.icon(
+              //   onPressed: () {},
+              //   icon: const Icon(FluentIcons.arrow_download_16_regular, size: 16),
+              //   label: const Text('导出数据'),
+              //   style: TextButton.styleFrom(
+              //     foregroundColor: AmberColors.textSecondary,
+              //     textStyle: const TextStyle(fontSize: 13),
+              //   ),
+              // ),
             ],
           ),
           const SizedBox(height: 24),
@@ -658,6 +695,32 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
                   color: AmberColors.textPrimary,
                 ),
               ),
+              const SizedBox(width: 4),
+              // 帮助图标：悬停显示达成趋势的计算说明
+              Tooltip(
+                message:
+                    '衡量任务按时完成情况\n'
+                    '达成率 = 按时完成数 / 应完成数\n'
+                    '延期完成的任务不计入按时完成',
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.white,
+                  height: 1.5,
+                ),
+                decoration: BoxDecoration(
+                  color: AmberColors.textPrimary.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Icon(
+                  FluentIcons.question_circle_16_regular,
+                  size: 16,
+                  color: AmberColors.textDisabled,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -742,13 +805,29 @@ class _WeeklyViewState extends ConsumerState<WeeklyView> {
                       interval: 1, // 每个点都检查
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
-                        // 显示周一、周四、周日
-                        if (index == 0) return const Text('周一', style: TextStyle(fontSize: 10, color: AmberColors.textSecondary));
-                        if (index == 3) return const Text('周四', style: TextStyle(fontSize: 10, color: AmberColors.textSecondary));
-                        if (index == 6) return const Text('周日', style: TextStyle(fontSize: 10, color: AmberColors.textSecondary));
+                          // 显示周一、周四、周日，加顶部间距避免与折线顶点重叠
+                          const textStyle = TextStyle(
+                            fontSize: 10,
+                            color: AmberColors.textSecondary,
+                          );
+                          if (index == 0)
+                            return const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('周一', style: textStyle),
+                            );
+                          if (index == 3)
+                            return const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('周四', style: textStyle),
+                            );
+                          if (index == 6)
+                            return const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text('周日', style: textStyle),
+                            );
                         return const SizedBox.shrink();
                       },
-                      reservedSize: 24,
+                        reservedSize: 32, // 增加预留空间以容纳 padding
                     ),
                   ),
                   leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),

@@ -26,6 +26,12 @@ class TaskList {
     this.tags = const [],
   });
 
+  /// 复制并修改字段
+  ///
+  /// 注意：[parentId] 使用特殊处理支持设置为 null（根目录）
+  /// - 不传参数：保持原值
+  /// - 传 `clearParentId: true`：设为 null（移到根目录）
+  /// - 传具体值：设为该值
   TaskList copyWith({
     String? id,
     String? name,
@@ -35,6 +41,7 @@ class TaskList {
     DateTime? createdAt,
     DateTime? updatedAt,
     String? parentId,
+    bool clearParentId = false, // 特殊标记：是否清除 parentId（设为根目录）
     bool? isFolder,
     List<String>? tags,
   }) {
@@ -46,7 +53,8 @@ class TaskList {
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      parentId: parentId ?? this.parentId,
+      // 如果 clearParentId=true，强制设为 null；否则用传入值或原值
+      parentId: clearParentId ? null : (parentId ?? this.parentId),
       isFolder: isFolder ?? this.isFolder,
       tags: tags ?? this.tags,
     );

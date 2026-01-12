@@ -713,6 +713,17 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _completedAtMeta = const VerificationMeta(
     'completedAt',
   );
@@ -829,6 +840,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
     isCompleted,
     isInProgress,
     isDeleted,
+    deletedAt,
     completedAt,
     tags,
     sortOrder,
@@ -913,6 +925,12 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
       context.handle(
         _isDeletedMeta,
         isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
     if (data.containsKey('completed_at')) {
@@ -1030,6 +1048,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, Task> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_deleted'],
       )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
       completedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}completed_at'],
@@ -1085,6 +1107,7 @@ class Task extends DataClass implements Insertable<Task> {
   final bool isCompleted;
   final bool isInProgress;
   final bool isDeleted;
+  final DateTime? deletedAt;
   final DateTime? completedAt;
   final String tags;
   final int sortOrder;
@@ -1117,6 +1140,7 @@ class Task extends DataClass implements Insertable<Task> {
     required this.isCompleted,
     required this.isInProgress,
     required this.isDeleted,
+    this.deletedAt,
     this.completedAt,
     required this.tags,
     required this.sortOrder,
@@ -1145,6 +1169,9 @@ class Task extends DataClass implements Insertable<Task> {
     map['is_completed'] = Variable<bool>(isCompleted);
     map['is_in_progress'] = Variable<bool>(isInProgress);
     map['is_deleted'] = Variable<bool>(isDeleted);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
@@ -1180,6 +1207,9 @@ class Task extends DataClass implements Insertable<Task> {
       isCompleted: Value(isCompleted),
       isInProgress: Value(isInProgress),
       isDeleted: Value(isDeleted),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(completedAt),
@@ -1213,6 +1243,7 @@ class Task extends DataClass implements Insertable<Task> {
       isCompleted: serializer.fromJson<bool>(json['isCompleted']),
       isInProgress: serializer.fromJson<bool>(json['isInProgress']),
       isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       tags: serializer.fromJson<String>(json['tags']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
@@ -1237,6 +1268,7 @@ class Task extends DataClass implements Insertable<Task> {
       'isCompleted': serializer.toJson<bool>(isCompleted),
       'isInProgress': serializer.toJson<bool>(isInProgress),
       'isDeleted': serializer.toJson<bool>(isDeleted),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'tags': serializer.toJson<String>(tags),
       'sortOrder': serializer.toJson<int>(sortOrder),
@@ -1259,6 +1291,7 @@ class Task extends DataClass implements Insertable<Task> {
     bool? isCompleted,
     bool? isInProgress,
     bool? isDeleted,
+    Value<DateTime?> deletedAt = const Value.absent(),
     Value<DateTime?> completedAt = const Value.absent(),
     String? tags,
     int? sortOrder,
@@ -1278,6 +1311,7 @@ class Task extends DataClass implements Insertable<Task> {
     isCompleted: isCompleted ?? this.isCompleted,
     isInProgress: isInProgress ?? this.isInProgress,
     isDeleted: isDeleted ?? this.isDeleted,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     tags: tags ?? this.tags,
     sortOrder: sortOrder ?? this.sortOrder,
@@ -1307,6 +1341,7 @@ class Task extends DataClass implements Insertable<Task> {
           ? data.isInProgress.value
           : this.isInProgress,
       isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       completedAt: data.completedAt.present
           ? data.completedAt.value
           : this.completedAt,
@@ -1339,6 +1374,7 @@ class Task extends DataClass implements Insertable<Task> {
           ..write('isCompleted: $isCompleted, ')
           ..write('isInProgress: $isInProgress, ')
           ..write('isDeleted: $isDeleted, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('completedAt: $completedAt, ')
           ..write('tags: $tags, ')
           ..write('sortOrder: $sortOrder, ')
@@ -1363,6 +1399,7 @@ class Task extends DataClass implements Insertable<Task> {
     isCompleted,
     isInProgress,
     isDeleted,
+    deletedAt,
     completedAt,
     tags,
     sortOrder,
@@ -1386,6 +1423,7 @@ class Task extends DataClass implements Insertable<Task> {
           other.isCompleted == this.isCompleted &&
           other.isInProgress == this.isInProgress &&
           other.isDeleted == this.isDeleted &&
+          other.deletedAt == this.deletedAt &&
           other.completedAt == this.completedAt &&
           other.tags == this.tags &&
           other.sortOrder == this.sortOrder &&
@@ -1407,6 +1445,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
   final Value<bool> isCompleted;
   final Value<bool> isInProgress;
   final Value<bool> isDeleted;
+  final Value<DateTime?> deletedAt;
   final Value<DateTime?> completedAt;
   final Value<String> tags;
   final Value<int> sortOrder;
@@ -1427,6 +1466,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.isCompleted = const Value.absent(),
     this.isInProgress = const Value.absent(),
     this.isDeleted = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.tags = const Value.absent(),
     this.sortOrder = const Value.absent(),
@@ -1448,6 +1488,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
     this.isCompleted = const Value.absent(),
     this.isInProgress = const Value.absent(),
     this.isDeleted = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.tags = const Value.absent(),
     this.sortOrder = const Value.absent(),
@@ -1472,6 +1513,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Expression<bool>? isCompleted,
     Expression<bool>? isInProgress,
     Expression<bool>? isDeleted,
+    Expression<DateTime>? deletedAt,
     Expression<DateTime>? completedAt,
     Expression<String>? tags,
     Expression<int>? sortOrder,
@@ -1493,6 +1535,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
       if (isCompleted != null) 'is_completed': isCompleted,
       if (isInProgress != null) 'is_in_progress': isInProgress,
       if (isDeleted != null) 'is_deleted': isDeleted,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (completedAt != null) 'completed_at': completedAt,
       if (tags != null) 'tags': tags,
       if (sortOrder != null) 'sort_order': sortOrder,
@@ -1516,6 +1559,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
     Value<bool>? isCompleted,
     Value<bool>? isInProgress,
     Value<bool>? isDeleted,
+    Value<DateTime?>? deletedAt,
     Value<DateTime?>? completedAt,
     Value<String>? tags,
     Value<int>? sortOrder,
@@ -1537,6 +1581,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
       isCompleted: isCompleted ?? this.isCompleted,
       isInProgress: isInProgress ?? this.isInProgress,
       isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       completedAt: completedAt ?? this.completedAt,
       tags: tags ?? this.tags,
       sortOrder: sortOrder ?? this.sortOrder,
@@ -1579,6 +1624,9 @@ class TasksCompanion extends UpdateCompanion<Task> {
     }
     if (isDeleted.present) {
       map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
     }
     if (completedAt.present) {
       map['completed_at'] = Variable<DateTime>(completedAt.value);
@@ -1625,6 +1673,7 @@ class TasksCompanion extends UpdateCompanion<Task> {
           ..write('isCompleted: $isCompleted, ')
           ..write('isInProgress: $isInProgress, ')
           ..write('isDeleted: $isDeleted, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('completedAt: $completedAt, ')
           ..write('tags: $tags, ')
           ..write('sortOrder: $sortOrder, ')
@@ -3796,6 +3845,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<bool> isCompleted,
       Value<bool> isInProgress,
       Value<bool> isDeleted,
+      Value<DateTime?> deletedAt,
       Value<DateTime?> completedAt,
       Value<String> tags,
       Value<int> sortOrder,
@@ -3818,6 +3868,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<bool> isCompleted,
       Value<bool> isInProgress,
       Value<bool> isDeleted,
+      Value<DateTime?> deletedAt,
       Value<DateTime?> completedAt,
       Value<String> tags,
       Value<int> sortOrder,
@@ -3935,6 +3986,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<bool> get isDeleted => $composableBuilder(
     column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4106,6 +4162,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
     builder: (column) => ColumnOrderings(column),
@@ -4213,6 +4274,9 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<bool> get isDeleted =>
       $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
@@ -4364,6 +4428,7 @@ class $$TasksTableTableManager
                 Value<bool> isCompleted = const Value.absent(),
                 Value<bool> isInProgress = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<String> tags = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
@@ -4384,6 +4449,7 @@ class $$TasksTableTableManager
                 isCompleted: isCompleted,
                 isInProgress: isInProgress,
                 isDeleted: isDeleted,
+                deletedAt: deletedAt,
                 completedAt: completedAt,
                 tags: tags,
                 sortOrder: sortOrder,
@@ -4406,6 +4472,7 @@ class $$TasksTableTableManager
                 Value<bool> isCompleted = const Value.absent(),
                 Value<bool> isInProgress = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<String> tags = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
@@ -4426,6 +4493,7 @@ class $$TasksTableTableManager
                 isCompleted: isCompleted,
                 isInProgress: isInProgress,
                 isDeleted: isDeleted,
+                deletedAt: deletedAt,
                 completedAt: completedAt,
                 tags: tags,
                 sortOrder: sortOrder,

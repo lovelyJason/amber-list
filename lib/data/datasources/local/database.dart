@@ -43,6 +43,7 @@ class Tasks extends Table {
   BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
   BoolColumn get isInProgress => boolean().withDefault(const Constant(false))(); // 进行中（半完成）状态
   BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get deletedAt => dateTime().nullable()(); // 删除时间（用于30天自动清理）
   DateTimeColumn get completedAt => dateTime().nullable()();
   TextColumn get tags => text().withDefault(const Constant('[]'))(); // JSON数组
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
@@ -129,7 +130,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 11; // Fix millisecond timestamps in date columns
+  int get schemaVersion => 12; // Add deletedAt for 30-day auto cleanup
 
 
   @override
@@ -263,6 +264,24 @@ class AppDatabase extends _$AppDatabase {
             SET original_due_date = original_due_date / 1000
             WHERE original_due_date IS NOT NULL AND original_due_date > 10000000000
           ''');
+        }
+        if (from < 12) {
+          // 添加 deleted_at 列（删除时间，用于 30 天自动清理）
+          final columns = await customSelect(
+            "PRAGMA table_info(tasks)",
+          ).get();
+          final hasDeletedAt = columns.any(
+            (row) => row.read<String>('name') == 'deleted_at',
+          );
+          if (!hasDeletedAt) {
+            await customStatement(
+              'ALTER TABLE tasks ADD COLUMN deleted_at INTEGER',
+            );
+            // 迁移：已删除的任务设置 deleted_at 为当前时间（旧数据没有精确删除时间）
+            await customStatement(
+              'UPDATE tasks SET deleted_at = strftime(\'%s\', \'now\') WHERE is_deleted = 1 AND deleted_at IS NULL',
+            );
+          }
         }
       },
     );
@@ -555,6 +574,19 @@ class AppDatabase extends _$AppDatabase {
     };
   }
 
+  /// 批量更新清单/文件夹的排序顺序
+  /// [updates] 是一个 Map，key 为清单 ID，value 为新的 sortOrder
+  /// 使用事务保证原子性
+  Future<void> reorderTaskLists(Map<String, int> updates) async {
+    await transaction(() async {
+      for (final entry in updates.entries) {
+        await (update(taskLists)..where((t) => t.id.equals(entry.key))).write(
+          TaskListsCompanion(sortOrder: Value(entry.value)),
+        );
+      }
+    });
+  }
+
   /// 删除清单及其所有关联任务
   /// 先删除所有属于该清单的任务，再删除清单本身，避免外键约束错误
   Future<void> deleteTaskListWithTasks(String listId) async {
@@ -570,6 +602,40 @@ class AppDatabase extends _$AppDatabase {
 
     // 3. 最后删除清单本身
     await (delete(taskLists)..where((t) => t.id.equals(listId))).go();
+  }
+
+  /// 递归解散文件夹（事务操作）
+  ///
+  /// 在单个事务中完成：
+  /// 1. 将所有后代清单的 parentId 更新为目标父级
+  /// 2. 删除所有文件夹（包括当前文件夹和所有子文件夹）
+  ///
+  /// [folderId] 要解散的文件夹 ID（用于日志，实际删除在 folderIds 中）
+  /// [newParentId] 清单的新父级 ID（文件夹的父级，null 表示根目录）
+  /// [listIds] 所有需要移动的清单 ID 列表
+  /// [folderIds] 所有需要删除的文件夹 ID 列表（包括当前文件夹）
+  Future<void> disbandFolderRecursive(
+    String folderId,
+    String? newParentId,
+    List<String> listIds,
+    List<String> folderIds,
+  ) async {
+    await transaction(() async {
+      // 1. 将所有清单的 parentId 更新为目标父级
+      for (final listId in listIds) {
+        await (update(taskLists)..where((t) => t.id.equals(listId))).write(
+          TaskListsCompanion(
+            parentId: Value(newParentId),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+      }
+
+      // 2. 删除所有文件夹
+      for (final id in folderIds) {
+        await (delete(taskLists)..where((t) => t.id.equals(id))).go();
+      }
+    });
   }
 
   // ===== 任务操作 =====
@@ -870,6 +936,33 @@ class AppDatabase extends _$AppDatabase {
   /// 用于同步前确保 .db 文件包含最新数据
   Future<void> checkpoint() async {
     await customStatement('PRAGMA wal_checkpoint(TRUNCATE);');
+  }
+
+  /// 清理过期垃圾桶任务（超过 30 天自动物理删除）
+  ///
+  /// 返回被删除的任务数量
+  /// 应在应用启动时调用
+  Future<int> cleanupExpiredTrashTasks() async {
+    // 计算 30 天前的时间戳
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+
+    // 查找所有需要删除的任务（已删除且超过 30 天）
+    final expiredTasks = await (select(tasks)
+          ..where((t) => t.isDeleted.equals(true))
+          ..where((t) => t.deletedAt.isSmallerThanValue(thirtyDaysAgo)))
+        .get();
+
+    if (expiredTasks.isEmpty) {
+      return 0;
+    }
+
+    // 逐个删除（包括关联的番茄记录）
+    for (final task in expiredTasks) {
+      await forceDeleteTaskWithPomodoros(task.id);
+    }
+
+    debugPrint('[Database] Cleaned up ${expiredTasks.length} expired trash tasks');
+    return expiredTasks.length;
   }
 }
 

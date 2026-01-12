@@ -28,7 +28,7 @@ class TaskManagementTab extends ConsumerWidget {
             _buildSwitchTile(
               icon: Icons.update_rounded,
               title: '自动顺延过期任务',
-              subtitle: '启动时自动将过期任务的截止日期改为今天',
+              subtitle: '自动将过期任务的截止日期改为今天',
               value: settings.enableAutoPostpone,
               onChanged: (value) {
                 ref

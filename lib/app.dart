@@ -375,16 +375,20 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         debugPrint('   ⏭️  云同步失败/超时/未配置，继续启动');
       }
 
-      // 步骤2: 执行自动顺延（在同步完成后）
-      debugPrint('   🔄 步骤2: 执行自动顺延...');
+      // 步骤2: 清理过期垃圾桶任务（30天自动删除）
+      debugPrint('   🗑️ 步骤2: 清理过期垃圾桶任务...');
+      await _cleanupExpiredTrash();
+
+      // 步骤3: 执行自动顺延（在同步完成后）
+      debugPrint('   🔄 步骤3: 执行自动顺延...');
       await _performAutoPostpone();
 
-      // 步骤3: 隐藏 Splash（Windows 额外延迟让用户看到效果）
+      // 步骤4: 隐藏 Splash（Windows 额外延迟让用户看到效果）
       if (Platform.isWindows) {
         debugPrint('   ⏳ Windows 延迟 1s 后隐藏 Splash');
         await Future.delayed(const Duration(milliseconds: 1000));
       }
-      debugPrint('   🎬 步骤3: 隐藏 Splash');
+      debugPrint('   🎬 步骤4: 隐藏 Splash');
       await _hideSplash();
 
       debugPrint('✨ ══════════════════════════════════════════');
@@ -435,7 +439,10 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         }
       }
 
-      // 步骤2: 执行自动顺延
+      // 步骤2: 清理过期垃圾桶任务（静默执行）
+      await _cleanupExpiredTrash();
+
+      // 步骤3: 执行自动顺延
       await ref.read(taskManagementSettingsProvider.notifier).waitForLoad();
       // 稍微延迟，确保 TaskNotifier 已经从数据库加载完数据
       await Future.delayed(const Duration(milliseconds: 300));
@@ -510,6 +517,23 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     } catch (e) {
       debugPrint('   ❌ 云同步异常: $e');
       return false;
+    }
+  }
+
+  /// 清理过期垃圾桶任务
+  ///
+  /// 在 App 启动时静默执行，删除超过 30 天的垃圾桶任务
+  /// 这是后台清理，不需要给用户任何提示
+  Future<void> _cleanupExpiredTrash() async {
+    try {
+      final database = ref.read(databaseProvider);
+      final deletedCount = await database.cleanupExpiredTrashTasks();
+      if (deletedCount > 0) {
+        debugPrint('   🗑️ 已清理 $deletedCount 个过期垃圾桶任务');
+      }
+    } catch (e) {
+      debugPrint('   ⚠️ 清理垃圾桶失败: $e');
+      // 清理失败不影响启动流程
     }
   }
 

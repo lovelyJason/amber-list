@@ -77,6 +77,7 @@ Task _mapDbTaskToModel(db.Task dbTask) {
     isCompleted: dbTask.isCompleted,
     isInProgress: dbTask.isInProgress, // 进行中状态
     isDeleted: dbTask.isDeleted,
+    deletedAt: dbTask.deletedAt, // 删除时间（30天自动清理用）
     completedAt: dbTask.completedAt,
     tags: tags,
     sortOrder: dbTask.sortOrder,
@@ -178,11 +179,144 @@ class TaskListNotifier extends StateNotifier<List<TaskList>> {
     );
   }
 
-  /// 移动清单/文件夹
+  /// 移动清单/文件夹到新的父级
+  /// [newParentId] 为 null 表示移到根目录
   Future<void> moveList(String listId, String? newParentId) async {
     final list = state.firstWhere((l) => l.id == listId);
-    final updated = list.copyWith(parentId: newParentId);
+    // 注意：当 newParentId 为 null（根目录）时，需要用 clearParentId=true
+    final updated = newParentId == null
+        ? list.copyWith(clearParentId: true)
+        : list.copyWith(parentId: newParentId);
     await updateList(updated);
+  }
+
+  /// 拖拽排序：移动清单/文件夹到指定位置
+  ///
+  /// [draggedId] 被拖动的项目 ID
+  /// [targetId] 目标位置的项目 ID
+  /// [insertBefore] true=插入到目标前面，false=插入到目标后面
+  /// [newParentId] 新的父级 ID（null=根目录），如果不传则保持原父级
+  ///
+  /// 排序逻辑：
+  /// 1. 获取同一层级（相同 parentId）的所有项目
+  /// 2. 将被拖动项从原位置移除
+  /// 3. 将被拖动项插入到目标位置的前面或后面
+  /// 4. 重新计算所有项目的 sortOrder
+  Future<void> reorderList({
+    required String draggedId,
+    required String targetId,
+    required bool insertBefore,
+    String? newParentId,
+  }) async {
+    // 被拖动的项目
+    final dragged = state.firstWhere((l) => l.id == draggedId);
+    // 目标项目
+    final target = state.firstWhere((l) => l.id == targetId);
+
+    // 确定新的父级（如果提供则使用，否则使用目标项目的父级）
+    final effectiveParentId = newParentId ?? target.parentId;
+
+    debugPrint('[reorderList] 开始: dragged=${dragged.name}(parentId=${dragged.parentId}), target=${target.name}(parentId=${target.parentId}), effectiveParentId=$effectiveParentId, insertBefore=$insertBefore');
+
+    // 获取目标层级的所有项目（按 sortOrder 排序）
+    final siblings = state
+        .where((l) => l.parentId == effectiveParentId)
+        .toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    // ========== 同级无效拖动检测 ==========
+    // 如果在同一层级内拖动，且位置实际没变，直接返回避免无谓的数据库操作
+    if (dragged.parentId == effectiveParentId) {
+      final draggedIndex = siblings.indexWhere((l) => l.id == draggedId);
+      final targetIdx = siblings.indexWhere((l) => l.id == targetId);
+
+      // 拖到自己的前面（实际位置不变）
+      if (insertBefore && targetIdx == draggedIndex) {
+        debugPrint('[reorderList] 位置未变，跳过更新');
+        return;
+      }
+      // 拖到自己的后面（实际位置不变）
+      if (!insertBefore && targetIdx == draggedIndex) {
+        debugPrint('[reorderList] 位置未变，跳过更新');
+        return;
+      }
+      // 拖到相邻项目的相邻位置（实际位置不变）
+      // 例如：[A, B] 把 B 拖到 A 后面，或把 A 拖到 B 前面
+      if (insertBefore && targetIdx == draggedIndex + 1) {
+        debugPrint('[reorderList] 位置未变（拖到后一项前面），跳过更新');
+        return;
+      }
+      if (!insertBefore && targetIdx == draggedIndex - 1) {
+        debugPrint('[reorderList] 位置未变（拖到前一项后面），跳过更新');
+        return;
+      }
+    }
+
+    // 如果被拖动项目跨层级移动，需要先从原层级移除
+    // 如果在同一层级内移动，也需要从列表中移除再插入
+    siblings.removeWhere((l) => l.id == draggedId);
+
+    // 找到目标在新列表中的索引
+    final targetIndex = siblings.indexWhere((l) => l.id == targetId);
+
+    // 计算插入位置
+    final insertIndex = insertBefore ? targetIndex : targetIndex + 1;
+
+    // 插入被拖动项
+    siblings.insert(insertIndex, dragged);
+
+    // 构建批量更新的 Map
+    final updates = <String, int>{};
+    for (int i = 0; i < siblings.length; i++) {
+      final item = siblings[i];
+      // 所有项目都需要更新 sortOrder
+      updates[item.id] = i;
+    }
+
+    // 如果父级发生变化，需要额外更新 parentId 和原层级的 sortOrder
+    if (dragged.parentId != effectiveParentId) {
+      debugPrint('[reorderList] 检测到跨层级移动! 原parentId=${dragged.parentId}, 新parentId=$effectiveParentId');
+      // 更新被拖动项的 parentId
+      // 注意：当 effectiveParentId 为 null（根目录）时，需要用 clearParentId=true
+      // 因为 copyWith 的 parentId ?? this.parentId 无法区分"没传参数"和"传了null"
+      final updatedDragged = effectiveParentId == null
+          ? dragged.copyWith(
+              clearParentId: true, // 移到根目录
+              sortOrder: insertIndex,
+            )
+          : dragged.copyWith(
+              parentId: effectiveParentId,
+              sortOrder: insertIndex,
+            );
+      debugPrint('[reorderList] 正在更新 parentId...');
+      await updateList(updatedDragged);
+      debugPrint('[reorderList] parentId 更新完成');
+      // 从 updates 中移除，避免重复更新
+      updates.remove(draggedId);
+
+      // 更新原层级的 sortOrder（填补空缺）
+      final originalSiblings = state
+          .where((l) => l.parentId == dragged.parentId && l.id != draggedId)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+      final originalUpdates = <String, int>{};
+      for (int i = 0; i < originalSiblings.length; i++) {
+        originalUpdates[originalSiblings[i].id] = i;
+      }
+
+      if (originalUpdates.isNotEmpty) {
+        await database.reorderTaskLists(originalUpdates);
+      }
+    }
+
+    // 批量更新新层级的 sortOrder
+    if (updates.isNotEmpty) {
+      await database.reorderTaskLists(updates);
+    }
+
+    debugPrint(
+        '[reorderList] 拖动 ${dragged.name} 到 ${target.name} ${insertBefore ? "前面" : "后面"}, 新父级: ${effectiveParentId ?? "根目录"}');
   }
 
   /// 重命名
@@ -204,18 +338,54 @@ class TaskListNotifier extends StateNotifier<List<TaskList>> {
     await updateList(updated);
   }
 
-  /// 解散文件夹 (只删除文件夹，保留子项并移至同级)
+  /// 解散文件夹（递归解散所有子文件夹，只保留清单）
+  ///
+  /// 逻辑：
+  /// 1. 递归收集所有后代清单（非文件夹）
+  /// 2. 递归收集所有后代文件夹（需要删除的）
+  /// 3. 将所有清单的 parentId 改为当前文件夹的 parentId（提升到目标层级）
+  /// 4. 删除所有文件夹（包括当前文件夹和所有子文件夹）
+  ///
+  /// 示例：解散目录1
+  /// - 目录1
+  ///   - 清单A
+  ///   - 目录2
+  ///     - 清单B
+  /// 结果：
+  /// - 清单A（移到根目录）
+  /// - 清单B（移到根目录）
+  /// - 目录1 和 目录2 被删除
   Future<void> disbandFolder(String folderId) async {
     final folder = state.firstWhere((l) => l.id == folderId);
-    final children = state.where((l) => l.parentId == folderId).toList();
+    final newParentId = folder.parentId; // 目标父级（文件夹的父级）
 
-    // 1. 将子项移出 (提升一级)
-    for (var child in children) {
-      await updateList(child.copyWith(parentId: folder.parentId));
+    // 递归收集所有后代
+    final allLists = <String>[]; // 所有清单 ID（需要移动）
+    final allFolders = <String>[]; // 所有文件夹 ID（需要删除）
+
+    void collectDescendants(String parentId) {
+      final children = state.where((l) => l.parentId == parentId).toList();
+      for (var child in children) {
+        if (child.isFolder) {
+          allFolders.add(child.id);
+          collectDescendants(child.id); // 递归收集子文件夹的内容
+        } else {
+          allLists.add(child.id);
+        }
+      }
     }
 
-    // 2. 删除文件夹
-    await deleteList(folderId);
+    collectDescendants(folderId);
+    allFolders.add(folderId); // 加上当前文件夹本身
+
+    debugPrint('[disbandFolder] 解散文件夹: ${folder.name} (id=$folderId)');
+    debugPrint('[disbandFolder] 目标 parentId: ${newParentId ?? "根目录"}');
+    debugPrint('[disbandFolder] 找到 ${allLists.length} 个清单需要移动');
+    debugPrint('[disbandFolder] 找到 ${allFolders.length} 个文件夹需要删除');
+
+    // 使用数据库事务，确保所有操作原子性完成
+    await database.disbandFolderRecursive(folderId, newParentId, allLists, allFolders);
+    debugPrint('[disbandFolder] 完成');
   }
 
   /// 删除清单/文件夹
@@ -551,11 +721,13 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       return false; // 有冲突，拒绝删除
     }
 
+    final now = DateTime.now();
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(id),
         isDeleted: const drift.Value(true),
-        updatedAt: drift.Value(DateTime.now()),
+        deletedAt: drift.Value(now), // 记录删除时间（30天自动清理用）
+        updatedAt: drift.Value(now),
       ),
     );
     return true;
@@ -563,21 +735,25 @@ class TaskNotifier extends StateNotifier<List<Task>> {
 
   /// 强制移入垃圾桶（忽略番茄记录）
   Future<void> forceDeleteTask(String id) async {
+    final now = DateTime.now();
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(id),
         isDeleted: const drift.Value(true),
-        updatedAt: drift.Value(DateTime.now()),
+        deletedAt: drift.Value(now), // 记录删除时间（30天自动清理用）
+        updatedAt: drift.Value(now),
       ),
     );
   }
 
   /// 恢复任务
+  /// 恢复时清除 deletedAt，这样如果再次删除会重新计算 30 天
   Future<void> restoreTask(String id) async {
     await database.updateTask(
       db.TasksCompanion(
         id: drift.Value(id),
         isDeleted: const drift.Value(false),
+        deletedAt: const drift.Value(null), // 清除删除时间
         updatedAt: drift.Value(DateTime.now()),
       ),
     );

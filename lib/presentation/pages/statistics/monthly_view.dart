@@ -11,25 +11,62 @@ import '../../providers/database_provider.dart';
 import '../../providers/statistics_provider.dart';
 
 /// 月视图统计页面
-/// 显示本月任务完成趋势、任务类型分布、热力图和成就
+/// 显示指定月份的任务完成趋势、任务类型分布、热力图和成就
 ///
 /// 设计说明：
 /// - PC 端：左右分栏布局（趋势图+饼图 6:4，热力图+成就 4:6）
 /// - 移动端：上下堆叠布局，卡片 2 列，图表全宽
+/// - 支持通过 selectedDate 参数查看任意月份的数据
 class MonthlyView extends ConsumerStatefulWidget {
   /// 是否为移动端布局
   final bool isMobile;
 
-  const MonthlyView({super.key, this.isMobile = false});
+  /// 选中的日期（用于确定要显示哪个月的数据）
+  /// 如果为 null，则显示本月数据
+  final DateTime? selectedDate;
+
+  const MonthlyView({super.key, this.isMobile = false, this.selectedDate});
 
   @override
   ConsumerState<MonthlyView> createState() => _MonthlyViewState();
 }
 
 class _MonthlyViewState extends ConsumerState<MonthlyView> {
+  /// 获取目标日期（优先使用传入的 selectedDate，否则使用今天）
+  DateTime get _targetDate => widget.selectedDate ?? DateTime.now();
+
+  /// 获取统计数据
+  /// 如果指定了 selectedDate，使用 family Provider 获取指定月数据
+  /// 否则使用默认的 monthlyStatisticsProvider（本月数据）
+  MonthlyStatistics? _getStats() {
+    if (widget.selectedDate != null) {
+      final asyncValue = ref.watch(monthlyStatisticsForDateProvider(_targetDate));
+      return asyncValue.valueOrNull;
+    }
+    return ref.watch(monthlyStatisticsProvider);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final stats = ref.watch(monthlyStatisticsProvider);
+    // 如果使用 family Provider 且数据还在加载中，显示加载指示器
+    if (widget.selectedDate != null) {
+      final asyncValue = ref.watch(monthlyStatisticsForDateProvider(_targetDate));
+      if (asyncValue.isLoading) {
+        return const Center(
+          child: CircularProgressIndicator(color: AmberColors.primary),
+        );
+      }
+      if (asyncValue.hasError) {
+        return Center(
+          child: Text(
+            '加载失败: ${asyncValue.error}',
+            style: const TextStyle(color: AmberColors.textSecondary),
+          ),
+        );
+      }
+    }
+
+    final stats = _getStats() ?? MonthlyStatistics.empty();
 
     if (widget.isMobile) {
       return _buildMobileLayout(stats);
@@ -534,8 +571,11 @@ class _MonthlyViewState extends ConsumerState<MonthlyView> {
       return _buildEmptyChartCard('每日任务完成趋势', '暂无数据');
     }
 
-    // 当前是几号（1-indexed）
-    final today = DateTime.now().day;
+    // 判断是否为当前月，如果是历史月份则没有"今天"的概念
+    final now = DateTime.now();
+    final isCurrentMonth = _targetDate.year == now.year && _targetDate.month == now.month;
+    // 当前月用今天日期，历史月用 -1（表示没有"今天"）
+    final today = isCurrentMonth ? now.day : -1;
 
     // 计算 Y 轴最大值
     final maxCompleted = stats.dailyCompletedCounts.isEmpty
@@ -774,9 +814,9 @@ class _MonthlyViewState extends ConsumerState<MonthlyView> {
 
   /// 显示某天的任务完成详情弹窗
   void _showDayDetailDialog(int dayIndex, MonthlyStatistics stats) {
-    final now = DateTime.now();
-    final targetDate = DateTime(now.year, now.month, dayIndex + 1);
-    final dateStr = '${now.month}月${dayIndex + 1}日';
+    // 使用选中的目标月份，而不是当前月
+    final targetDate = DateTime(_targetDate.year, _targetDate.month, dayIndex + 1);
+    final dateStr = '${_targetDate.month}月${dayIndex + 1}日';
     final completed = stats.dailyCompletedCounts[dayIndex];
     final created = stats.dailyCreatedCounts[dayIndex];
 
@@ -1274,9 +1314,8 @@ class _MonthlyViewState extends ConsumerState<MonthlyView> {
         ? 1
         : stats.heatmapData.reduce((a, b) => a > b ? a : b);
 
-    // 计算本月第一天是星期几（0=周日，1=周一...6=周六，转换为0=周一）
-    final now = DateTime.now();
-    final firstDayOfMonth = DateTime(now.year, now.month, 1);
+    // 计算目标月份第一天是星期几（使用 _targetDate 而不是当前时间）
+    final firstDayOfMonth = DateTime(_targetDate.year, _targetDate.month, 1);
     final firstWeekday = (firstDayOfMonth.weekday % 7); // 周日=0, 周一=1...周六=6
 
     // 计算需要多少行（周）

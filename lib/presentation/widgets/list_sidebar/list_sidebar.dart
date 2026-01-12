@@ -268,8 +268,78 @@ class _ListSidebarState extends ConsumerState<ListSidebar> {
               inDrawer: widget.inDrawer,
             ),
           ),
+          // 底部放置区域：拖到列表末尾时放在根目录最后
+          _buildBottomDropZone(taskLists),
         ],
       ),
+    );
+  }
+
+  /// 构建底部放置区域
+  /// 当拖拽到清单列表底部时，可以将项目放到根目录的最后
+  Widget _buildBottomDropZone(List<TaskList> taskLists) {
+    return DragTarget<TaskList>(
+      onWillAcceptWithDetails: (details) {
+        // 任何项目都可以拖到底部
+        return true;
+      },
+      onAcceptWithDetails: (details) {
+        final dragged = details.data;
+        // 获取根目录最后一个项目
+        final rootItems = taskLists
+            .where((l) => l.parentId == null)
+            .toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        // 根目录为空时，直接移到根目录
+        if (rootItems.isEmpty) {
+          ref.read(taskListProvider.notifier).moveList(dragged.id, null);
+          return;
+        }
+
+        // 已经是根目录最后一个，不需要操作
+        if (rootItems.last.id == dragged.id) {
+          return;
+        }
+
+        // 插入到最后一个项目的后面
+        ref.read(taskListProvider.notifier).reorderList(
+              draggedId: dragged.id,
+              targetId: rootItems.last.id,
+              insertBefore: false,
+            );
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: isHovered ? 24 : 8,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: isHovered
+              ? BoxDecoration(
+                  color: AmberColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AmberColors.primary.withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                )
+              : null,
+          child: isHovered
+              ? Center(
+                  child: Container(
+                    height: 2,
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: AmberColors.primary,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                )
+              : null,
+        );
+      },
     );
   }
 

@@ -40,6 +40,7 @@ class Task {
   final bool isCompleted;
   final bool isInProgress; // 是否处于"进行中"状态（半完成）
   final bool isDeleted; // 是否已删除（移入垃圾桶）
+  final DateTime? deletedAt; // 删除时间（用于 30 天自动清理）
   final DateTime? completedAt;
   final List<String> tags;
   final int sortOrder;
@@ -73,6 +74,7 @@ class Task {
     this.isCompleted = false,
     this.isInProgress = false,
     this.isDeleted = false,
+    this.deletedAt,
     this.completedAt,
     this.tags = const [],
     this.sortOrder = 0,
@@ -94,6 +96,7 @@ class Task {
     bool? isCompleted,
     bool? isInProgress,
     bool? isDeleted,
+    DateTime? deletedAt,
     DateTime? completedAt,
     List<String>? tags,
     int? sortOrder,
@@ -114,6 +117,7 @@ class Task {
       isCompleted: isCompleted ?? this.isCompleted,
       isInProgress: isInProgress ?? this.isInProgress,
       isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       completedAt: completedAt ?? this.completedAt,
       tags: tags ?? this.tags,
       sortOrder: sortOrder ?? this.sortOrder,
@@ -141,6 +145,7 @@ class Task {
         isCompleted: false,
         isInProgress: false, // 取消完成时也清除进行中状态
         isDeleted: isDeleted,
+        deletedAt: deletedAt, // 保留删除时间
         completedAt: null,
         tags: tags,
         sortOrder: sortOrder,

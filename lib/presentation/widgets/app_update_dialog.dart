@@ -131,12 +131,38 @@ class AppUpdateDialog extends ConsumerWidget {
                       ),
                       const SizedBox(width: AmberDimens.spacingSm),
                       Expanded(
-                        child: Text(
-                          '当前版本过低，需要更新才能继续使用',
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontSize: 13,
-                          ),
+                        child: Row(
+                          children: [
+                            Text(
+                              '当前版本过低，需要更新才能继续使用',
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Tooltip(
+                              message: '新包安装前请关闭旧包',
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AmberColors.textPrimary
+                                    .withValues(alpha: 0.9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              child: Icon(
+                                Icons.help_outline,
+                                size: 16,
+                                color: Colors.red.shade700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
