@@ -89,6 +89,28 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 ; Type: filesandordirs; Name: "{userappdata}\amber-list"
 
 [Code]
+// Force close running application before install/upgrade
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Kill amber_list.exe if running (silent, ignore errors)
+  Exec('taskkill', '/F /IM amber_list.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Small delay to ensure file handles are released
+  Sleep(500);
+  Result := True;
+end;
+
+// Force close running application before uninstall
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill', '/F /IM amber_list.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+  Result := True;
+end;
+
 // Check if Visual C++ Redistributable is already installed
 function VCRedistInstalled: Boolean;
 var
