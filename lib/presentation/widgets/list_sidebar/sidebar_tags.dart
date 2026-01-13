@@ -109,39 +109,46 @@ class SidebarTags {
     required VoidCallback onTap,
     required void Function(TapDownDetails) onSecondaryTapDown,
   }) {
-    return InkWell(
-      onTap: onTap,
-      onSecondaryTapDown: onSecondaryTapDown,
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: tag.color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: tag.color.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              tag.name,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AmberColors.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (count > 0) ...[
-              const SizedBox(width: 6),
-              Text(
-                '$count',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AmberColors.textDisabled,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 100), // 限制最大宽度
+      child: InkWell(
+        onTap: onTap,
+        onSecondaryTapDown: onSecondaryTapDown,
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: tag.color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: tag.color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  tag.name,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AmberColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis, // 超长截断
+                  maxLines: 1,
                 ),
               ),
+              if (count > 0) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AmberColors.textDisabled,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

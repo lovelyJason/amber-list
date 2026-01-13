@@ -30,5 +30,7 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSUserNotificationUsageDescription</key>
+	<string>Amber List needs notification permission to remind you of overdue tasks before the end of the workday</string>
 </dict>
 </plist>

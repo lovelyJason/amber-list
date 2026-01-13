@@ -611,29 +611,34 @@ class _DetailSheetContentState extends ConsumerState<_DetailSheetContent> {
                           });
                         },
                         borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? tagColor.withValues(alpha: 0.15)
-                                : Colors.grey.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: isSelected
-                                  ? tagColor.withValues(alpha: 0.5)
-                                  : Colors.transparent,
-                              width: 1,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 100), // 限制最大宽度
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
                             ),
-                          ),
-                          child: Text(
-                            tag.name,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isSelected ? tagColor : AmberColors.textSecondary,
-                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? tagColor.withValues(alpha: 0.15)
+                                  : Colors.grey.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected
+                                    ? tagColor.withValues(alpha: 0.5)
+                                    : Colors.transparent,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              tag.name,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isSelected ? tagColor : AmberColors.textSecondary,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                              overflow: TextOverflow.ellipsis, // 超长截断
+                              maxLines: 1,
                             ),
                           ),
                         ),

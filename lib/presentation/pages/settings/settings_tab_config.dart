@@ -9,6 +9,7 @@ import 'tabs/quick_add_tab.dart';
 import 'tabs/widget_tab.dart';
 import 'tabs/data_management_tab.dart';
 import 'tabs/cloud_sync_tab.dart';
+import 'tabs/notification_tab.dart';
 import 'tabs/about_tab.dart';
 
 /// 设置页标签配置
@@ -65,6 +66,10 @@ class SettingsTabConfig {
       SettingsTabConfig(
         type: SettingsTabType.cloudSync,
         builder: (context) => const CloudSyncTab(),
+      ),
+      SettingsTabConfig(
+        type: SettingsTabType.notification,
+        builder: (context) => const NotificationTab(),
       ),
       SettingsTabConfig(
         type: SettingsTabType.about,

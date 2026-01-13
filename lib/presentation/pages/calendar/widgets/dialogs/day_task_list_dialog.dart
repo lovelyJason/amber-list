@@ -266,8 +266,18 @@ class _DayTaskListDialogState extends ConsumerState<DayTaskListDialog> {
                                           setState(() => _editingTask = task),
                                     );
                                   } else {
-                                    // 单列模式：直接显示任务项，不需要双击弹窗（避免弹窗套弹窗）
-                                    return TaskItem(task: task);
+                                    // 单列模式：双击任务时切换到双列模式并选中该任务
+                                    return GestureDetector(
+                                      onDoubleTap: () {
+                                        // 切换到双列模式
+                                        ref
+                                            .read(calendarPreferencesProvider.notifier)
+                                            .setDialogLayout(CalendarDialogLayout.twoColumn);
+                                        // 选中当前任务
+                                        setState(() => _editingTask = task);
+                                      },
+                                      child: TaskItem(task: task),
+                                    );
                                   }
                                 },
                               ),

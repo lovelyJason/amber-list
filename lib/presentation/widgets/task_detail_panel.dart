@@ -201,13 +201,6 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                             _showTagsDialog(context);
                           },
                   ),
-                  // 创建时间（精确到时分秒，不可编辑）
-                  _buildPropertyRow(
-                    icon: Icons.access_time_outlined,
-                    label: '创建时间',
-                    value: DateFormat('yyyy年M月d日 HH:mm:ss').format(widget.task.createdAt),
-                    showArrow: false,
-                  ),
                   // 已完成任务显示完成时间
                   if (widget.task.isCompleted && widget.task.completedAt != null)
                     _buildPropertyRow(
@@ -345,7 +338,7 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
       child: Row(
         children: [
           Text(
-            '创建于 ${DateFormat('M月d日').format(widget.task.createdAt)}',
+            '创建于 ${DateFormat('M月d日 HH:mm:ss').format(widget.task.createdAt)}',
             style: const TextStyle(
               fontSize: 12,
               color: AmberColors.textDisabled,

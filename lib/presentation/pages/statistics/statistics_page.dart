@@ -2,9 +2,11 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/constants.dart';
+import '../../../../core/models/poster_config.dart';
 import '../../../../core/utils/responsive_helper.dart';
 import '../../../presentation/widgets/adaptive/bottom_nav_bar.dart';
 import 'monthly_view.dart';
+import 'poster_export/poster_export_dialog.dart';
 import 'weekly_view.dart';
 
 /// 统计页面
@@ -607,10 +609,18 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   /// 处理导出操作
+  /// 弹出海报导出配置弹窗
   void _handleExport() {
-    // TODO: 实现导出功能
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('导出功能开发中...')),
+    // 根据当前视图类型确定初始视图
+    final initialViewType =
+        _selectedIndex == 0 ? PosterViewType.monthly : PosterViewType.weekly;
+
+    showDialog(
+      context: context,
+      builder: (context) => PosterExportDialog(
+        initialViewType: initialViewType,
+        selectedDate: _selectedDate,
+      ),
     );
   }
 

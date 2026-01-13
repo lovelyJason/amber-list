@@ -80,6 +80,8 @@ class Notes extends Table {
   TextColumn get tags => text().withDefault(const Constant('[]'))(); // JSON数组
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))(); // 排序顺序
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))(); // 软删除标记
+  DateTimeColumn get deletedAt => dateTime().nullable()(); // 删除时间（30天自动清理用）
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -130,7 +132,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 12; // Add deletedAt for 30-day auto cleanup
+  int get schemaVersion => 13; // Add soft delete for notes
 
 
   @override
@@ -280,6 +282,23 @@ class AppDatabase extends _$AppDatabase {
             // 迁移：已删除的任务设置 deleted_at 为当前时间（旧数据没有精确删除时间）
             await customStatement(
               'UPDATE tasks SET deleted_at = strftime(\'%s\', \'now\') WHERE is_deleted = 1 AND deleted_at IS NULL',
+            );
+          }
+        }
+        if (from < 13) {
+          // 笔记表添加软删除字段
+          final columns = await customSelect(
+            "PRAGMA table_info(notes)",
+          ).get();
+          final hasIsDeleted = columns.any(
+            (row) => row.read<String>('name') == 'is_deleted',
+          );
+          if (!hasIsDeleted) {
+            await customStatement(
+              'ALTER TABLE notes ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0',
+            );
+            await customStatement(
+              'ALTER TABLE notes ADD COLUMN deleted_at INTEGER',
             );
           }
         }
@@ -702,8 +721,36 @@ class AppDatabase extends _$AppDatabase {
   Future<List<Note>> getAllNotes() => select(notes).get();
 
   /// 监听所有笔记（按创建时间倒序排列，最新的在前）
-  Stream<List<Note>> watchAllNotes() =>
-      (select(notes)..orderBy([(n) => OrderingTerm.desc(n.createdAt)])).watch();
+  /// 过滤掉已软删除的笔记
+  Stream<List<Note>> watchAllNotes() => (select(notes)
+        ..where((n) => n.isDeleted.equals(false))
+        ..orderBy([(n) => OrderingTerm.desc(n.createdAt)]))
+      .watch();
+
+  /// 监听已删除的笔记（垃圾篓）
+  /// 按删除时间倒序排列，最新删除的在前
+  Stream<List<Note>> watchTrashNotes() => (select(notes)
+        ..where((n) => n.isDeleted.equals(true))
+        ..orderBy([(n) => OrderingTerm.desc(n.deletedAt)]))
+      .watch();
+
+  /// 软删除笔记（移到垃圾篓）
+  Future<bool> softDeleteNote(String id) => (update(notes)
+        ..where((n) => n.id.equals(id)))
+      .write(NotesCompanion(
+        isDeleted: const Value(true),
+        deletedAt: Value(DateTime.now()),
+      ))
+      .then((rows) => rows > 0);
+
+  /// 恢复已删除的笔记
+  Future<bool> restoreNote(String id) => (update(notes)
+        ..where((n) => n.id.equals(id)))
+      .write(const NotesCompanion(
+        isDeleted: Value(false),
+        deletedAt: Value(null),
+      ))
+      .then((rows) => rows > 0);
 
   Future<int> insertNote(NotesCompanion entry) => into(notes).insert(entry);
 
@@ -963,6 +1010,46 @@ class AppDatabase extends _$AppDatabase {
 
     debugPrint('[Database] Cleaned up ${expiredTasks.length} expired trash tasks');
     return expiredTasks.length;
+  }
+
+  /// 清理过期垃圾篓笔记（超过 30 天自动物理删除）
+  ///
+  /// 返回被删除的笔记数量
+  /// 应在应用启动时调用
+  Future<int> cleanupExpiredTrashNotes() async {
+    // 计算 30 天前的时间戳
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+
+    // 查找所有需要删除的笔记：
+    // 1. 已删除且超过 30 天
+    // 2. 已删除但 deletedAt 为空（防御性处理异常数据）
+    final expiredNotes = await (select(notes)
+          ..where((n) => n.isDeleted.equals(true))
+          ..where((n) =>
+              n.deletedAt.isSmallerThanValue(thirtyDaysAgo) |
+              n.deletedAt.isNull()))
+        .get();
+
+    if (expiredNotes.isEmpty) {
+      return 0;
+    }
+
+    // 批量物理删除
+    for (final note in expiredNotes) {
+      await (delete(notes)..where((n) => n.id.equals(note.id))).go();
+    }
+
+    debugPrint('[Database] Cleaned up ${expiredNotes.length} expired trash notes');
+    return expiredNotes.length;
+  }
+
+  /// 永久删除笔记（物理删除）
+  Future<int> permanentlyDeleteNote(String id) =>
+      (delete(notes)..where((n) => n.id.equals(id))).go();
+
+  /// 清空笔记垃圾篓（永久删除所有已删除笔记）
+  Future<int> emptyNotesTrash() async {
+    return (delete(notes)..where((n) => n.isDeleted.equals(true))).go();
   }
 }
 

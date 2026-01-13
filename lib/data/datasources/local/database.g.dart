@@ -1772,6 +1772,32 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _isDeletedMeta = const VerificationMeta(
+    'isDeleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeleted = GeneratedColumn<bool>(
+    'is_deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1803,6 +1829,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     tags,
     isPinned,
     sortOrder,
+    isDeleted,
+    deletedAt,
     createdAt,
     updatedAt,
   ];
@@ -1861,6 +1889,18 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('is_deleted')) {
+      context.handle(
+        _isDeletedMeta,
+        isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1914,6 +1954,14 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      isDeleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deleted'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1939,6 +1987,8 @@ class Note extends DataClass implements Insertable<Note> {
   final String tags;
   final bool isPinned;
   final int sortOrder;
+  final bool isDeleted;
+  final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Note({
@@ -1949,6 +1999,8 @@ class Note extends DataClass implements Insertable<Note> {
     required this.tags,
     required this.isPinned,
     required this.sortOrder,
+    required this.isDeleted,
+    this.deletedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1964,6 +2016,10 @@ class Note extends DataClass implements Insertable<Note> {
     map['tags'] = Variable<String>(tags);
     map['is_pinned'] = Variable<bool>(isPinned);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['is_deleted'] = Variable<bool>(isDeleted);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1980,6 +2036,10 @@ class Note extends DataClass implements Insertable<Note> {
       tags: Value(tags),
       isPinned: Value(isPinned),
       sortOrder: Value(sortOrder),
+      isDeleted: Value(isDeleted),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1998,6 +2058,8 @@ class Note extends DataClass implements Insertable<Note> {
       tags: serializer.fromJson<String>(json['tags']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -2013,6 +2075,8 @@ class Note extends DataClass implements Insertable<Note> {
       'tags': serializer.toJson<String>(tags),
       'isPinned': serializer.toJson<bool>(isPinned),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'isDeleted': serializer.toJson<bool>(isDeleted),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -2026,6 +2090,8 @@ class Note extends DataClass implements Insertable<Note> {
     String? tags,
     bool? isPinned,
     int? sortOrder,
+    bool? isDeleted,
+    Value<DateTime?> deletedAt = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Note(
@@ -2036,6 +2102,8 @@ class Note extends DataClass implements Insertable<Note> {
     tags: tags ?? this.tags,
     isPinned: isPinned ?? this.isPinned,
     sortOrder: sortOrder ?? this.sortOrder,
+    isDeleted: isDeleted ?? this.isDeleted,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -2048,6 +2116,8 @@ class Note extends DataClass implements Insertable<Note> {
       tags: data.tags.present ? data.tags.value : this.tags,
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -2063,6 +2133,8 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('tags: $tags, ')
           ..write('isPinned: $isPinned, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -2078,6 +2150,8 @@ class Note extends DataClass implements Insertable<Note> {
     tags,
     isPinned,
     sortOrder,
+    isDeleted,
+    deletedAt,
     createdAt,
     updatedAt,
   );
@@ -2092,6 +2166,8 @@ class Note extends DataClass implements Insertable<Note> {
           other.tags == this.tags &&
           other.isPinned == this.isPinned &&
           other.sortOrder == this.sortOrder &&
+          other.isDeleted == this.isDeleted &&
+          other.deletedAt == this.deletedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -2104,6 +2180,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<String> tags;
   final Value<bool> isPinned;
   final Value<int> sortOrder;
+  final Value<bool> isDeleted;
+  final Value<DateTime?> deletedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -2115,6 +2193,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.tags = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -2127,6 +2207,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.tags = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -2142,6 +2224,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<String>? tags,
     Expression<bool>? isPinned,
     Expression<int>? sortOrder,
+    Expression<bool>? isDeleted,
+    Expression<DateTime>? deletedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -2154,6 +2238,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (tags != null) 'tags': tags,
       if (isPinned != null) 'is_pinned': isPinned,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (isDeleted != null) 'is_deleted': isDeleted,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -2168,6 +2254,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<String>? tags,
     Value<bool>? isPinned,
     Value<int>? sortOrder,
+    Value<bool>? isDeleted,
+    Value<DateTime?>? deletedAt,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -2180,6 +2268,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
       tags: tags ?? this.tags,
       isPinned: isPinned ?? this.isPinned,
       sortOrder: sortOrder ?? this.sortOrder,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -2210,6 +2300,12 @@ class NotesCompanion extends UpdateCompanion<Note> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (isDeleted.present) {
+      map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2232,6 +2328,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('tags: $tags, ')
           ..write('isPinned: $isPinned, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -4634,6 +4732,8 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<String> tags,
       Value<bool> isPinned,
       Value<int> sortOrder,
+      Value<bool> isDeleted,
+      Value<DateTime?> deletedAt,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -4647,6 +4747,8 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<String> tags,
       Value<bool> isPinned,
       Value<int> sortOrder,
+      Value<bool> isDeleted,
+      Value<DateTime?> deletedAt,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -4692,6 +4794,16 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4750,6 +4862,16 @@ class $$NotesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4790,6 +4912,12 @@ class $$NotesTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<bool> get isDeleted =>
+      $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -4833,6 +4961,8 @@ class $$NotesTableTableManager
                 Value<String> tags = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -4844,6 +4974,8 @@ class $$NotesTableTableManager
                 tags: tags,
                 isPinned: isPinned,
                 sortOrder: sortOrder,
+                isDeleted: isDeleted,
+                deletedAt: deletedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -4857,6 +4989,8 @@ class $$NotesTableTableManager
                 Value<String> tags = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -4868,6 +5002,8 @@ class $$NotesTableTableManager
                 tags: tags,
                 isPinned: isPinned,
                 sortOrder: sortOrder,
+                isDeleted: isDeleted,
+                deletedAt: deletedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

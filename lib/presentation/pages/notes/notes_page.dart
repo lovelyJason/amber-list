@@ -14,6 +14,8 @@ import '../../widgets/adaptive/bottom_nav_bar.dart';
 import '../../widgets/common/toast/toast_manager.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 
+import 'notes_trash_page.dart';
+
 /// 将数据库笔记对象转换为 UI 模型
 Note _mapDbNoteToModel(db.Note dbNote) {
   List<String> tags = [];
@@ -28,6 +30,8 @@ Note _mapDbNoteToModel(db.Note dbNote) {
     folderId: dbNote.folderId,
     tags: tags,
     isPinned: dbNote.isPinned,
+    isDeleted: dbNote.isDeleted,
+    deletedAt: dbNote.deletedAt,
     createdAt: dbNote.createdAt,
     updatedAt: dbNote.updatedAt,
   );
@@ -38,6 +42,15 @@ Note _mapDbNoteToModel(db.Note dbNote) {
 final notesProvider = StateNotifierProvider<NotesNotifier, List<Note>>((ref) {
   final database = ref.watch(databaseProvider);
   return NotesNotifier(database);
+});
+
+/// 垃圾篓笔记 Provider
+/// 监听已软删除的笔记列表
+final trashNotesProvider = StreamProvider<List<Note>>((ref) {
+  final database = ref.watch(databaseProvider);
+  return database.watchTrashNotes().map(
+        (dbNotes) => dbNotes.map(_mapDbNoteToModel).toList(),
+      );
 });
 
 /// 笔记状态管理器
@@ -90,9 +103,24 @@ class NotesNotifier extends StateNotifier<List<Note>> {
     );
   }
 
-  /// 删除笔记
+  /// 删除笔记（软删除，移到垃圾篓）
   Future<void> deleteNote(String id) async {
-    await database.deleteNote(id);
+    await database.softDeleteNote(id);
+  }
+
+  /// 恢复已删除的笔记
+  Future<void> restoreNote(String id) async {
+    await database.restoreNote(id);
+  }
+
+  /// 永久删除笔记（物理删除）
+  Future<void> permanentlyDeleteNote(String id) async {
+    await database.permanentlyDeleteNote(id);
+  }
+
+  /// 清空垃圾篓
+  Future<int> emptyTrash() async {
+    return await database.emptyNotesTrash();
   }
 
   /// 切换置顶状态
@@ -161,6 +189,9 @@ class _NotesPageState extends ConsumerState<NotesPage> {
   bool _isGridView = true;
   String? _selectedNoteId;
 
+  /// 新建笔记的 ID（用于判断关闭时是否删除空笔记）
+  String? _newNoteId;
+
   @override
   Widget build(BuildContext context) {
     final notes = ref.watch(notesProvider);
@@ -194,28 +225,73 @@ class _NotesPageState extends ConsumerState<NotesPage> {
     List<Note> regularNotes,
     List<Note> notes,
   ) {
-    return Row(
+    return Stack(
       children: [
-        // 主内容区
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 头部工具栏
-              _buildHeader(),
-              // 笔记网格/列表
-              Expanded(
-                child: _isGridView
-                    ? _buildGridView(pinnedNotes, regularNotes)
-                    : _buildListView(pinnedNotes, regularNotes),
+        Row(
+          children: [
+            // 主内容区
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 头部工具栏
+                  _buildHeader(),
+                  // 笔记网格/列表
+                  Expanded(
+                    child: _isGridView
+                        ? _buildGridView(pinnedNotes, regularNotes)
+                        : _buildListView(pinnedNotes, regularNotes),
+                  ),
+                ],
               ),
+            ),
+            // 详情面板（使用安全查找，避免已删除笔记导致崩溃）
+            if (_selectedNoteId != null) ...[
+              () {
+                final note =
+                    notes.where((n) => n.id == _selectedNoteId).firstOrNull;
+                if (note != null) {
+                  return _buildDetailPanel(note);
+                }
+                // 笔记已删除，清空选中状态（延迟执行避免 build 中 setState）
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _selectedNoteId = null);
+                });
+                return const SizedBox.shrink();
+              }(),
             ],
-          ),
+          ],
         ),
-        // 详情面板
-        if (_selectedNoteId != null)
-          _buildDetailPanel(notes.firstWhere((n) => n.id == _selectedNoteId)),
+        // 垃圾篓浮动按钮（右下角）
+        Positioned(
+          right: _selectedNoteId != null
+              ? AmberDimens.detailPanelWidth + AmberDimens.spacingLg
+              : AmberDimens.spacingLg,
+          bottom: AmberDimens.spacingLg,
+          child: _buildTrashButton(),
+        ),
       ],
+    );
+  }
+
+  /// 构建垃圾篓浮动按钮
+  Widget _buildTrashButton() {
+    return FloatingActionButton.small(
+      heroTag: null, // 禁用 Hero 动画，避免多个 FAB 冲突
+      onPressed: _navigateToTrash,
+      backgroundColor: AmberColors.cardBackground,
+      foregroundColor: AmberColors.textSecondary,
+      elevation: 4,
+      tooltip: '垃圾篓',
+      child: const Icon(Icons.delete_outline, size: 20),
+    );
+  }
+
+  /// 导航到垃圾篓页面
+  void _navigateToTrash() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const NotesTrashPage()),
     );
   }
 
@@ -228,7 +304,14 @@ class _NotesPageState extends ConsumerState<NotesPage> {
   ) {
     // 如果选中了笔记，显示全屏编辑页面
     if (_selectedNoteId != null) {
-      final note = notes.firstWhere((n) => n.id == _selectedNoteId);
+      final note = notes.where((n) => n.id == _selectedNoteId).firstOrNull;
+      if (note == null) {
+        // 笔记已删除，延迟清空选中状态
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _selectedNoteId = null);
+        });
+        return const SizedBox.shrink();
+      }
       return Scaffold(
         backgroundColor: AmberColors.cardBackground,
         appBar: AppBar(
@@ -288,6 +371,12 @@ class _NotesPageState extends ConsumerState<NotesPage> {
           ),
         ),
         actions: [
+          // 垃圾篓
+          IconButton(
+            onPressed: _navigateToTrash,
+            icon: const Icon(Icons.delete_outline, color: AmberColors.textSecondary),
+            tooltip: '垃圾篓',
+          ),
           // 视图切换
           IconButton(
             onPressed: () => setState(() => _isGridView = !_isGridView),
@@ -742,6 +831,8 @@ class _NotesPageState extends ConsumerState<NotesPage> {
   }
 
   Widget _buildDetailPanel(Note note) {
+    final isNewNote = note.id == _newNoteId;
+
     return Container(
       width: AmberDimens.detailPanelWidth,
       decoration: BoxDecoration(
@@ -757,7 +848,11 @@ class _NotesPageState extends ConsumerState<NotesPage> {
       child: _NoteDetailPanel(
         key: ValueKey(note.id),
         note: note,
-        onClose: () => setState(() => _selectedNoteId = null),
+        isNewNote: isNewNote,
+        onClose: () => setState(() {
+          _selectedNoteId = null;
+          _newNoteId = null; // 清除新建笔记标记
+        }),
       ),
     );
   }
@@ -772,7 +867,10 @@ class _NotesPageState extends ConsumerState<NotesPage> {
       updatedAt: now,
     );
     ref.read(notesProvider.notifier).addNote(newNote);
-    setState(() => _selectedNoteId = newNote.id);
+    setState(() {
+      _selectedNoteId = newNote.id;
+      _newNoteId = newNote.id; // 标记为新建笔记
+    });
   }
 
   String _formatDate(DateTime date) {
@@ -891,10 +989,14 @@ class _NoteDetailPanel extends ConsumerStatefulWidget {
   final Note note;
   final VoidCallback onClose;
 
+  /// 是否为新建笔记（用于判断关闭时是否删除空笔记）
+  final bool isNewNote;
+
   const _NoteDetailPanel({
     super.key,
     required this.note,
     required this.onClose,
+    this.isNewNote = false,
   });
 
   @override
@@ -917,6 +1019,23 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
+  }
+
+  /// 判断笔记是否为空（标题为默认值且内容为空）
+  bool _isEmptyNote() {
+    final title = _titleController.text.trim();
+    final content = _contentController.text.trim();
+    // 标题是默认的"新建笔记"且内容为空，视为空笔记
+    return (title.isEmpty || title == '新建笔记') && content.isEmpty;
+  }
+
+  /// 关闭面板，如果是新建的空笔记则自动删除
+  void _handleClose() {
+    if (widget.isNewNote && _isEmptyNote()) {
+      // 空笔记，静默删除不提示
+      ref.read(notesProvider.notifier).deleteNote(widget.note.id);
+    }
+    widget.onClose();
   }
 
   /// 保存笔记（手动触发保存，同时更新标题和内容）
@@ -996,7 +1115,7 @@ class _NoteDetailPanelState extends ConsumerState<_NoteDetailPanel> {
                 const Spacer(),
                 // 关闭按钮
                 IconButton(
-                  onPressed: widget.onClose,
+                  onPressed: _handleClose,
                   icon: const Icon(
                     Icons.close,
                     size: 20,

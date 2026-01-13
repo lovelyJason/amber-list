@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/constants.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../core/services/splash_service.dart';
 import '../../../data/datasources/local/database.dart' show AppDatabase;
 import '../../providers/providers.dart';
@@ -149,6 +150,30 @@ class _DebugToolboxDialog extends StatelessWidget {
                     const SizedBox(height: 12),
                     // 重置自动顺延检查状态
                     _buildAutoPostponeResetOption(context),
+                    const SizedBox(height: 12),
+                    // 测试系统通知
+                    _buildDebugOption(
+                      context,
+                      icon: Icons.notifications_active_rounded,
+                      label: '测试系统通知',
+                      description: '发送一条测试通知（模拟积压提醒）',
+                      color: Colors.blue,
+                      onTap: () async {
+                        Navigator.pop(context);
+                        // 使用随机 ID 确保每次都能弹出新通知（仅测试用）
+                        await NotificationService.instance.showTestNotification(
+                          backlogCount: 3,
+                          topTaskTitle: '测试任务标题 ${DateTime.now().second}s',
+                        );
+                        if (context.mounted) {
+                          ToastManager().show(
+                            context,
+                            '已发送测试通知',
+                            type: ToastType.success,
+                          );
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),

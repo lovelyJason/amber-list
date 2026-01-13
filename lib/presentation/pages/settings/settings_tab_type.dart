@@ -23,6 +23,9 @@ enum SettingsTabType {
   /// 云同步（WebDAV配置）
   cloudSync,
 
+  /// 通知提醒（待办积压通知等）
+  notification,
+
   /// 关于（版本信息等）
   about;
 
@@ -43,6 +46,8 @@ enum SettingsTabType {
         return '数据管理';
       case SettingsTabType.cloudSync:
         return '云同步';
+      case SettingsTabType.notification:
+        return '通知提醒';
       case SettingsTabType.about:
         return '关于';
     }
@@ -65,6 +70,8 @@ enum SettingsTabType {
         return Icons.storage_outlined;
       case SettingsTabType.cloudSync:
         return Icons.cloud_outlined;
+      case SettingsTabType.notification:
+        return Icons.notifications_outlined;
       case SettingsTabType.about:
         return Icons.info_outline;
     }

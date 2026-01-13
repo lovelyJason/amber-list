@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
@@ -186,6 +187,49 @@ class ExportService {
       final content = await File(importPath).readAsString();
       return jsonDecode(content) as Map<String, dynamic>;
     } catch (e) {
+      return null;
+    }
+  }
+
+  /// 导出海报图片
+  ///
+  /// 将图片字节数据保存到用户选择的位置
+  /// [imageBytes] 图片的 PNG 字节数据
+  /// [fileName] 建议的文件名（如 amber_poster_month_20250113_9x16.png）
+  ///
+  /// 返回：成功时返回文件路径，用户取消或失败返回 null
+  static Future<String?> exportPosterImage(
+    Uint8List imageBytes,
+    String fileName,
+  ) async {
+    try {
+      // 选择保存位置
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: '保存海报',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['png'],
+      );
+
+      if (result == null) {
+        debugPrint('[ExportService] 用户取消保存海报');
+        return null;
+      }
+
+      // 确保文件扩展名为 .png
+      String savePath = result;
+      if (!savePath.toLowerCase().endsWith('.png')) {
+        savePath = '$savePath.png';
+      }
+
+      // 写入图片文件
+      final file = File(savePath);
+      await file.writeAsBytes(imageBytes);
+
+      debugPrint('[ExportService] 海报已保存: $savePath');
+      return savePath;
+    } catch (e) {
+      debugPrint('[ExportService] 保存海报失败: $e');
       return null;
     }
   }

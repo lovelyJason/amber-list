@@ -6,6 +6,8 @@ class Note {
   final String? folderId;
   final List<String> tags;
   final bool isPinned;
+  final bool isDeleted; // 是否已删除（软删除）
+  final DateTime? deletedAt; // 删除时间（30天自动清理用）
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -16,6 +18,8 @@ class Note {
     this.folderId,
     this.tags = const [],
     this.isPinned = false,
+    this.isDeleted = false,
+    this.deletedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -27,6 +31,8 @@ class Note {
     String? folderId,
     List<String>? tags,
     bool? isPinned,
+    bool? isDeleted,
+    DateTime? deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -37,6 +43,8 @@ class Note {
       folderId: folderId ?? this.folderId,
       tags: tags ?? this.tags,
       isPinned: isPinned ?? this.isPinned,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: deletedAt ?? this.deletedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

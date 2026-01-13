@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,10 +9,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'core/notifications/backlog_notification_scheduler.dart';
+import 'core/notifications/notification_service.dart';
 import 'core/services/dock_service.dart';
 import 'core/services/quick_add/quick_add_service.dart';
 import 'core/services/splash_service.dart';
 import 'core/theme/amber_theme.dart';
+import 'env/env.dart';
 import 'presentation/widgets/common/toast/toast_manager.dart';
 import 'data/models/note.dart';
 import 'data/models/task.dart';
@@ -35,6 +39,16 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     with WindowListener, TrayListener, WidgetsBindingObserver {
   /// 闪念胶囊服务
   QuickAddService? _quickAddService;
+
+  /// 待办积压通知调度器
+  BacklogNotificationScheduler? _backlogScheduler;
+
+  /// 跨天检测定时器（仅桌面端使用）
+  /// 用于检测程序运行期间跨越零点的情况，触发自动顺延
+  Timer? _midnightCheckTimer;
+
+  /// 当前记录的日期（用于检测跨天）
+  DateTime _currentDate = DateTime.now();
 
   /// 全局导航 Key，用于获取 MaterialApp 内部的 context
   /// 解决启动阶段 Toast 显示失败问题（AmberListApp 的 context 在 MaterialApp 外面，没有 Overlay）
@@ -189,7 +203,11 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
       windowManager.removeListener(this);
       trayManager.removeListener(this);
     }
+    // 取消跨天检测定时器
+    _midnightCheckTimer?.cancel();
     _quickAddService?.dispose();
+    // 停止积压通知调度器
+    _backlogScheduler?.stop();
     super.dispose();
   }
 
@@ -197,6 +215,10 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   ///
   /// 当 App 从后台回到前台时，重新加载任务数据
   /// 这确保 Widget 上的修改能同步到 App 界面
+  ///
+  /// 桌面端额外功能：检测休眠唤醒后的跨天情况
+  /// - 如果电脑休眠时跨过了零点（或配置的触发时间）
+  /// - 唤醒后定时器可能已错过，这里补检一次
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -207,6 +229,55 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
       // 这样 Widget 上的勾选操作就能同步到 App 界面
       // debugPrint('[App] 回到前台，刷新任务数据...');
       ref.read(taskProvider.notifier).refresh();
+
+      // 桌面端：检测休眠唤醒后是否跨天
+      // 如果电脑在休眠期间跨过了零点，定时器不会触发
+      // 这里在恢复时立即检查并补执行
+      if (Platform.isMacOS || Platform.isWindows) {
+        _checkAfterResumeFromSleep();
+      }
+    }
+  }
+
+  /// 休眠唤醒后检查是否需要执行每日任务
+  ///
+  /// 场景：用户晚上合上笔记本（休眠），第二天早上打开
+  /// - 定时器在休眠期间不会触发
+  /// - 唤醒后这里检查是否已跨天，如果跨天就执行自动顺延
+  void _checkAfterResumeFromSleep() {
+    final now = DateTime.now();
+
+    // 检查是否跨天了
+    if (now.day != _currentDate.day ||
+        now.month != _currentDate.month ||
+        now.year != _currentDate.year) {
+      debugPrint('[App] 🌅 休眠唤醒检测到跨天：${_currentDate.month}/${_currentDate.day} → ${now.month}/${now.day}');
+      _currentDate = now;
+
+      // 执行自动顺延
+      _performAutoPostpone();
+
+      // 重新安排定时器（因为原定时器可能已经过期）
+      _scheduleDailyTaskCheck();
+    } else {
+      // 没跨天，但定时器可能已错过触发时间，需要检查并重新安排
+      // 从 .env 读取配置的触发时间
+      final dailyTaskHour = Env.dailyTaskHour;
+      final todayTrigger = DateTime(now.year, now.month, now.day, dailyTaskHour, 0, 1);
+
+      // 如果当前时间已经过了今天的触发时间，但还没执行过
+      // 说明定时器在休眠期间错过了触发时间
+      if (now.isAfter(todayTrigger)) {
+        // 检查今天是否已经执行过
+        ref.read(taskManagementSettingsProvider.notifier).hasCheckedToday().then((checked) {
+          if (!checked) {
+            debugPrint('[App] ⏰ 休眠唤醒检测到错过今日 $dailyTaskHour:00 的定时任务');
+            _performAutoPostpone();
+          }
+          // 无论是否执行，都重新安排明天的定时器
+          _scheduleDailyTaskCheck();
+        });
+      }
     }
   }
 
@@ -239,6 +310,28 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
       await windowManager.setPreventClose(false);
       await windowManager.destroy();
       debugPrint('[App] 应用已退出');
+    }
+  }
+
+  /// 初始化通知服务和调度器
+  ///
+  /// 全平台支持：macOS/Windows/iOS/Android
+  /// - 初始化 flutter_local_notifications 插件
+  /// - 启动积压通知调度器（每分钟检查，16:00 发送通知）
+  Future<void> _initializeNotificationService() async {
+    try {
+      // 初始化通知服务
+      await NotificationService.instance.init();
+      debugPrint('[App] 通知服务已初始化');
+
+      // 启动积压通知调度器
+      final database = ref.read(databaseProvider);
+      _backlogScheduler = BacklogNotificationScheduler(database);
+      _backlogScheduler!.start();
+      debugPrint('[App] 积压通知调度器已启动');
+    } catch (e) {
+      debugPrint('[App] 通知服务初始化失败: $e');
+      // 通知功能失败不影响应用正常运行
     }
   }
 
@@ -352,6 +445,78 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     // 公共初始化（不阻塞 UI）
     _checkForUpdatesOnStartup();
     _initializeQuickAddService();
+    _initializeNotificationService();
+
+    // 桌面端：启动跨天检测定时器
+    // 解决程序长时间运行不重启导致跨天后不触发自动顺延的问题
+    if (Platform.isMacOS || Platform.isWindows) {
+      _startMidnightCheckTimer();
+    }
+  }
+
+  /// 启动跨天检测定时器（仅桌面端）
+  ///
+  /// 根据用户配置的 dailyTaskHour 安排定时器
+  /// 解决 PC 端程序长时间运行不重启的场景
+  void _startMidnightCheckTimer() {
+    _currentDate = DateTime.now();
+    debugPrint('[App] 启动跨天检测定时器，当前日期: ${_currentDate.year}-${_currentDate.month}-${_currentDate.day}');
+
+    _scheduleDailyTaskCheck();
+  }
+
+  /// 安排下一次每日任务检查
+  ///
+  /// 根据 .env 中配置的 DAILY_TASK_HOUR 计算下次执行时间
+  /// - dailyTaskHour = 0：明天 00:00:01（跨天后立即执行）
+  /// - dailyTaskHour = 3：明天 03:00:01（凌晨 3 点执行）
+  void _scheduleDailyTaskCheck() {
+    final now = DateTime.now();
+
+    // 从 .env 读取每日任务执行时间（编译时确定）
+    final dailyTaskHour = Env.dailyTaskHour;
+
+    // 计算下次执行时间
+    // 如果今天还没到配置的时间点，就在今天执行；否则在明天执行
+    DateTime nextTrigger;
+    final todayTrigger = DateTime(now.year, now.month, now.day, dailyTaskHour, 0, 1);
+
+    if (now.isBefore(todayTrigger)) {
+      // 今天还没到触发时间，今天就执行
+      nextTrigger = todayTrigger;
+    } else {
+      // 今天已经过了触发时间，安排到明天
+      nextTrigger = DateTime(now.year, now.month, now.day + 1, dailyTaskHour, 0, 1);
+    }
+
+    final durationUntilTrigger = nextTrigger.difference(now);
+
+    debugPrint('[App] 每日任务将在 ${nextTrigger.month}/${nextTrigger.day} ${dailyTaskHour.toString().padLeft(2, '0')}:00 执行'
+        '（${durationUntilTrigger.inHours}h ${durationUntilTrigger.inMinutes % 60}m 后）');
+
+    _midnightCheckTimer?.cancel();
+    _midnightCheckTimer = Timer(durationUntilTrigger, () {
+      _checkForDayChange();
+      // 检查完后安排下一次
+      _scheduleDailyTaskCheck();
+    });
+  }
+
+  /// 检测是否跨天
+  ///
+  /// 如果检测到日期变化（跨越零点），执行自动顺延
+  void _checkForDayChange() {
+    final now = DateTime.now();
+    if (now.day != _currentDate.day ||
+        now.month != _currentDate.month ||
+        now.year != _currentDate.year) {
+      // 跨天了！
+      debugPrint('[App] 🌙 检测到跨天：${_currentDate.month}/${_currentDate.day} → ${now.month}/${now.day}');
+      _currentDate = now;
+
+      // 执行自动顺延
+      _performAutoPostpone();
+    }
   }
 
   /// 桌面端启动序列
@@ -522,14 +687,22 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
   /// 清理过期垃圾桶任务
   ///
-  /// 在 App 启动时静默执行，删除超过 30 天的垃圾桶任务
+  /// 在 App 启动时静默执行，删除超过 30 天的垃圾桶任务和笔记
   /// 这是后台清理，不需要给用户任何提示
   Future<void> _cleanupExpiredTrash() async {
     try {
       final database = ref.read(databaseProvider);
-      final deletedCount = await database.cleanupExpiredTrashTasks();
-      if (deletedCount > 0) {
-        debugPrint('   🗑️ 已清理 $deletedCount 个过期垃圾桶任务');
+
+      // 清理过期任务
+      final deletedTasksCount = await database.cleanupExpiredTrashTasks();
+      if (deletedTasksCount > 0) {
+        debugPrint('   🗑️ 已清理 $deletedTasksCount 个过期垃圾桶任务');
+      }
+
+      // 清理过期笔记
+      final deletedNotesCount = await database.cleanupExpiredTrashNotes();
+      if (deletedNotesCount > 0) {
+        debugPrint('   🗑️ 已清理 $deletedNotesCount 个过期垃圾桶笔记');
       }
     } catch (e) {
       debugPrint('   ⚠️ 清理垃圾桶失败: $e');

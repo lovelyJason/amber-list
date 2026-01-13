@@ -14,6 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// - 已过期区域折叠状态
 /// - 今日已检查标记：避免同一天重复执行自动顺延
 /// - 后续可扩展：默认优先级、默认提醒时间等
+///
+/// 注意：每日任务执行时间通过 .env 中的 DAILY_TASK_HOUR 配置（编译时确定）
 class TaskManagementSettings {
   /// 是否启用自动顺延功能（全局开关）
   /// true = App 启动时自动将 autoPostpone=true 的过期任务顺延到今天

@@ -142,4 +142,25 @@ abstract class Env {
   static Duration get syncThrottleDuration {
     return Duration(minutes: syncThrottleMinutes);
   }
+
+  // ============================================================
+  // 每日任务执行时间配置
+  // ============================================================
+
+  /// 每日任务执行时间（小时，0-23）原始字符串值
+  /// 桌面端程序长时间运行不重启时，会在此时间点触发每日任务（如自动顺延）
+  /// 默认值：0（零点执行）
+  @EnviedField(varName: 'DAILY_TASK_HOUR', defaultValue: '0')
+  static const String _dailyTaskHourRaw = _Env._dailyTaskHourRaw;
+
+  /// 每日任务执行时间（解析后的整数，单位：小时，0-23）
+  ///
+  /// 用于配置自动顺延等每日任务在几点触发：
+  /// - 0 = 零点（默认，跨天时立即执行）
+  /// - 3 = 凌晨 3 点（避开零点高峰）
+  /// - 6 = 早上 6 点（起床后执行）
+  static int get dailyTaskHour {
+    final hour = int.tryParse(_dailyTaskHourRaw) ?? 0;
+    return hour.clamp(0, 23); // 确保范围在 0-23
+  }
 }
