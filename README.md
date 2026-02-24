@@ -4,6 +4,16 @@
 
 使用本软件，数据掌握在自己手里，可以根据需要本地存储您的数据，也可以导出数据，导入数据， 以及，使用您自己的云端存储空间，包括但不限于WebDAV, 各大厂商的OSS等，将数据捞牢牢掌握自己手里，不用每个月给清单软件付上高额的订阅费用，革了他们的命。
 
+## 下载地址
+
+https://www.qdovo.com/amber/
+
+<img width="540" height="360" alt="image" src="https://github.com/user-attachments/assets/f6b841f1-d8d7-4f50-bae1-6717e444b7b7" />
+
+日历视图
+
+<img width="540" height="360" alt="image" src="https://github.com/user-attachments/assets/56e96ee3-f3da-4d89-8a54-47412ce5ca42" />
+
 ## 特性
 
 - **琥珀主题**：温暖的琥珀色调，简约优雅的视觉设计
@@ -12,10 +22,6 @@
 - **笔记功能**：Markdown支持，卡片/列表视图
 - **数据自主**：SQLite本地存储，支持导入/导出
 - **跨平台**：支持 macOS 和 Windows
-
-## 截图
-
-（待添加）
 
 ## 快速开始
 
