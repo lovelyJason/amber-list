@@ -10,6 +10,7 @@ import '../providers/providers.dart';
 import '../pages/settings/settings_page.dart';
 import 'animated_logo.dart';
 import 'common/toast/toast_manager.dart';
+import 'database_repair_dialog.dart';
 import 'mac_traffic_lights.dart';
 import 'sync_conflict_dialog.dart';
 
@@ -290,6 +291,12 @@ class _NarrowSidebarState extends ConsumerState<NarrowSidebar> {
         // 同步失败，检查错误信息并提示
         final syncState = ref.read(syncStateProvider);
         final errorMsg = syncState.lastError ?? '同步失败';
+
+        // 检测数据库损坏，弹出修复弹窗
+        if (syncState.isDatabaseCorrupted) {
+          await showDatabaseRepairDialog(context, ref);
+          return;
+        }
 
         // 针对 429 错误特殊处理
         if (errorMsg.contains('429')) {

@@ -49,12 +49,12 @@ class _WebDavConfigSectionState extends ConsumerState<WebDavConfigSection> {
       // 密码从系统钥匙串加载(如果有则显示占位符)
       final password = await SyncConfigService.getPassword(config.username);
       if (password != null) {
-        print('[WebDavConfig] ✅ 从钥匙串读取到密码，长度=${password.length}');
+        // print('[WebDavConfig] ✅ 从钥匙串读取到密码，长度=${password.length}');
         _hasPasswordInKeychain = true;
         _originalPasswordPlaceholder = '••••••••'; // 显示8个圆点表示已保存密码
         _passwordController.text = _originalPasswordPlaceholder!;
       } else {
-        print('[WebDavConfig] ⚠️ 钥匙串中没有找到密码');
+        // print('[WebDavConfig] ⚠️ 钥匙串中没有找到密码');
         _hasPasswordInKeychain = false;
       }
       if (mounted) {

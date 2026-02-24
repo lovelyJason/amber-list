@@ -192,9 +192,12 @@ class TaskItem extends ConsumerWidget {
       buildActionButton(
         label: '完成',
         backgroundColor: wechatGreen,
-        onTap: () {
+        onTap: () async {
           ref.read(soundServiceProvider).playCompletion();
-          ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
+          final linkedCount = await ref.read(taskProvider.notifier).toggleTaskComplete(task.id);
+          if (linkedCount > 0 && context.mounted) {
+            _showLinkedNotesReview(context, ref, task.id, linkedCount);
+          }
         },
       ),
       buildActionButton(
@@ -208,6 +211,24 @@ class TaskItem extends ConsumerWidget {
   }
 
   /// 处理普通删除（移入垃圾桶）
+  /// 完成任务后显示关联笔记回顾提示
+  void _showLinkedNotesReview(
+    BuildContext context, WidgetRef ref, String taskId, int count,
+  ) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('该任务关联了 $count 条笔记，是否查看？'),
+        action: SnackBarAction(
+          label: '查看',
+          onPressed: () {
+            ref.read(appNavProvider.notifier).navigateToTask(taskId);
+          },
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   /// 先弹出二次确认框，确认后才执行删除
   /// 如果任务有番茄记录会弹出特殊提示
   Future<void> _handleDelete(BuildContext context, WidgetRef ref) async {

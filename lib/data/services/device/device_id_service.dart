@@ -58,10 +58,10 @@ class DeviceIdService {
           return _cachedDeviceId!;
         }
       }
-      debugPrint('[DeviceIdService] 使用缓存的设备ID: $_cachedDeviceId');
+      // debugPrint('[DeviceIdService] 使用缓存的设备ID: $_cachedDeviceId');
       return _cachedDeviceId!;
     }
-    debugPrint('[DeviceIdService] 开始获取设备ID...');
+    // debugPrint('[DeviceIdService] 开始获取设备ID...');
 
     try {
       String rawId;

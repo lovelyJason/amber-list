@@ -339,6 +339,193 @@ class DatabaseIntegrityUtils {
       db?.dispose();
     }
   }
+
+  /// 尝试修复损坏的数据库
+  ///
+  /// 修复策略：
+  /// 1. 先尝试 REINDEX（修复索引损坏）
+  /// 2. 再尝试 VACUUM（重建数据库文件）
+  /// 3. 如果上述失败，尝试 .dump 导出再导入到新库
+  ///
+  /// 返回值：
+  /// - [DatabaseRepairResult] 包含修复是否成功和详细信息
+  static Future<DatabaseRepairResult> repairDatabase(String dbPath) async {
+    final file = File(dbPath);
+    if (!await file.exists()) {
+      return DatabaseRepairResult(
+        success: false,
+        message: '数据库文件不存在',
+      );
+    }
+
+    // 先创建备份
+    final backupPath = '$dbPath.backup_${DateTime.now().millisecondsSinceEpoch}';
+    try {
+      await file.copy(backupPath);
+      debugPrint('[DatabaseRepair] ✅ 已创建备份: $backupPath');
+    } catch (e) {
+      return DatabaseRepairResult(
+        success: false,
+        message: '无法创建备份: $e',
+      );
+    }
+
+    sqlite3.Database? db;
+    try {
+      // 尝试方法1：REINDEX + VACUUM
+      debugPrint('[DatabaseRepair] 尝试方法1: REINDEX + VACUUM');
+      db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readWrite);
+
+      try {
+        db.execute('REINDEX;');
+        debugPrint('[DatabaseRepair] REINDEX 执行成功');
+      } catch (e) {
+        debugPrint('[DatabaseRepair] REINDEX 失败: $e');
+      }
+
+      try {
+        db.execute('VACUUM;');
+        debugPrint('[DatabaseRepair] VACUUM 执行成功');
+      } catch (e) {
+        debugPrint('[DatabaseRepair] VACUUM 失败: $e');
+      }
+
+      db.dispose();
+      db = null;
+
+      // 验证修复结果
+      final verifyResult = await verifyDatabase(dbPath);
+      if (verifyResult.isOk) {
+        // 修复成功，删除备份
+        try {
+          await File(backupPath).delete();
+        } catch (_) {}
+        return DatabaseRepairResult(
+          success: true,
+          message: '数据库已通过 REINDEX + VACUUM 修复',
+        );
+      }
+
+      debugPrint('[DatabaseRepair] 方法1失败，尝试方法2: dump + 重建');
+
+      // 尝试方法2：dump 数据到新库
+      final newDbPath = '$dbPath.new';
+      db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      sqlite3.Database? newDb;
+
+      try {
+        newDb = sqlite3.sqlite3.open(newDbPath, mode: sqlite3.OpenMode.readWriteCreate);
+
+        // 复制 schema version（Drift 使用 user_version pragma）
+        // 这很重要，否则 Drift 会认为是新数据库并尝试插入种子数据
+        final userVersionResult = db.select('PRAGMA user_version');
+        final userVersion = userVersionResult.isNotEmpty
+            ? userVersionResult.first['user_version'] as int
+            : 0;
+        if (userVersion > 0) {
+          newDb.execute('PRAGMA user_version = $userVersion');
+          debugPrint('[DatabaseRepair] 复制 schema version: $userVersion');
+        }
+
+        // 获取所有表的 schema 和数据
+        final tables = db.select(
+          "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        );
+
+        for (final table in tables) {
+          final tableName = table['name'] as String;
+          final createSql = table['sql'] as String?;
+
+          if (createSql != null) {
+            // 创建表
+            try {
+              newDb.execute(createSql);
+              debugPrint('[DatabaseRepair] 创建表: $tableName');
+
+              // 复制数据
+              final rows = db.select('SELECT * FROM "$tableName"');
+              if (rows.isNotEmpty) {
+                final columns = rows.first.keys.toList();
+                final placeholders = List.filled(columns.length, '?').join(', ');
+                final insertSql =
+                    'INSERT INTO "$tableName" (${columns.map((c) => '"$c"').join(', ')}) VALUES ($placeholders)';
+
+                final stmt = newDb.prepare(insertSql);
+                for (final row in rows) {
+                  stmt.execute(row.values.toList());
+                }
+                stmt.dispose();
+                debugPrint('[DatabaseRepair] 复制 $tableName: ${rows.length} 行');
+              }
+            } catch (e) {
+              debugPrint('[DatabaseRepair] 处理表 $tableName 失败: $e');
+            }
+          }
+        }
+
+        // 复制索引
+        final indexes = db.select(
+          "SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL",
+        );
+        for (final idx in indexes) {
+          final sql = idx['sql'] as String?;
+          if (sql != null) {
+            try {
+              newDb.execute(sql);
+            } catch (_) {}
+          }
+        }
+
+        newDb.dispose();
+        newDb = null;
+        db.dispose();
+        db = null;
+
+        // 验证新库
+        final newVerifyResult = await verifyDatabase(newDbPath);
+        if (newVerifyResult.isOk) {
+          // 新库正常，替换旧库
+          await File(dbPath).delete();
+          await File(newDbPath).rename(dbPath);
+          // 删除备份
+          try {
+            await File(backupPath).delete();
+          } catch (_) {}
+          return DatabaseRepairResult(
+            success: true,
+            message: '数据库已通过重建方式修复',
+          );
+        } else {
+          // 新库也有问题，删除
+          try {
+            await File(newDbPath).delete();
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('[DatabaseRepair] 方法2失败: $e');
+        newDb?.dispose();
+        try {
+          await File(newDbPath).delete();
+        } catch (_) {}
+      }
+
+      // 所有方法都失败
+      return DatabaseRepairResult(
+        success: false,
+        message: '无法修复数据库，备份已保存至: $backupPath',
+        backupPath: backupPath,
+      );
+    } catch (e) {
+      debugPrint('[DatabaseRepair] 修复过程异常: $e');
+      return DatabaseRepairResult(
+        success: false,
+        message: '修复异常: $e，备份已保存至: $backupPath',
+        backupPath: backupPath,
+      );
+    } finally {
+      db?.dispose();
+    }
+  }
 }
 
 /// 数据库完整性状态
@@ -374,4 +561,25 @@ class DatabaseIntegrityResult {
 
   @override
   String toString() => 'DatabaseIntegrityResult($status: $message)';
+}
+
+/// 数据库修复结果
+class DatabaseRepairResult {
+  /// 修复是否成功
+  final bool success;
+
+  /// 修复过程的详细信息
+  final String message;
+
+  /// 备份文件路径（修复失败时保留）
+  final String? backupPath;
+
+  const DatabaseRepairResult({
+    required this.success,
+    required this.message,
+    this.backupPath,
+  });
+
+  @override
+  String toString() => 'DatabaseRepairResult(success: $success, message: $message)';
 }

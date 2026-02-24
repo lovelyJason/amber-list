@@ -20,7 +20,7 @@ class ConfigService {
       return 'config.json'; 
     }
     
-    return '$home/amber-list/config.json';
+    return '$home/.amber-list/config.json';
   }
 
   String get configPath => _configPath;

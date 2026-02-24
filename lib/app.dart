@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -20,7 +22,7 @@ import 'presentation/widgets/common/toast/toast_manager.dart';
 import 'data/models/note.dart';
 import 'data/models/task.dart';
 import 'presentation/pages/home_page.dart';
-import 'presentation/pages/notes/notes_page.dart';
+import 'presentation/pages/notes/notes_provider.dart';
 import 'presentation/providers/app_update_provider.dart';
 import 'presentation/providers/providers.dart';
 import 'presentation/providers/quick_add_settings_provider.dart';
@@ -57,7 +59,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   @override
   void initState() {
     super.initState();
-    debugPrint('[App] initState() called');
+    // debugPrint('[App] initState() called');
 
     // 添加生命周期监听（用于 App 回到前台时刷新数据）
     WidgetsBinding.instance.addObserver(this);
@@ -74,7 +76,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
     // 延迟初始化，执行启动序列
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('[App] addPostFrameCallback triggered - first frame rendered');
+      // debugPrint('[App] addPostFrameCallback triggered - first frame rendered');
       // 执行统一启动流程（桌面端 vs 移动端不同策略）
       _executeStartupSequence();
     });
@@ -85,7 +87,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   /// 设置托盘图标、菜单，支持点击恢复窗口
   Future<void> _initTray() async {
     try {
-      debugPrint('[App] 初始化托盘...');
+      // debugPrint('[App] 初始化托盘...');
 
       // 从 assets 提取图标到临时目录
       final iconPath = await _extractTrayIcon();
@@ -162,14 +164,14 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     // 显示并聚焦窗口
     await windowManager.show();
     await windowManager.focus();
-    debugPrint('[App] 从托盘恢复窗口显示');
+    // debugPrint('[App] 从托盘恢复窗口显示');
   }
 
   /// 退出应用
   Future<void> _exitApp() async {
     await windowManager.setPreventClose(false);
     await windowManager.destroy();
-    debugPrint('[App] 应用已退出');
+    // debugPrint('[App] 应用已退出');
   }
 
   /// 隐藏原生 Splash 屏幕
@@ -177,18 +179,18 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   /// 在 Flutter 首帧渲染后调用，触发 Splash 淡出动画
   /// Windows 平台额外延迟一小段时间，让用户能看到 Splash 效果
   Future<void> _hideSplash() async {
-    debugPrint('[App] _hideSplash() called, platform: ${Platform.operatingSystem}');
+    // debugPrint('[App] _hideSplash() called, platform: ${Platform.operatingSystem}');
     if (Platform.isMacOS || Platform.isWindows) {
       // Windows 启动较快，额外延迟让用户看到 Splash
       if (Platform.isWindows) {
-        debugPrint(
-          '[App] Windows platform - waiting 3s before hiding splash...',
-        );
+        // debugPrint(
+        //   '[App] Windows platform - waiting 3s before hiding splash...',
+        // );
         await Future.delayed(const Duration(milliseconds: 3000));
       }
-      debugPrint('[App] Calling SplashService.hideSplash()...');
+      // debugPrint('[App] Calling SplashService.hideSplash()...');
       await SplashService.hideSplash();
-      debugPrint('[App] 原生 Splash 已隐藏');
+      // debugPrint('[App] 原生 Splash 已隐藏');
     } else {
       debugPrint('[App] Skipping splash hide - not macOS/Windows');
     }
@@ -251,7 +253,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     if (now.day != _currentDate.day ||
         now.month != _currentDate.month ||
         now.year != _currentDate.year) {
-      debugPrint('[App] 🌅 休眠唤醒检测到跨天：${_currentDate.month}/${_currentDate.day} → ${now.month}/${now.day}');
+      // debugPrint('[App] 🌅 休眠唤醒检测到跨天：${_currentDate.month}/${_currentDate.day} → ${now.month}/${now.day}');
       _currentDate = now;
 
       // 执行自动顺延
@@ -271,7 +273,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         // 检查今天是否已经执行过
         ref.read(taskManagementSettingsProvider.notifier).hasCheckedToday().then((checked) {
           if (!checked) {
-            debugPrint('[App] ⏰ 休眠唤醒检测到错过今日 $dailyTaskHour:00 的定时任务');
+                // debugPrint('[App] ⏰ 休眠唤醒检测到错过今日 $dailyTaskHour:00 的定时任务');
             _performAutoPostpone();
           }
           // 无论是否执行，都重新安排明天的定时器
@@ -293,23 +295,21 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     final minimizeToTray = displaySettings.minimizeToTray;
     final showInDockWhenMinimized = displaySettings.showInDockWhenMinimized;
 
-    debugPrint('[App] onWindowClose: minimizeToTray=$minimizeToTray, showInDock=$showInDockWhenMinimized');
+    // debugPrint('[App] onWindowClose: minimizeToTray=$minimizeToTray, showInDock=$showInDockWhenMinimized');
 
     if (minimizeToTray) {
       // 最小化到托盘：隐藏窗口，应用继续运行
       await windowManager.hide();
-      debugPrint('[App] 窗口已隐藏到托盘');
 
       // macOS: 根据用户设置决定是否从 Dock 隐藏
       if (Platform.isMacOS && !showInDockWhenMinimized) {
         await DockService.hideFromDock();
-        debugPrint('[App] 已从 Dock 隐藏');
+        // debugPrint('[App] 已从 Dock 隐藏');
       }
     } else {
       // 直接退出：先取消关闭拦截，再销毁窗口
       await windowManager.setPreventClose(false);
       await windowManager.destroy();
-      debugPrint('[App] 应用已退出');
     }
   }
 
@@ -322,13 +322,13 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     try {
       // 初始化通知服务
       await NotificationService.instance.init();
-      debugPrint('[App] 通知服务已初始化');
+      // debugPrint('[App] 通知服务已初始化');
 
       // 启动积压通知调度器
       final database = ref.read(databaseProvider);
       _backlogScheduler = BacklogNotificationScheduler(database);
       _backlogScheduler!.start();
-      debugPrint('[App] 积压通知调度器已启动');
+      // debugPrint('[App] 积压通知调度器已启动');
     } catch (e) {
       debugPrint('[App] 通知服务初始化失败: $e');
       // 通知功能失败不影响应用正常运行
@@ -354,8 +354,6 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
             tags: tags,
           );
       // 注意：清单选择已在 onListSelected 回调中实时持久化，无需在此重复保存
-      debugPrint(
-          '[App] 闪念胶囊创建任务: $title, 优先级: $priority, 标签: $tags, 列表: $listId');
     };
 
     // 设置笔记创建回调
@@ -373,13 +371,11 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         updatedAt: now,
       );
       ref.read(notesProvider.notifier).addNote(newNote);
-      debugPrint('[App] 闪念胶囊创建笔记: $content, 标签: $tags');
     };
 
     // 设置日期选择器回调（TODO: 后续实现原生日期选择器）
     _quickAddService!.onDatePickerRequested = (currentDate, onDateSelected) {
       // 暂时直接使用当前日期，后续可以弹出 Flutter 日期选择器
-      debugPrint('[App] 日期选择器请求: $currentDate');
       // onDateSelected(currentDate);
     };
 
@@ -387,7 +383,6 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     _quickAddService!.onListSelected = (listId) {
       // 立即保存到 SharedPreferences
       ref.read(quickAddSettingsProvider.notifier).setLastSelectedListId(listId);
-      debugPrint('[App] 闪念胶囊清单选中: ${listId ?? "收集箱"}');
     };
 
     // 设置热键触发回调，获取最新数据后显示窗口
@@ -460,7 +455,7 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
   /// 解决 PC 端程序长时间运行不重启的场景
   void _startMidnightCheckTimer() {
     _currentDate = DateTime.now();
-    debugPrint('[App] 启动跨天检测定时器，当前日期: ${_currentDate.year}-${_currentDate.month}-${_currentDate.day}');
+    // debugPrint('[App] 启动跨天检测定时器，当前日期: ${_currentDate.year}-${_currentDate.month}-${_currentDate.day}');
 
     _scheduleDailyTaskCheck();
   }
@@ -491,8 +486,8 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
     final durationUntilTrigger = nextTrigger.difference(now);
 
-    debugPrint('[App] 每日任务将在 ${nextTrigger.month}/${nextTrigger.day} ${dailyTaskHour.toString().padLeft(2, '0')}:00 执行'
-        '（${durationUntilTrigger.inHours}h ${durationUntilTrigger.inMinutes % 60}m 后）');
+    // debugPrint('[App] 每日任务将在 ${nextTrigger.month}/${nextTrigger.day} ${dailyTaskHour.toString().padLeft(2, '0')}:00 执行'
+    //     '（${durationUntilTrigger.inHours}h ${durationUntilTrigger.inMinutes % 60}m 后）');
 
     _midnightCheckTimer?.cancel();
     _midnightCheckTimer = Timer(durationUntilTrigger, () {
@@ -531,13 +526,18 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
     debugPrint('🚀 ══════════════════════════════════════════');
     try {
       // 步骤1: 等待云同步完成（如果配置了同步）
-      debugPrint('   📡 步骤1: 等待云同步...');
-      final syncSuccess = await _waitForCloudSync();
-
-      if (syncSuccess) {
-        debugPrint('   ✅ 云同步成功');
+      // Debug 模式下跳过云同步，加快启动速度
+      if (kDebugMode) {
+        debugPrint('   ⏭️ 步骤1: Debug 模式，跳过云同步');
       } else {
-        debugPrint('   ⏭️  云同步失败/超时/未配置，继续启动');
+        debugPrint('   📡 步骤1: 等待云同步...');
+        final syncSuccess = await _waitForCloudSync();
+
+        if (syncSuccess) {
+          debugPrint('   ✅ 云同步成功');
+        } else {
+          debugPrint('   ⏭️  云同步失败/超时/未配置，继续启动');
+        }
       }
 
       // 步骤2: 清理过期垃圾桶任务（30天自动删除）
@@ -550,10 +550,10 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
 
       // 步骤4: 隐藏 Splash（Windows 额外延迟让用户看到效果）
       if (Platform.isWindows) {
-        debugPrint('   ⏳ Windows 延迟 1s 后隐藏 Splash');
+        // debugPrint('   ⏳ Windows 延迟 1s 后隐藏 Splash');
         await Future.delayed(const Duration(milliseconds: 1000));
       }
-      debugPrint('   🎬 步骤4: 隐藏 Splash');
+      // debugPrint('   🎬 步骤4: 隐藏 Splash');
       await _hideSplash();
 
       debugPrint('✨ ══════════════════════════════════════════');
@@ -756,6 +756,8 @@ class _AmberListAppState extends ConsumerState<AmberListApp>
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
+        // AppFlowy Editor 国际化支持
+        AppFlowyEditorLocalizations.delegate,
       ],
       supportedLocales: const [
         Locale('zh', 'CN'), // 中文简体

@@ -38,7 +38,7 @@ class ActivationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_activationCodeKey, code);
-      debugPrint('[ActivationService] ✅ 激活码保存成功');
+      // debugPrint('[ActivationService] ✅ 激活码保存成功');
     } catch (e) {
       debugPrint('[ActivationService] ❌ 激活码保存失败: $e');
       rethrow;
@@ -75,7 +75,7 @@ class ActivationService {
       // 更新最后验证时间
       await _updateLastVerifyAt();
 
-      debugPrint('[ActivationService] ✅ 激活信息保存成功');
+      // debugPrint('[ActivationService] ✅ 激活信息保存成功');
     } catch (e) {
       debugPrint('[ActivationService] ❌ 激活信息保存失败: $e');
       rethrow;

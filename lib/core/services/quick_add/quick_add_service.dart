@@ -81,7 +81,6 @@ class QuickAddService {
     await registerHotKey(customHotKey ?? defaultHotKey);
 
     _isInitialized = true;
-    debugPrint('[QuickAddService] 初始化完成');
   }
 
   /// 销毁服务

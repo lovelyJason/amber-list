@@ -56,6 +56,16 @@ public final class GeneratedPluginRegistrant {
       Log.e(TAG, "Error registering plugin home_widget, es.antonborri.home_widget.HomeWidgetPlugin", e);
     }
     try {
+      flutterEngine.getPlugins().add(new dev.irondash.engine_context.IrondashEngineContextPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin irondash_engine_context, dev.irondash.engine_context.IrondashEngineContextPlugin", e);
+    }
+    try {
+      flutterEngine.getPlugins().add(new com.nschairer.keyboard_height_plugin.KeyboardHeightPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin keyboard_height_plugin, com.nschairer.keyboard_height_plugin.KeyboardHeightPlugin", e);
+    }
+    try {
       flutterEngine.getPlugins().add(new dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin package_info_plus, dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin", e);
@@ -74,6 +84,11 @@ public final class GeneratedPluginRegistrant {
       flutterEngine.getPlugins().add(new eu.simonbinder.sqlite3_flutter_libs.Sqlite3FlutterLibsPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin sqlite3_flutter_libs, eu.simonbinder.sqlite3_flutter_libs.Sqlite3FlutterLibsPlugin", e);
+    }
+    try {
+      flutterEngine.getPlugins().add(new com.superlist.super_native_extensions.SuperNativeExtensionsPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin super_native_extensions, com.superlist.super_native_extensions.SuperNativeExtensionsPlugin", e);
     }
     try {
       flutterEngine.getPlugins().add(new io.flutter.plugins.urllauncher.UrlLauncherPlugin());

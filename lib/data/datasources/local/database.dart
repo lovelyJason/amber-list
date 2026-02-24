@@ -100,6 +100,27 @@ class Tags extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// 笔记-任务关联表
+///
+/// 存储笔记与任务之间的双向关联关系
+/// 同一 noteId+taskId 不可重复（通过业务逻辑保证）
+class NoteTaskLinks extends Table {
+  /// 唯一标识
+  TextColumn get id => text()();
+
+  /// 关联的笔记 ID
+  TextColumn get noteId => text().references(Notes, #id)();
+
+  /// 关联的任务 ID
+  TextColumn get taskId => text().references(Tasks, #id)();
+
+  /// 创建时间
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// 番茄时钟会话表
 class PomodoroSessions extends Table {
   TextColumn get id => text()();
@@ -127,12 +148,12 @@ class PomodoroQueue extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [TaskLists, Tasks, Notes, Tags, PomodoroSessions, PomodoroQueue])
+@DriftDatabase(tables: [TaskLists, Tasks, Notes, Tags, PomodoroSessions, PomodoroQueue, NoteTaskLinks])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 13; // Add soft delete for notes
+  int get schemaVersion => 14; // Add note-task links table
 
 
   @override
@@ -301,6 +322,10 @@ class AppDatabase extends _$AppDatabase {
               'ALTER TABLE notes ADD COLUMN deleted_at INTEGER',
             );
           }
+        }
+        if (from < 14) {
+          // 新建笔记-任务关联表
+          await m.createTable(noteTaskLinks);
         }
       },
     );
@@ -530,6 +555,7 @@ class AppDatabase extends _$AppDatabase {
   /// 清空所有数据
   Future<void> clearDatabase() async {
     // 按依赖顺序删除，避免外键约束错误
+    await delete(noteTaskLinks).go();
     await delete(pomodoroQueue).go();
     await delete(pomodoroSessions).go();
     await delete(tasks).go();
@@ -771,6 +797,66 @@ class AppDatabase extends _$AppDatabase {
             .write(NotesCompanion(sortOrder: Value(i)));
       }
     });
+  }
+
+  // ===== 笔记-任务关联操作 =====
+
+  /// 创建笔记-任务关联
+  Future<int> insertNoteTaskLink(NoteTaskLinksCompanion entry) =>
+      into(noteTaskLinks).insert(entry);
+
+  /// 删除笔记-任务关联
+  Future<int> deleteNoteTaskLink(String noteId, String taskId) =>
+      (delete(noteTaskLinks)
+            ..where((l) => l.noteId.equals(noteId) & l.taskId.equals(taskId)))
+          .go();
+
+  /// 删除笔记的所有关联（笔记删除时调用）
+  Future<int> deleteAllLinksForNote(String noteId) =>
+      (delete(noteTaskLinks)..where((l) => l.noteId.equals(noteId))).go();
+
+  /// 删除任务的所有关联（任务删除时调用）
+  Future<int> deleteAllLinksForTask(String taskId) =>
+      (delete(noteTaskLinks)..where((l) => l.taskId.equals(taskId))).go();
+
+  /// 监听某笔记关联的所有任务
+  Stream<List<Task>> watchLinkedTasksForNote(String noteId) {
+    final query = select(tasks).join([
+      innerJoin(
+        noteTaskLinks,
+        noteTaskLinks.taskId.equalsExp(tasks.id),
+      ),
+    ])
+      ..where(noteTaskLinks.noteId.equals(noteId));
+    return query.map((row) => row.readTable(tasks)).watch();
+  }
+
+  /// 监听某任务关联的所有笔记
+  Stream<List<Note>> watchLinkedNotesForTask(String taskId) {
+    final query = select(notes).join([
+      innerJoin(
+        noteTaskLinks,
+        noteTaskLinks.noteId.equalsExp(notes.id),
+      ),
+    ])
+      ..where(noteTaskLinks.taskId.equals(taskId));
+    return query.map((row) => row.readTable(notes)).watch();
+  }
+
+  /// 检查某笔记-任务关联是否已存在
+  Future<bool> isNoteTaskLinked(String noteId, String taskId) async {
+    final result = await (select(noteTaskLinks)
+          ..where((l) => l.noteId.equals(noteId) & l.taskId.equals(taskId)))
+        .get();
+    return result.isNotEmpty;
+  }
+
+  /// 获取任务关联的笔记数量（用于完成提示）
+  Future<int> getLinkedNotesCount(String taskId) async {
+    final result = await (select(noteTaskLinks)
+          ..where((l) => l.taskId.equals(taskId)))
+        .get();
+    return result.length;
   }
 
   // ===== 标签操作 =====

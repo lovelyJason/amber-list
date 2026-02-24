@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../data/services/sync/sync_config.dart';
 import '../../data/services/sync/sync_manager.dart';
@@ -70,6 +71,9 @@ class SyncState {
   /// 上次错误信息
   final String? lastError;
 
+  /// 是否是数据库损坏错误（用于触发修复弹窗）
+  final bool isDatabaseCorrupted;
+
   /// 标签冲突列表
   final List<TagConflict> tagConflicts;
 
@@ -77,6 +81,7 @@ class SyncState {
     this.isSyncing = false,
     this.lastSyncTime,
     this.lastError,
+    this.isDatabaseCorrupted = false,
     this.tagConflicts = const [],
   });
 
@@ -85,6 +90,7 @@ class SyncState {
     DateTime? lastSyncTime,
     String? lastError,
     bool? clearError,
+    bool? isDatabaseCorrupted,
     List<TagConflict>? tagConflicts,
     bool? clearConflicts,
   }) {
@@ -92,6 +98,7 @@ class SyncState {
       isSyncing: isSyncing ?? this.isSyncing,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
       lastError: clearError == true ? null : (lastError ?? this.lastError),
+      isDatabaseCorrupted: isDatabaseCorrupted ?? this.isDatabaseCorrupted,
       tagConflicts: clearConflicts == true
           ? []
           : (tagConflicts ?? this.tagConflicts),
@@ -707,12 +714,16 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
         // 直接从 SyncManager 获取错误信息（更可靠）
         final lastError = _syncManager?.lastError;
 
+        // 检测是否是数据库损坏错误
+        final isDbCorrupted = lastError?.contains('数据库损坏') == true;
+
         state = state.copyWith(
           isSyncing: false,
           lastError: lastError ?? '同步失败',
+          isDatabaseCorrupted: isDbCorrupted,
           tagConflicts: conflicts,
         );
-        debugPrint('[SyncProvider] 同步失败: $lastError');
+        debugPrint('[SyncProvider] 同步失败: $lastError, 数据库损坏: $isDbCorrupted');
         return false;
       }
     } catch (e) {
@@ -723,6 +734,52 @@ class SyncStateNotifier extends StateNotifier<SyncState> {
       debugPrint('[SyncProvider] 同步异常: $e');
       return false;
     }
+  }
+
+  /// 尝试修复损坏的数据库
+  ///
+  /// 返回值：
+  /// - true: 修复成功
+  /// - false: 修复失败
+  Future<DatabaseRepairResult> repairDatabase() async {
+    debugPrint('[SyncProvider] 开始修复数据库...');
+
+    // 关闭数据库连接
+    await _ref.read(databaseProvider).close();
+
+    // 获取数据库路径
+    final paths = await _getSyncPaths();
+    final dbPath = paths['localDb']!;
+
+    // 执行修复
+    final result = await DatabaseIntegrityUtils.repairDatabase(dbPath);
+
+    if (result.success) {
+      // 修复成功，重新打开数据库
+      _ref.invalidate(databaseProvider);
+      state = state.copyWith(
+        isDatabaseCorrupted: false,
+        clearError: true,
+      );
+      debugPrint('[SyncProvider] 数据库修复成功');
+    } else {
+      debugPrint('[SyncProvider] 数据库修复失败: ${result.message}');
+    }
+
+    return result;
+  }
+
+  /// 获取同步相关的文件路径（复用 SyncManager 的逻辑）
+  Future<Map<String, String>> _getSyncPaths() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    return {
+      'localDb': '${docDir.path}/amber_list.db',
+    };
+  }
+
+  /// 清除数据库损坏状态
+  void clearDatabaseCorruptedState() {
+    state = state.copyWith(isDatabaseCorrupted: false);
   }
 
   @override

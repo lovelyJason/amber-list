@@ -103,3 +103,5 @@ index.html
 
 # 加密资源目录（构建时生成，不应提交）
 assets_enc/
+
+.VSCodeCounter

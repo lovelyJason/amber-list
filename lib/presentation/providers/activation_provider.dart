@@ -127,7 +127,7 @@ class ActivationNotifier extends StateNotifier<ActivationState> {
         if (result.success && result.data != null && result.data!.isValid) {
           // 在线校验成功
           await ActivationService.saveActivationInfo(result.data!);
-          debugPrint('[ActivationNotifier] ✅ 在线校验成功');
+          // debugPrint('[ActivationNotifier] ✅ 在线校验成功');
           state = state.copyWith(
             isActivated: true,
             activationCode: result.data,

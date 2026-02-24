@@ -64,7 +64,7 @@ class SplashService {
   /// 在 Flutter 首帧渲染后调用此方法,触发 Splash 淡出动画。
   /// 动画完成后 Splash 视图将被销毁。
   static Future<void> hideSplash() async {
-    debugPrint('[SplashService] hideSplash() called, channel: $_channelName');
+    // debugPrint('[SplashService] hideSplash() called, channel: $_channelName');
     try {
       await _channel.invokeMethod<void>('hideSplash');
       debugPrint('[SplashService] hideSplash() success');

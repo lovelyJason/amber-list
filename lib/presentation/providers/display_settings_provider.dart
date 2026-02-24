@@ -128,7 +128,7 @@ class DisplaySettingsNotifier extends StateNotifier<DisplaySettings> {
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final json = jsonDecode(jsonStr) as Map<String, dynamic>;
         state = DisplaySettings.fromJson(json);
-        debugPrint('[DisplaySettings] 已加载显示设置');
+        // debugPrint('[DisplaySettings] 已加载显示设置');
       }
 
       // 标记加载完成（无论成功还是使用默认值）

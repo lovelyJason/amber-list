@@ -11,6 +11,7 @@ import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 
 import '../../data/datasources/local/database.dart' as db;
+import '../../data/repositories/note_task_link_repository.dart';
 import 'database_provider.dart';
 import 'task_management_settings_provider.dart';
 import '../pages/sticky_note/sticky_note_registry.dart';
@@ -518,7 +519,10 @@ class TaskNotifier extends StateNotifier<List<Task>> {
   }
 
   /// 切换任务完成状态
-  Future<void> toggleTaskComplete(String id) async {
+  ///
+  /// 返回关联笔记数量（仅在标记完成时返回，用于回顾提示）
+  /// 取消完成或无关联笔记时返回 0
+  Future<int> toggleTaskComplete(String id) async {
     final task = state.firstWhere((t) => t.id == id);
     final isCompleted = !task.isCompleted;
     final now = DateTime.now();
@@ -593,6 +597,15 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     } catch (e) {
       debugPrint('Failed to sync with sticky note: $e');
     }
+
+    // 完成任务时检查关联笔记数量（用于回顾提示）
+    if (isCompleted) {
+      try {
+        final linkRepo = NoteTaskLinkRepository(database);
+        return await linkRepo.getLinkedNotesCount(id);
+      } catch (_) {}
+    }
+    return 0;
   }
 
   /// 切换任务进行中（半完成）状态

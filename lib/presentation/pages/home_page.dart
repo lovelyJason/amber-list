@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/constants.dart';
 import '../../core/utils/responsive_helper.dart';
@@ -34,6 +36,9 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
+  /// SharedPreferences key 用于存储调试按钮位置（JSON 格式：{"x": 16, "y": 16}）
+  static const _kDebugButtonPosition = 'debug_button_position';
+
   /// Debug 按钮的位置（相对于屏幕右下角的偏移量）
   /// 初始值为 (16, 16)，表示距离右下角 16px
   Offset _debugButtonOffset = const Offset(16, 16);
@@ -78,6 +83,11 @@ class _HomePageState extends ConsumerState<HomePage> {
     // NavView.today 在 _keepAliveViews 中的 index 是 1
     _pageController = PageController(initialPage: 1);
 
+    // 加载调试按钮的缓存位置（仅 Debug 模式）
+    if (kDebugMode) {
+      _loadDebugButtonPosition();
+    }
+
     // 桌面端：初始化便签事件通道（单向模式：主窗口注册处理器，所有便签都可以发送消息）
     // 移动端不支持 desktop_multi_window，跳过
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
@@ -89,6 +99,36 @@ class _HomePageState extends ConsumerState<HomePage> {
       // 注册便签事件处理器
       _registerStickyNoteEventHandler();
     }
+  }
+
+  /// 从 SharedPreferences 加载调试按钮位置
+  Future<void> _loadDebugButtonPosition() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString(_kDebugButtonPosition);
+    if (jsonStr != null) {
+      try {
+        final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final x = (map['x'] as num?)?.toDouble();
+        final y = (map['y'] as num?)?.toDouble();
+        if (x != null && y != null) {
+          setState(() {
+            _debugButtonOffset = Offset(x, y);
+          });
+        }
+      } catch (_) {
+        // JSON 解析失败，使用默认位置
+      }
+    }
+  }
+
+  /// 保存调试按钮位置到 SharedPreferences
+  Future<void> _saveDebugButtonPosition() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = jsonEncode({
+      'x': _debugButtonOffset.dx,
+      'y': _debugButtonOffset.dy,
+    });
+    await prefs.setString(_kDebugButtonPosition, jsonStr);
   }
 
   /// 注册便签事件处理器
@@ -220,6 +260,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                     );
                   });
                 },
+                // 拖拽结束时保存位置到 SharedPreferences
+                onPanEnd: (_) => _saveDebugButtonPosition(),
                 child: FloatingActionButton(
                   tooltip: '调试工具箱（可拖拽）',
                   elevation: 4,

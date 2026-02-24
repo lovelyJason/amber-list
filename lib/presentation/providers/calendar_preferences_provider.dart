@@ -82,7 +82,7 @@ class CalendarPreferencesNotifier extends StateNotifier<CalendarPreferences> {
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final json = jsonDecode(jsonStr) as Map<String, dynamic>;
         state = CalendarPreferences.fromJson(json);
-        debugPrint('[CalendarPreferences] 已加载日历偏好设置');
+        // debugPrint('[CalendarPreferences] 已加载日历偏好设置');
       }
     } catch (e) {
       debugPrint('[CalendarPreferences] 加载偏好设置失败: $e');

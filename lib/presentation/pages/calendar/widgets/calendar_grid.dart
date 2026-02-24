@@ -132,7 +132,7 @@ class CalendarGrid extends StatelessWidget {
             : (isSelected
                 ? AmberColors.primary.withValues(alpha: 0.05)
                 : Colors.white),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(color: Colors.grey[200]!, width: 0.5),
       ),
       padding: const EdgeInsets.all(4),
       // ClipRect 静默裁剪溢出内容，避免 iOS 上报 overflow 错误

@@ -48,6 +48,18 @@
 @import home_widget;
 #endif
 
+#if __has_include(<irondash_engine_context/IrondashEngineContextPlugin.h>)
+#import <irondash_engine_context/IrondashEngineContextPlugin.h>
+#else
+@import irondash_engine_context;
+#endif
+
+#if __has_include(<keyboard_height_plugin/KeyboardHeightPlugin.h>)
+#import <keyboard_height_plugin/KeyboardHeightPlugin.h>
+#else
+@import keyboard_height_plugin;
+#endif
+
 #if __has_include(<package_info_plus/FPPPackageInfoPlusPlugin.h>)
 #import <package_info_plus/FPPPackageInfoPlusPlugin.h>
 #else
@@ -72,6 +84,12 @@
 @import sqlite3_flutter_libs;
 #endif
 
+#if __has_include(<super_native_extensions/SuperNativeExtensionsPlugin.h>)
+#import <super_native_extensions/SuperNativeExtensionsPlugin.h>
+#else
+@import super_native_extensions;
+#endif
+
 #if __has_include(<url_launcher_ios/URLLauncherPlugin.h>)
 #import <url_launcher_ios/URLLauncherPlugin.h>
 #else
@@ -88,10 +106,13 @@
   [FlutterLocalNotificationsPlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterLocalNotificationsPlugin"]];
   [FlutterSecureStoragePlugin registerWithRegistrar:[registry registrarForPlugin:@"FlutterSecureStoragePlugin"]];
   [HomeWidgetPlugin registerWithRegistrar:[registry registrarForPlugin:@"HomeWidgetPlugin"]];
+  [IrondashEngineContextPlugin registerWithRegistrar:[registry registrarForPlugin:@"IrondashEngineContextPlugin"]];
+  [KeyboardHeightPlugin registerWithRegistrar:[registry registrarForPlugin:@"KeyboardHeightPlugin"]];
   [FPPPackageInfoPlusPlugin registerWithRegistrar:[registry registrarForPlugin:@"FPPPackageInfoPlusPlugin"]];
   [PathProviderPlugin registerWithRegistrar:[registry registrarForPlugin:@"PathProviderPlugin"]];
   [SharedPreferencesPlugin registerWithRegistrar:[registry registrarForPlugin:@"SharedPreferencesPlugin"]];
   [Sqlite3FlutterLibsPlugin registerWithRegistrar:[registry registrarForPlugin:@"Sqlite3FlutterLibsPlugin"]];
+  [SuperNativeExtensionsPlugin registerWithRegistrar:[registry registrarForPlugin:@"SuperNativeExtensionsPlugin"]];
   [URLLauncherPlugin registerWithRegistrar:[registry registrarForPlugin:@"URLLauncherPlugin"]];
 }
 

@@ -56,7 +56,7 @@ class _QiniuOssConfigSectionState extends ConsumerState<QiniuOssConfigSection> {
       // SecretKey 从系统钥匙串加载（如果有则显示占位符）
       final secretKey = await SyncConfigService.getQiniuSecretKey(config.accessKey);
       if (secretKey != null) {
-        print('[QiniuConfig] ✅ 从钥匙串读取到 SecretKey');
+        // print('[QiniuConfig] ✅ 从钥匙串读取到 SecretKey');
         _hasSecretKeyInKeychain = true;
         _originalSecretKeyPlaceholder = '••••••••••••••••';
         _secretKeyController.text = _originalSecretKeyPlaceholder!;

@@ -143,10 +143,10 @@ class TaskManagementSettingsNotifier
       // iOS: 同步到 App Group UserDefaults（iOS Widget 需要通过 App Group 共享数据）
       if (Platform.isIOS) {
         await HomeWidget.saveWidgetData<String>(_configKey, jsonStr);
-        debugPrint('[TaskManagementSettings] 已同步设置到 iOS App Group');
+        // debugPrint('[TaskManagementSettings] 已同步设置到 iOS App Group');
       }
 
-      debugPrint('[TaskManagementSettings] 已保存任务管理设置');
+      // debugPrint('[TaskManagementSettings] 已保存任务管理设置');
     } catch (e) {
       debugPrint('[TaskManagementSettings] 保存设置失败: $e');
     }
@@ -186,7 +186,7 @@ class TaskManagementSettingsNotifier
       lastAutoPostponeDate: null,
     );
     _saveSettings();
-    debugPrint('[TaskManagementSettings] 已清除自动顺延检查日期（调试）');
+    // debugPrint('[TaskManagementSettings] 已清除自动顺延检查日期（调试）');
   }
 
   /// 检查今天是否已经执行过自动顺延（实时读取存储）
@@ -230,10 +230,10 @@ class TaskManagementSettingsNotifier
           : lastAutoPostponeDate;
 
       final checked = lastDatePart == todayStr;
-      debugPrint('[TaskManagementSettings] hasCheckedToday: $checked (lastDate=$lastDatePart, today=$todayStr)');
+      // debugPrint('[TaskManagementSettings] hasCheckedToday: $checked (lastDate=$lastDatePart, today=$todayStr)');
       return checked;
     } catch (e) {
-      debugPrint('[TaskManagementSettings] hasCheckedToday error: $e');
+      // debugPrint('[TaskManagementSettings] hasCheckedToday error: $e');
       return false;
     }
   }

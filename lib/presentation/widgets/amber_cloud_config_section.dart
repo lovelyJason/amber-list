@@ -7,6 +7,7 @@ import '../../data/services/activation/activation_service.dart';
 import '../../data/services/sync/sync_config.dart';
 import '../providers/providers.dart';
 import 'common/toast/toast_manager.dart';
+import 'database_repair_dialog.dart';
 
 /// ============================================================
 /// 琥珀云配置组件
@@ -249,8 +250,17 @@ class _AmberCloudConfigSectionState
         } else {
           // 读取实际错误信息
           final syncState = ref.read(syncStateProvider);
-          final errorMsg = syncState.lastError ?? '同步失败';
-          ToastManager().show(context, errorMsg, type: ToastType.error);
+
+          // 检测到数据库损坏，弹出修复弹窗
+          if (syncState.isDatabaseCorrupted) {
+            final repaired = await showDatabaseRepairDialog(context, ref);
+            if (repaired && mounted) {
+              ToastManager().show(context, '数据库已修复', type: ToastType.success);
+            }
+          } else {
+            final errorMsg = syncState.lastError ?? '同步失败';
+            ToastManager().show(context, errorMsg, type: ToastType.error);
+          }
         }
       }
     } finally {

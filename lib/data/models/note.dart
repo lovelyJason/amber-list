@@ -58,4 +58,17 @@ class Note {
     final text = lines.take(3).join(' ');
     return text.length > 100 ? '${text.substring(0, 100)}...' : text;
   }
+
+  /// 卡片预览用的 Markdown（保留换行，避免列表/标题语法失效）
+  String get previewMarkdown {
+    if (content.trim().isEmpty) return '';
+    final lines = content.split('\n');
+    final picked = <String>[];
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      picked.add(line);
+      if (picked.length >= 8) break;
+    }
+    return picked.join('\n');
+  }
 }

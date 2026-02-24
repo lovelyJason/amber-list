@@ -3518,6 +3518,325 @@ class PomodoroQueueCompanion extends UpdateCompanion<PomodoroQueueData> {
   }
 }
 
+class $NoteTaskLinksTable extends NoteTaskLinks
+    with TableInfo<$NoteTaskLinksTable, NoteTaskLink> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $NoteTaskLinksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
+  @override
+  late final GeneratedColumn<String> noteId = GeneratedColumn<String>(
+    'note_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES notes (id)',
+    ),
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id)',
+    ),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, noteId, taskId, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'note_task_links';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<NoteTaskLink> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('note_id')) {
+      context.handle(
+        _noteIdMeta,
+        noteId.isAcceptableOrUnknown(data['note_id']!, _noteIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_noteIdMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  NoteTaskLink map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return NoteTaskLink(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      noteId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note_id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $NoteTaskLinksTable createAlias(String alias) {
+    return $NoteTaskLinksTable(attachedDatabase, alias);
+  }
+}
+
+class NoteTaskLink extends DataClass implements Insertable<NoteTaskLink> {
+  /// 唯一标识
+  final String id;
+
+  /// 关联的笔记 ID
+  final String noteId;
+
+  /// 关联的任务 ID
+  final String taskId;
+
+  /// 创建时间
+  final DateTime createdAt;
+  const NoteTaskLink({
+    required this.id,
+    required this.noteId,
+    required this.taskId,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['note_id'] = Variable<String>(noteId);
+    map['task_id'] = Variable<String>(taskId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  NoteTaskLinksCompanion toCompanion(bool nullToAbsent) {
+    return NoteTaskLinksCompanion(
+      id: Value(id),
+      noteId: Value(noteId),
+      taskId: Value(taskId),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory NoteTaskLink.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return NoteTaskLink(
+      id: serializer.fromJson<String>(json['id']),
+      noteId: serializer.fromJson<String>(json['noteId']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'noteId': serializer.toJson<String>(noteId),
+      'taskId': serializer.toJson<String>(taskId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  NoteTaskLink copyWith({
+    String? id,
+    String? noteId,
+    String? taskId,
+    DateTime? createdAt,
+  }) => NoteTaskLink(
+    id: id ?? this.id,
+    noteId: noteId ?? this.noteId,
+    taskId: taskId ?? this.taskId,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  NoteTaskLink copyWithCompanion(NoteTaskLinksCompanion data) {
+    return NoteTaskLink(
+      id: data.id.present ? data.id.value : this.id,
+      noteId: data.noteId.present ? data.noteId.value : this.noteId,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NoteTaskLink(')
+          ..write('id: $id, ')
+          ..write('noteId: $noteId, ')
+          ..write('taskId: $taskId, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, noteId, taskId, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NoteTaskLink &&
+          other.id == this.id &&
+          other.noteId == this.noteId &&
+          other.taskId == this.taskId &&
+          other.createdAt == this.createdAt);
+}
+
+class NoteTaskLinksCompanion extends UpdateCompanion<NoteTaskLink> {
+  final Value<String> id;
+  final Value<String> noteId;
+  final Value<String> taskId;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const NoteTaskLinksCompanion({
+    this.id = const Value.absent(),
+    this.noteId = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  NoteTaskLinksCompanion.insert({
+    required String id,
+    required String noteId,
+    required String taskId,
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       noteId = Value(noteId),
+       taskId = Value(taskId),
+       createdAt = Value(createdAt);
+  static Insertable<NoteTaskLink> custom({
+    Expression<String>? id,
+    Expression<String>? noteId,
+    Expression<String>? taskId,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (noteId != null) 'note_id': noteId,
+      if (taskId != null) 'task_id': taskId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  NoteTaskLinksCompanion copyWith({
+    Value<String>? id,
+    Value<String>? noteId,
+    Value<String>? taskId,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return NoteTaskLinksCompanion(
+      id: id ?? this.id,
+      noteId: noteId ?? this.noteId,
+      taskId: taskId ?? this.taskId,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (noteId.present) {
+      map['note_id'] = Variable<String>(noteId.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NoteTaskLinksCompanion(')
+          ..write('id: $id, ')
+          ..write('noteId: $noteId, ')
+          ..write('taskId: $taskId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3529,6 +3848,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $PomodoroQueueTable pomodoroQueue = $PomodoroQueueTable(this);
+  late final $NoteTaskLinksTable noteTaskLinks = $NoteTaskLinksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3540,6 +3860,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     tags,
     pomodoroSessions,
     pomodoroQueue,
+    noteTaskLinks,
   ];
 }
 
@@ -4037,6 +4358,24 @@ final class $$TasksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$NoteTaskLinksTable, List<NoteTaskLink>>
+  _noteTaskLinksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.noteTaskLinks,
+    aliasName: $_aliasNameGenerator(db.tasks.id, db.noteTaskLinks.taskId),
+  );
+
+  $$NoteTaskLinksTableProcessedTableManager get noteTaskLinksRefs {
+    final manager = $$NoteTaskLinksTableTableManager(
+      $_db,
+      $_db.noteTaskLinks,
+    ).filter((f) => f.taskId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_noteTaskLinksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
@@ -4201,6 +4540,31 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
           }) => $$PomodoroQueueTableFilterComposer(
             $db: $db,
             $table: $db.pomodoroQueue,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> noteTaskLinksRefs(
+    Expression<bool> Function($$NoteTaskLinksTableFilterComposer f) f,
+  ) {
+    final $$NoteTaskLinksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.noteTaskLinks,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NoteTaskLinksTableFilterComposer(
+            $db: $db,
+            $table: $db.noteTaskLinks,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -4483,6 +4847,31 @@ class $$TasksTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> noteTaskLinksRefs<T extends Object>(
+    Expression<T> Function($$NoteTaskLinksTableAnnotationComposer a) f,
+  ) {
+    final $$NoteTaskLinksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.noteTaskLinks,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NoteTaskLinksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.noteTaskLinks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TasksTableTableManager
@@ -4502,6 +4891,7 @@ class $$TasksTableTableManager
             bool listId,
             bool pomodoroSessionsRefs,
             bool pomodoroQueueRefs,
+            bool noteTaskLinksRefs,
           })
         > {
   $$TasksTableTableManager(_$AppDatabase db, $TasksTable table)
@@ -4614,12 +5004,14 @@ class $$TasksTableTableManager
                 listId = false,
                 pomodoroSessionsRefs = false,
                 pomodoroQueueRefs = false,
+                noteTaskLinksRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [
                     if (pomodoroSessionsRefs) db.pomodoroSessions,
                     if (pomodoroQueueRefs) db.pomodoroQueue,
+                    if (noteTaskLinksRefs) db.noteTaskLinks,
                   ],
                   addJoins:
                       <
@@ -4697,6 +5089,27 @@ class $$TasksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (noteTaskLinksRefs)
+                        await $_getPrefetchedData<
+                          Task,
+                          $TasksTable,
+                          NoteTaskLink
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TasksTableReferences
+                              ._noteTaskLinksRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TasksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).noteTaskLinksRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.taskId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -4721,6 +5134,7 @@ typedef $$TasksTableProcessedTableManager =
         bool listId,
         bool pomodoroSessionsRefs,
         bool pomodoroQueueRefs,
+        bool noteTaskLinksRefs,
       })
     >;
 typedef $$NotesTableCreateCompanionBuilder =
@@ -4753,6 +5167,29 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
+
+final class $$NotesTableReferences
+    extends BaseReferences<_$AppDatabase, $NotesTable, Note> {
+  $$NotesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$NoteTaskLinksTable, List<NoteTaskLink>>
+  _noteTaskLinksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.noteTaskLinks,
+    aliasName: $_aliasNameGenerator(db.notes.id, db.noteTaskLinks.noteId),
+  );
+
+  $$NoteTaskLinksTableProcessedTableManager get noteTaskLinksRefs {
+    final manager = $$NoteTaskLinksTableTableManager(
+      $_db,
+      $_db.noteTaskLinks,
+    ).filter((f) => f.noteId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_noteTaskLinksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
   $$NotesTableFilterComposer({
@@ -4816,6 +5253,31 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> noteTaskLinksRefs(
+    Expression<bool> Function($$NoteTaskLinksTableFilterComposer f) f,
+  ) {
+    final $$NoteTaskLinksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.noteTaskLinks,
+      getReferencedColumn: (t) => t.noteId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NoteTaskLinksTableFilterComposer(
+            $db: $db,
+            $table: $db.noteTaskLinks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$NotesTableOrderingComposer
@@ -4924,6 +5386,31 @@ class $$NotesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> noteTaskLinksRefs<T extends Object>(
+    Expression<T> Function($$NoteTaskLinksTableAnnotationComposer a) f,
+  ) {
+    final $$NoteTaskLinksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.noteTaskLinks,
+      getReferencedColumn: (t) => t.noteId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NoteTaskLinksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.noteTaskLinks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$NotesTableTableManager
@@ -4937,9 +5424,9 @@ class $$NotesTableTableManager
           $$NotesTableAnnotationComposer,
           $$NotesTableCreateCompanionBuilder,
           $$NotesTableUpdateCompanionBuilder,
-          (Note, BaseReferences<_$AppDatabase, $NotesTable, Note>),
+          (Note, $$NotesTableReferences),
           Note,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool noteTaskLinksRefs})
         > {
   $$NotesTableTableManager(_$AppDatabase db, $NotesTable table)
     : super(
@@ -5009,9 +5496,38 @@ class $$NotesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) =>
+                    (e.readTable(table), $$NotesTableReferences(db, table, e)),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({noteTaskLinksRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (noteTaskLinksRefs) db.noteTaskLinks,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (noteTaskLinksRefs)
+                    await $_getPrefetchedData<Note, $NotesTable, NoteTaskLink>(
+                      currentTable: table,
+                      referencedTable: $$NotesTableReferences
+                          ._noteTaskLinksRefsTable(db),
+                      managerFromTypedResult: (p0) => $$NotesTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).noteTaskLinksRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.noteId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -5026,9 +5542,9 @@ typedef $$NotesTableProcessedTableManager =
       $$NotesTableAnnotationComposer,
       $$NotesTableCreateCompanionBuilder,
       $$NotesTableUpdateCompanionBuilder,
-      (Note, BaseReferences<_$AppDatabase, $NotesTable, Note>),
+      (Note, $$NotesTableReferences),
       Note,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool noteTaskLinksRefs})
     >;
 typedef $$TagsTableCreateCompanionBuilder =
     TagsCompanion Function({
@@ -5914,6 +6430,396 @@ typedef $$PomodoroQueueTableProcessedTableManager =
       PomodoroQueueData,
       PrefetchHooks Function({bool taskId})
     >;
+typedef $$NoteTaskLinksTableCreateCompanionBuilder =
+    NoteTaskLinksCompanion Function({
+      required String id,
+      required String noteId,
+      required String taskId,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$NoteTaskLinksTableUpdateCompanionBuilder =
+    NoteTaskLinksCompanion Function({
+      Value<String> id,
+      Value<String> noteId,
+      Value<String> taskId,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+final class $$NoteTaskLinksTableReferences
+    extends BaseReferences<_$AppDatabase, $NoteTaskLinksTable, NoteTaskLink> {
+  $$NoteTaskLinksTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $NotesTable _noteIdTable(_$AppDatabase db) => db.notes.createAlias(
+    $_aliasNameGenerator(db.noteTaskLinks.noteId, db.notes.id),
+  );
+
+  $$NotesTableProcessedTableManager get noteId {
+    final $_column = $_itemColumn<String>('note_id')!;
+
+    final manager = $$NotesTableTableManager(
+      $_db,
+      $_db.notes,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_noteIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TasksTable _taskIdTable(_$AppDatabase db) => db.tasks.createAlias(
+    $_aliasNameGenerator(db.noteTaskLinks.taskId, db.tasks.id),
+  );
+
+  $$TasksTableProcessedTableManager get taskId {
+    final $_column = $_itemColumn<String>('task_id')!;
+
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_taskIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$NoteTaskLinksTableFilterComposer
+    extends Composer<_$AppDatabase, $NoteTaskLinksTable> {
+  $$NoteTaskLinksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$NotesTableFilterComposer get noteId {
+    final $$NotesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.noteId,
+      referencedTable: $db.notes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NotesTableFilterComposer(
+            $db: $db,
+            $table: $db.notes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableFilterComposer get taskId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$NoteTaskLinksTableOrderingComposer
+    extends Composer<_$AppDatabase, $NoteTaskLinksTable> {
+  $$NoteTaskLinksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$NotesTableOrderingComposer get noteId {
+    final $$NotesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.noteId,
+      referencedTable: $db.notes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NotesTableOrderingComposer(
+            $db: $db,
+            $table: $db.notes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableOrderingComposer get taskId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$NoteTaskLinksTableAnnotationComposer
+    extends Composer<_$AppDatabase, $NoteTaskLinksTable> {
+  $$NoteTaskLinksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$NotesTableAnnotationComposer get noteId {
+    final $$NotesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.noteId,
+      referencedTable: $db.notes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$NotesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.notes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableAnnotationComposer get taskId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$NoteTaskLinksTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $NoteTaskLinksTable,
+          NoteTaskLink,
+          $$NoteTaskLinksTableFilterComposer,
+          $$NoteTaskLinksTableOrderingComposer,
+          $$NoteTaskLinksTableAnnotationComposer,
+          $$NoteTaskLinksTableCreateCompanionBuilder,
+          $$NoteTaskLinksTableUpdateCompanionBuilder,
+          (NoteTaskLink, $$NoteTaskLinksTableReferences),
+          NoteTaskLink,
+          PrefetchHooks Function({bool noteId, bool taskId})
+        > {
+  $$NoteTaskLinksTableTableManager(_$AppDatabase db, $NoteTaskLinksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$NoteTaskLinksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$NoteTaskLinksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$NoteTaskLinksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> noteId = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => NoteTaskLinksCompanion(
+                id: id,
+                noteId: noteId,
+                taskId: taskId,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String noteId,
+                required String taskId,
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => NoteTaskLinksCompanion.insert(
+                id: id,
+                noteId: noteId,
+                taskId: taskId,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$NoteTaskLinksTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({noteId = false, taskId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (noteId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.noteId,
+                                referencedTable: $$NoteTaskLinksTableReferences
+                                    ._noteIdTable(db),
+                                referencedColumn: $$NoteTaskLinksTableReferences
+                                    ._noteIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (taskId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.taskId,
+                                referencedTable: $$NoteTaskLinksTableReferences
+                                    ._taskIdTable(db),
+                                referencedColumn: $$NoteTaskLinksTableReferences
+                                    ._taskIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$NoteTaskLinksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $NoteTaskLinksTable,
+      NoteTaskLink,
+      $$NoteTaskLinksTableFilterComposer,
+      $$NoteTaskLinksTableOrderingComposer,
+      $$NoteTaskLinksTableAnnotationComposer,
+      $$NoteTaskLinksTableCreateCompanionBuilder,
+      $$NoteTaskLinksTableUpdateCompanionBuilder,
+      (NoteTaskLink, $$NoteTaskLinksTableReferences),
+      NoteTaskLink,
+      PrefetchHooks Function({bool noteId, bool taskId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5929,4 +6835,6 @@ class $AppDatabaseManager {
       $$PomodoroSessionsTableTableManager(_db, _db.pomodoroSessions);
   $$PomodoroQueueTableTableManager get pomodoroQueue =>
       $$PomodoroQueueTableTableManager(_db, _db.pomodoroQueue);
+  $$NoteTaskLinksTableTableManager get noteTaskLinks =>
+      $$NoteTaskLinksTableTableManager(_db, _db.noteTaskLinks);
 }

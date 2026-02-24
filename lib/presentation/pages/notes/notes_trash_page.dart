@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/constants.dart';
 import '../../../data/models/models.dart';
 import '../../widgets/common/toast/toast_manager.dart';
-import 'notes_page.dart';
+import 'notes_provider.dart';
 
 /// 笔记垃圾篓页面
 ///

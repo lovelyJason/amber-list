@@ -282,7 +282,7 @@ class AppLogger {
       return ''; // 移动端返回空，在 init() 中跳过文件日志
     }
 
-    return '$home/amber-list/logs';
+    return '$home/.amber-list/logs';
   }
 
   /// 打开日志文件（追加模式）

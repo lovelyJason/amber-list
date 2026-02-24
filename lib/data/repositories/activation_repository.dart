@@ -60,8 +60,8 @@ class ActivationRepository {
       // 生成签名请求头
       final signHeaders = HmacSigner.generateHeaders(code);
 
-      debugPrint('[ActivationRepository] 发起校验请求: $url');
-      debugPrint('[ActivationRepository] 设备ID: $deviceId');
+      // debugPrint('[ActivationRepository] 发起校验请求: $url');
+      // debugPrint('[ActivationRepository] 设备ID: $deviceId');
 
       final response = await _client
           .post(
@@ -77,7 +77,7 @@ class ActivationRepository {
           )
           .timeout(const Duration(seconds: 10));
 
-      debugPrint('[ActivationRepository] 响应状态码: ${response.statusCode}');
+      // debugPrint('[ActivationRepository] 响应状态码: ${response.statusCode}');
 
       // 解析响应
       final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -89,7 +89,7 @@ class ActivationRepository {
         final data = json['data'] as Map<String, dynamic>?;
         if (data != null) {
           final activationCode = ActivationCode.fromJson(data);
-          debugPrint('[ActivationRepository] ✅ 校验成功: ${activationCode.code}');
+          // debugPrint('[ActivationRepository] ✅ 校验成功: ${activationCode.code}');
           return ApiResult.success(activationCode, message: message);
         } else {
           return ApiResult.failure(message ?? '响应数据为空');

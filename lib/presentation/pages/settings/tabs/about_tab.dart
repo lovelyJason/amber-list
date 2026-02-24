@@ -152,6 +152,12 @@ class AboutTab extends ConsumerWidget {
               subtitle: '查看版本更新历史',
               onTap: () => _showChangelogDialog(context),
             ),
+            SettingsTile(
+              icon: Icons.shield_outlined,
+              title: '数据与隐私',
+              subtitle: '了解我们如何保护您的数据',
+              onTap: () => _showPrivacyDialog(context),
+            ),
             // 仅桌面端显示日志功能（移动端不写日志文件）
             if (Platform.isMacOS || Platform.isWindows || Platform.isLinux)
               SettingsTile(
@@ -324,6 +330,168 @@ class AboutTab extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// 显示数据与隐私弹窗
+  void _showPrivacyDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AmberDimens.radiusLg),
+        ),
+        child: Container(
+          width: 480,
+          padding: const EdgeInsets.all(AmberDimens.spacingXl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 标题
+              const Row(
+                children: [
+                  Icon(
+                    Icons.shield_outlined,
+                    color: AmberColors.primary,
+                    size: 24,
+                  ),
+                  SizedBox(width: AmberDimens.spacingSm),
+                  Text(
+                    '数据与隐私',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AmberDimens.spacingLg),
+
+              // 隐私特性说明
+              _buildPrivacyFeatureItem(
+                icon: Icons.smartphone_outlined,
+                title: '本地优先，数据在手',
+                description: '所有数据默认存储在您的设备本地，无需联网即可正常使用。即使断网、服务下线，您的数据依然完整可用。',
+              ),
+              const SizedBox(height: AmberDimens.spacingMd),
+              _buildPrivacyFeatureItem(
+                icon: Icons.cloud_outlined,
+                title: '灵活可控的云同步',
+                description: '支持内置云服务或 WebDAV 协议同步。内置云服务采用端到端加密，我们无法读取您的数据；WebDAV 则让您完全掌控数据流向，可使用 NAS、坚果云等任意兼容服务。',
+              ),
+              const SizedBox(height: AmberDimens.spacingMd),
+              _buildPrivacyFeatureItem(
+                icon: Icons.lock_outline,
+                title: '无账号体系，无数据采集',
+                description: '我们不要求注册账号，不收集任何个人信息，不追踪使用行为。您的清单只属于您自己。',
+              ),
+
+              const SizedBox(height: AmberDimens.spacingLg),
+
+              // 底部提示
+              Container(
+                padding: const EdgeInsets.all(AmberDimens.spacingMd),
+                decoration: BoxDecoration(
+                  color: AmberColors.primaryLight.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.verified_user_outlined,
+                      color: AmberColors.primary,
+                      size: 20,
+                    ),
+                    SizedBox(width: AmberDimens.spacingSm),
+                    Expanded(
+                      child: Text(
+                        '您的数据，始终在您手中',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: AmberColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AmberDimens.spacingLg),
+
+              // 关闭按钮
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AmberColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AmberDimens.spacingMd,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+                    ),
+                  ),
+                  child: const Text('我知道了'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建隐私特性说明项
+  Widget _buildPrivacyFeatureItem({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AmberColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AmberDimens.radiusSm),
+          ),
+          child: Icon(
+            icon,
+            color: AmberColors.primary,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: AmberDimens.spacingMd),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: AmberColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

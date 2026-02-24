@@ -22,6 +22,7 @@ class AppNavState {
   final String? selectedTaskId;  // 当前选中的任务ID
   final bool isDetailPanelOpen;  // 详情面板是否打开
   final bool isListSidebarOpen; // 清单侧边栏是否打开
+  final String? targetNoteId; // 跳转目标笔记 ID（跨页导航用，消费后清空）
 
   const AppNavState({
     this.currentView = NavView.today,
@@ -29,6 +30,7 @@ class AppNavState {
     this.selectedTaskId,
     this.isDetailPanelOpen = false,
     this.isListSidebarOpen = true,
+    this.targetNoteId,
   });
 
   AppNavState copyWith({
@@ -37,6 +39,7 @@ class AppNavState {
     String? selectedTaskId,
     bool? isDetailPanelOpen,
     bool? isListSidebarOpen,
+    String? targetNoteId,
   }) {
     return AppNavState(
       currentView: currentView ?? this.currentView,
@@ -44,6 +47,7 @@ class AppNavState {
       selectedTaskId: selectedTaskId ?? this.selectedTaskId,
       isDetailPanelOpen: isDetailPanelOpen ?? this.isDetailPanelOpen,
       isListSidebarOpen: isListSidebarOpen ?? this.isListSidebarOpen,
+      targetNoteId: targetNoteId ?? this.targetNoteId,
     );
   }
 }
@@ -99,6 +103,42 @@ class AppNavNotifier extends StateNotifier<AppNavState> {
   /// 切换清单侧边栏
   void toggleListSidebar() {
     state = state.copyWith(isListSidebarOpen: !state.isListSidebarOpen);
+  }
+
+  /// 跳转到指定笔记（从任务详情跳转到笔记页面）
+  ///
+  /// 切换到笔记视图，并设置 targetNoteId
+  /// 笔记页面消费 targetNoteId 后自动选中该笔记
+  void navigateToNote(String noteId) {
+    state = AppNavState(
+      currentView: NavView.notes,
+      targetNoteId: noteId,
+      isListSidebarOpen: state.isListSidebarOpen,
+    );
+  }
+
+  /// 清除跳转目标笔记（笔记页面消费后调用）
+  void clearTargetNote() {
+    state = AppNavState(
+      currentView: state.currentView,
+      selectedListId: state.selectedListId,
+      selectedTaskId: state.selectedTaskId,
+      isDetailPanelOpen: state.isDetailPanelOpen,
+      isListSidebarOpen: state.isListSidebarOpen,
+      targetNoteId: null,
+    );
+  }
+
+  /// 跳转到指定任务（从笔记跳转到任务页面）
+  ///
+  /// 切换到"今天"视图并选中该任务
+  void navigateToTask(String taskId) {
+    state = AppNavState(
+      currentView: NavView.today,
+      selectedTaskId: taskId,
+      isDetailPanelOpen: true,
+      isListSidebarOpen: state.isListSidebarOpen,
+    );
   }
 }
 

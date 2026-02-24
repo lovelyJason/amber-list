@@ -8,8 +8,10 @@ list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
   flutter_secure_storage_windows
   hotkey_manager_windows
+  irondash_engine_context
   screen_retriever_windows
   sqlite3_flutter_libs
+  super_native_extensions
   tray_manager
   url_launcher_windows
   window_manager

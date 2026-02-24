@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants/constants.dart';
+import '../../core/services/task_image_service.dart';
 import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
+import '../pages/notes/widgets/markdown_editor/link_picker_dialog.dart';
+import 'embedded_note_card.dart';
+import 'task_image_preview.dart';
 
 /// 任务详情面板
 class TaskDetailPanel extends ConsumerStatefulWidget {
@@ -106,6 +111,69 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
       );
       _originalDesc = newDesc; // 更新原始值，避免重复保存
     }
+  }
+
+  /// 处理粘贴快捷键（Cmd+V / Ctrl+V）
+  ///
+  /// 逻辑：
+  /// 1. 先检查剪切板是否有图片
+  /// 2. 有图片则保存图片并插入 Markdown 语法
+  /// 3. 没有图片则让系统处理默认粘贴（文本）
+  Future<void> _handlePasteShortcut() async {
+    // 检查剪切板是否有图片
+    final hasImage = await TaskImageService.hasImageInClipboard();
+
+    if (hasImage) {
+      // 粘贴图片
+      final imagePath = await TaskImageService.pasteImageFromClipboard();
+      if (imagePath != null) {
+        // 在光标位置插入 Markdown 图片语法
+        final cursorPos = _descController.selection.baseOffset;
+        final currentText = _descController.text;
+
+        // 智能换行：根据当前文本内容决定是否需要前置换行
+        // - 如果文本为空，不加前置换行
+        // - 如果光标在开头（cursorPos == 0），不加前置换行
+        // - 如果光标前一个字符已经是换行符，不加前置换行
+        // - 其他情况，加前置换行以分隔
+        final bool needLeadingNewline = cursorPos > 0 &&
+            cursorPos <= currentText.length &&
+            currentText[cursorPos - 1] != '\n';
+
+        final imageMarkdown =
+            '${needLeadingNewline ? '\n' : ''}![image]($imagePath)\n';
+
+        String newText;
+        int insertedLength = imageMarkdown.length;
+
+        if (cursorPos < 0 || cursorPos > currentText.length) {
+          // 光标位置无效，追加到末尾
+          final needNewlineAtEnd =
+              currentText.isNotEmpty && !currentText.endsWith('\n');
+          newText = currentText.isEmpty
+              ? '![image]($imagePath)\n'
+              : '$currentText${needNewlineAtEnd ? '\n' : ''}![image]($imagePath)\n';
+          insertedLength = newText.length - currentText.length;
+        } else {
+          // 在光标位置插入
+          newText = currentText.substring(0, cursorPos) +
+              imageMarkdown +
+              currentText.substring(cursorPos);
+        }
+
+        setState(() {
+          _descController.text = newText;
+          // 将光标移到插入内容之后
+          _descController.selection = TextSelection.collapsed(
+            offset: cursorPos < 0 ? newText.length : cursorPos + insertedLength,
+          );
+        });
+
+        // 保存描述
+        _saveDescIfChanged();
+      }
+    }
+    // 如果没有图片，不做任何处理，让系统处理默认的文本粘贴
   }
 
   /// 是否为只读模式（已完成或已删除的任务）
@@ -222,23 +290,49 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
                   ),
                   const SizedBox(height: AmberDimens.spacingSm),
                   // 描述输入框：失焦时保存，关闭时丢弃修改
+                  // 支持 Cmd+V / Ctrl+V 粘贴图片
                   // 已完成/已删除任务为只读模式
-                  TextField(
-                    controller: _descController,
-                    focusNode: _descFocusNode,
-                    readOnly: _isReadOnly,
-                    maxLines: null,
-                    minLines: 4,
-                    decoration: InputDecoration(
-                      hintText: _isReadOnly ? null : '添加描述...',
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
+                  CallbackShortcuts(
+                    bindings: <ShortcutActivator, VoidCallback>{
+                      // macOS: Cmd+V, Windows/Linux: Ctrl+V
+                      const SingleActivator(LogicalKeyboardKey.keyV, meta: true):
+                          _isReadOnly ? () {} : _handlePasteShortcut,
+                      const SingleActivator(LogicalKeyboardKey.keyV, control: true):
+                          _isReadOnly ? () {} : _handlePasteShortcut,
+                    },
+                    child: TextField(
+                      controller: _descController,
+                      focusNode: _descFocusNode,
+                      readOnly: _isReadOnly,
+                      maxLines: null,
+                      minLines: 4,
+                      decoration: InputDecoration(
+                        hintText: _isReadOnly ? null : '添加描述... (支持粘贴图片)',
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        // 移除默认内边距，让光标与"描述"标题左对齐
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                      ),
+                      // 描述不需要 onSubmitted，因为多行文本回车是换行
+                      // 只在失焦时通过 FocusNode 监听器保存
                     ),
-                    // 描述不需要 onSubmitted，因为多行文本回车是换行
-                    // 只在失焦时通过 FocusNode 监听器保存
                   ),
+                  // 图片缩略图预览区
+                  TaskImagePreview(
+                    description: _descController.text,
+                    readOnly: _isReadOnly,
+                    onImageDeleted: (imagePath, newDescription) {
+                      setState(() {
+                        _descController.text = newDescription;
+                      });
+                      _saveDescIfChanged();
+                    },
+                  ),
+                  // 关联笔记区域
+                  _buildLinkedNotesSection(),
                 ],
               ),
             ),
@@ -327,6 +421,90 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
         ),
       ),
     );
+  }
+
+  /// 构建关联笔记区域
+  ///
+  /// 显示当前任务关联的所有笔记，支持关联/取消关联
+  Widget _buildLinkedNotesSection() {
+    final linkedNotesAsync = ref.watch(linkedNotesProvider(widget.task.id));
+
+    return linkedNotesAsync.when(
+      data: (List<Note> notes) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AmberDimens.spacingMd,
+            vertical: AmberDimens.spacingSm,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Divider(height: 1, color: AmberColors.divider),
+              const SizedBox(height: AmberDimens.spacingSm),
+              Row(
+                children: [
+                  const Icon(Icons.description_outlined, size: 14, color: AmberColors.textDisabled),
+                  const SizedBox(width: 4),
+                  Text(
+                    '关联笔记${notes.isEmpty ? '' : ' (${notes.length})'}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AmberColors.textDisabled,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  // 添加关联按钮
+                  InkWell(
+                    onTap: _handleLinkNote,
+                    borderRadius: BorderRadius.circular(4),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.add,
+                        size: 16,
+                        color: AmberColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (notes.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                ...notes.map((note) => _buildLinkedNoteItem(note)),
+              ],
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+
+  /// 构建单个关联笔记项
+  Widget _buildLinkedNoteItem(Note note) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: EmbeddedNoteCard(
+        note: note,
+        onTap: () => ref.read(appNavProvider.notifier).navigateToNote(note.id),
+        onUnlink: () {
+          final repo = ref.read(noteTaskLinkRepositoryProvider);
+          repo.unlinkNoteFromTask(note.id, widget.task.id);
+        },
+      ),
+    );
+  }
+
+  /// 处理关联笔记（弹出笔记选择器）
+  void _handleLinkNote() async {
+    final selectedNote = await showNoteLinkPicker(context);
+
+    if (selectedNote != null) {
+      final repo = ref.read(noteTaskLinkRepositoryProvider);
+      await repo.linkNoteToTask(selectedNote.id, widget.task.id);
+    }
   }
 
   Widget _buildFooter() {
