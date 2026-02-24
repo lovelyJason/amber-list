@@ -257,27 +257,10 @@ gh release create "v{版本号}" \
 | 产物 | 文件名格式 | 来源 |
 |------|-----------|------|
 | macOS 压缩包 | `AmberList-{版本号}-macos.zip` | 本地构建上传 |
-| Windows 安装程序 | `AmberList_Setup_{版本号}.exe` | CI 构建后追加 |
-| Windows 免安装包 | `AmberList-{版本号}-windows-raw.zip` | CI 构建后追加 |
+| Windows 安装程序 | `AmberList_Setup_{版本号}.exe` | CI 自动上传 |
+| Windows 免安装包 | `AmberList-{版本号}-windows-raw.zip` | CI 自动上传 |
 
-> **Windows 产物说明：** push tag 后会自动触发 `.github/workflows/build_windows.yml` 在 GitHub Actions 上构建 Windows 产物。CI 完成后需要手动下载 artifacts 并追加到 Release：
->
-> ```bash
-> # 等 CI 完成后，下载 Windows artifacts 并追加到 Release
-> # 方式1：从 GitHub Actions 页面手动下载 artifacts
-> # 方式2：使用 gh CLI
-> gh run download --name amber-list-installer-v{版本号} --dir /tmp/win-installer
-> gh run download --name amber-list-windows-raw-v{版本号} --dir /tmp/win-raw
->
-> # 重命名产物
-> mv /tmp/win-installer/*.exe "AmberList_Setup_{版本号}.exe"
-> cd /tmp/win-raw && zip -r "AmberList-{版本号}-windows-raw.zip" . && cd -
->
-> # 追加到已有 Release
-> gh release upload "v{版本号}" \
->   "AmberList_Setup_{版本号}.exe" \
->   "/tmp/win-raw/AmberList-{版本号}-windows-raw.zip"
-> ```
+> **Windows 产物说明：** push tag 后会自动触发 `.github/workflows/build_windows.yml`，CI 使用 `softprops/action-gh-release@v2` 自动将 Windows 安装程序和免安装包上传到同一个 GitHub Release，无需手动操作。
 
 ### Step 2.10: 清理临时文件
 
@@ -306,15 +289,13 @@ Phase 2: Release
   ├── 2.5 更新 update.json
   ├── 2.6 更新 index.html APP_VERSION
   ├── 2.7 Git commit → push → tag → push tag
-  │        └── (自动触发 CI 构建 Windows 产物)
+  │        └── (自动触发 CI 构建 Windows 产物并上传到 Release)
   ├── 2.8 本地构建 macOS 包 (flutter build macos)
   ├── 2.9 gh release create (上传 macOS 包)
   └── 2.10 清理临时文件 RELEASE_DRAFT.md
           │
           ▼
 Post-Release (手动):
-  ├── 等 CI 构建完 Windows 产物
-  ├── 下载 artifacts 并追加到 GitHub Release
   └── 上传 update.json 到 CDN 服务器
 ```
 
@@ -346,7 +327,7 @@ Post-Release (手动):
 8. 打包 zip 并重命名为 `AmberList-{版本号}-macos.zip`
 9. `gh release create` 上传 macOS 包 + 更新说明
 10. 清理 `RELEASE_DRAFT.md`
-11. 提醒用户：CI 正在构建 Windows 产物，完成后需追加到 Release
+11. 提醒用户：CI 正在自动构建并上传 Windows 产物到 Release
 
 ---
 
