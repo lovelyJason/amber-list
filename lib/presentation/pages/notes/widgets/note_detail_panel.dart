@@ -117,8 +117,25 @@ class _NoteDetailPanelState extends ConsumerState<NoteDetailPanel> {
   }
 
   /// 保存笔记（手动触发保存，同时更新标题和内容，不关闭编辑界面）
-  void _saveNote() {
+  ///
+  /// 返回 true 表示保存成功，false 表示被阻止（内容保护触发）。
+  bool _saveNote() {
     final content = _editorKey.currentState?.content ?? widget.note.content;
+
+    if (_initialContent.length > 50 &&
+        content.length < _initialContent.length * 0.3) {
+      debugPrint(
+        '[NoteDetailPanel] Content truncation detected! '
+        'old=${_initialContent.length} new=${content.length}. '
+        'Refusing to save.',
+      );
+      if (mounted) {
+        ToastManager()
+            .show(context, '检测到内容异常缩减，已阻止保存', type: ToastType.error);
+      }
+      return false;
+    }
+
     final updatedNote = widget.note.copyWith(
       title: _titleController.text,
       content: content,
@@ -126,15 +143,13 @@ class _NoteDetailPanelState extends ConsumerState<NoteDetailPanel> {
     );
     ref.read(notesProvider.notifier).updateNote(updatedNote);
 
-    // 更新初始值，重置 dirty 状态
     _initialTitle = _titleController.text;
     _initialContent = content;
-    setState(() {
-      _isDirty = false;
-    });
-
-    // 显示保存成功提示
-    ToastManager().show(context, '已保存', type: ToastType.success);
+    if (mounted) {
+      setState(() => _isDirty = false);
+      ToastManager().show(context, '已保存', type: ToastType.success);
+    }
+    return true;
   }
 
   /// 显示删除确认对话框
@@ -388,8 +403,7 @@ class _NoteDetailPanelState extends ConsumerState<NoteDetailPanel> {
             // 保存并关闭按钮（对钩 = 保存 + 退出编辑界面）
             IconButton(
               onPressed: () {
-                _saveNote();
-                widget.onClose();
+                if (_saveNote()) widget.onClose();
               },
               icon: const Icon(Icons.check, size: 20),
               color: AmberColors.success,
@@ -421,9 +435,11 @@ class _NoteDetailPanelState extends ConsumerState<NoteDetailPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 标题区域
+        // 标题区域（回车跳转到内容编辑器）
         TextField(
           controller: _titleController,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _editorKey.currentState?.requestFocus(),
           style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w800,

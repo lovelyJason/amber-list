@@ -828,31 +828,12 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     final notifier = ref.read(taskManagementSettingsProvider.notifier);
     final taskManagementSettings = ref.read(taskManagementSettingsProvider);
 
-    // 检查全局开关
-    if (!taskManagementSettings.enableAutoPostpone) {
-      debugPrint('[AutoPostpone] 全局开关已关闭，跳过自动顺延');
-      return 0;
-    }
+    if (!taskManagementSettings.enableAutoPostpone) return 0;
 
-    // 检查今天是否已经执行过（实时读取 SharedPreferences，与 Android Widget 共享标记位）
-    if (await notifier.hasCheckedToday()) {
-      debugPrint('[AutoPostpone] 今天已检查过（Flutter 或 Android Widget），跳过');
-      return 0;
-    }
+    if (await notifier.hasCheckedToday()) return 0;
 
     // 直接从数据库查询过期任务（不依赖 state，避免同步后 state 未更新的时序问题）
     final allDbTasks = await database.getAllTasks();
-
-    // 调试日志：打印所有 autoPostpone=true 的任务及其日期
-    final autoPostponeTasks = allDbTasks.where((t) => t.autoPostpone).toList();
-    debugPrint('[AutoPostpone] 数据库中 autoPostpone=true 的任务: ${autoPostponeTasks.length} 个');
-    for (final t in autoPostponeTasks) {
-      final dueDateStr = t.dueDate != null
-          ? '${t.dueDate!.year}-${t.dueDate!.month}-${t.dueDate!.day}'
-          : 'null';
-      final isOverdue = t.dueDate != null && AmberDateUtils.isOverdue(t.dueDate!);
-      debugPrint('[AutoPostpone]   - "${t.title}" dueDate=$dueDateStr isOverdue=$isOverdue isCompleted=${t.isCompleted}');
-    }
 
     final tasksToPostpone = allDbTasks.where((dbTask) {
       // 条件：autoPostpone=true AND 已过期 AND 未完成 AND 未删除
@@ -865,12 +846,8 @@ class TaskNotifier extends StateNotifier<List<Task>> {
     // 无论是否有任务需要顺延，都标记今天已检查（含时分秒）
     final nowStr = TaskManagementSettingsNotifier.getNowDateTimeString();
     notifier.setLastAutoPostponeDate(nowStr);
-    debugPrint('[AutoPostpone] 已标记检查完成: $nowStr');
 
-    if (tasksToPostpone.isEmpty) {
-      debugPrint('[AutoPostpone] 没有需要顺延的任务');
-      return 0;
-    }
+    if (tasksToPostpone.isEmpty) return 0;
 
     // 批量顺延
     final today = AmberDateUtils.normalizeToUtcDate(DateTime.now());
@@ -888,7 +865,6 @@ class TaskNotifier extends StateNotifier<List<Task>> {
       );
     }
 
-    debugPrint('[AutoPostpone] 已自动顺延 ${tasksToPostpone.length} 个任务到今天');
     return tasksToPostpone.length;
   }
 

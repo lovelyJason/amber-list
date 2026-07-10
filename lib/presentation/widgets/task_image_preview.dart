@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/constants.dart';
 import '../../core/services/task_image_service.dart';
+import 'image_preview_dialog.dart';
 
 /// 任务图片缩略图预览组件
 ///
@@ -101,51 +102,7 @@ class TaskImagePreview extends StatelessWidget {
 
   /// 显示图片放大弹窗
   void _showImageDialog(BuildContext context, String imagePath) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(24),
-        child: Stack(
-          children: [
-            // 图片
-            Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
-                child: Image.file(
-                  File(imagePath),
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 300,
-                    height: 200,
-                    color: AmberColors.cardBackground,
-                    child: const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        size: 48,
-                        color: AmberColors.textDisabled,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // 关闭按钮
-            Positioned(
-              top: 0,
-              right: 0,
-              child: IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: Colors.white),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    showImagePreviewDialog(context, src: imagePath);
   }
 
   /// 删除图片

@@ -2,13 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/constants.dart';
 
-/// 笔记卡片用的 Markdown 预览（轻量、不可交互）
+/// 笔记卡片用的 Markdown 预览（轻量富文本，不可交互）
 ///
-/// 设计哲学：
-/// - 性能优先！卡片预览不需要完整的 Markdown 渲染
-/// - 使用纯文本显示，避免 flutter_markdown 的解析开销
-/// - 移除 Markdown 语法符号，只保留可读文本
-/// - 卡片数量多时也能保持流畅滚动
+/// 支持删除线、加粗等内联样式渲染，同时保持卡片级别的高性能。
 class NoteMarkdownPreview extends StatelessWidget {
   final String markdown;
   final int maxLines;
@@ -36,75 +32,144 @@ class NoteMarkdownPreview extends StatelessWidget {
       );
     }
 
-    // 将 Markdown 转换为纯文本预览（移除语法符号）
-    final plainText = _stripMarkdown(trimmed);
+    final baseStyle = TextStyle(
+      fontSize: fontSize,
+      height: 1.45,
+      color: AmberColors.textSecondary,
+    );
 
-    return Text(
-      plainText,
-      style: TextStyle(
-        fontSize: fontSize,
-        height: 1.45,
-        color: AmberColors.textSecondary,
-      ),
+    return Text.rich(
+      _buildSpans(trimmed, baseStyle),
       maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
     );
   }
 
-  /// 移除 Markdown 语法，保留可读文本
-  ///
-  /// 这比完整的 Markdown 解析快 10 倍以上
-  String _stripMarkdown(String markdown) {
+  TextSpan _buildSpans(String text, TextStyle baseStyle) {
+    final cleaned = _stripBlockSyntax(text);
+    final spans = _parseInline(cleaned, baseStyle);
+    return TextSpan(children: spans);
+  }
+
+  /// 移除块级语法标记，保留行内内容
+  static String _stripBlockSyntax(String markdown) {
     var text = markdown;
 
-    // 移除标题标记 (# ## ### 等)
-    text = text.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
+    // 连续波浪号（AppFlowy 编码器产物）
+    text = text.replaceAll(RegExp(r'~{4,}'), '');
 
-    // 移除加粗/斜体标记 (**text** 或 *text* 或 __text__ 或 _text_)
-    text = text.replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1');
-    text = text.replaceAll(RegExp(r'__(.+?)__'), r'$1');
-    text = text.replaceAll(RegExp(r'\*(.+?)\*'), r'$1');
-    text = text.replaceAll(RegExp(r'_(.+?)_'), r'$1');
-
-    // 移除删除线 (~~text~~)
-    text = text.replaceAll(RegExp(r'~~(.+?)~~'), r'$1');
-
-    // 移除行内代码 (`code`)
-    text = text.replaceAll(RegExp(r'`(.+?)`'), r'$1');
-
-    // 移除链接，保留链接文字 ([text](url) → text)
-    text = text.replaceAll(RegExp(r'\[([^\]]+)\]\([^)]+\)'), r'$1');
-
-    // 移除图片 (![alt](url) → [图片])
-    text = text.replaceAll(RegExp(r'!\[([^\]]*)\]\([^)]+\)'), '[图片]');
-
-    // 移除无序列表标记 (- 或 * 或 +)
-    text = text.replaceAll(RegExp(r'^[\-\*\+]\s+', multiLine: true), '');
-
-    // 移除有序列表标记 (1. 2. 3.)
-    text = text.replaceAll(RegExp(r'^\d+\.\s+', multiLine: true), '');
-
-    // 移除任务列表标记 (- [ ] 或 - [x])
-    text = text.replaceAll(RegExp(r'^[\-\*]\s*\[[x ]\]\s*', multiLine: true), '');
-    // 同时处理复选框变体 (如直接的 [x] [ ])
-    text = text.replaceAll(RegExp(r'\[[x ]\]\s*'), '');
-
-    // 移除引用标记 (>)
-    text = text.replaceAll(RegExp(r'^>\s*', multiLine: true), '');
-
-    // 移除代码块 (```code```)
+    // 代码块
     text = text.replaceAll(RegExp(r'```[\s\S]*?```'), '[代码块]');
 
-    // 移除水平线 (--- 或 ***)
-    text = text.replaceAll(RegExp(r'^[\-\*]{3,}\s*$', multiLine: true), '');
+    // 图片
+    text = text.replaceAll(RegExp(r'!\[([^\]]*)\]\([^)]+\)'), '[图片]');
 
-    // 压缩多个连续空行为单个空格
+    // 块级标记
+    text = text.replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '');
+    text = text.replaceAll(
+        RegExp(r'^[\-\*]\s*\[[x ]\]\s*', multiLine: true), '');
+    text = text.replaceAll(RegExp(r'\[[x ]\]\s*'), '');
+    text = text.replaceAll(RegExp(r'^[\-\*\+]\s+', multiLine: true), '• ');
+
+    // 有序列表：将 CommonMark 的 `1. 1. 1.` 重编为 `1. 2. 3.`
+    var seqNum = 0;
+    text = text.replaceAllMapped(
+      RegExp(r'^\d+\.\s+', multiLine: true),
+      (_) => '${++seqNum}. ',
+    );
+
+    text = text.replaceAll(RegExp(r'^>\s*', multiLine: true), '');
+    text =
+        text.replaceAll(RegExp(r'^[\-\*]{3,}\s*$', multiLine: true), '');
+
+    // 压缩空白
     text = text.replaceAll(RegExp(r'\n\s*\n'), '\n');
-
-    // 压缩多个连续空格
     text = text.replaceAll(RegExp(r' +'), ' ');
 
     return text.trim();
   }
-}
 
+  // ── 内联 Markdown 标记 ──
+  // 按优先级排列：链接 > 加粗 > 删除线 > 斜体 > 行内代码
+  static final _inlinePattern = RegExp(
+    r'\[([^\]]+)\]\([^)]+\)' // 链接 [text](url)
+    r'|'
+    r'\*\*(.+?)\*\*' // 加粗 **text**
+    r'|'
+    r'~~(.+?)~~' // 删除线 ~~text~~
+    r'|'
+    r'\*(.+?)\*' // 斜体 *text*
+    r'|'
+    r'`(.+?)`', // 行内代码 `code`
+  );
+
+  /// 递归解析内联 Markdown 为 TextSpan 列表
+  List<InlineSpan> _parseInline(String text, TextStyle baseStyle) {
+    final spans = <InlineSpan>[];
+    var lastEnd = 0;
+
+    for (final match in _inlinePattern.allMatches(text)) {
+      // 匹配前的普通文本
+      if (match.start > lastEnd) {
+        final plain = text.substring(lastEnd, match.start);
+        if (plain.isNotEmpty) spans.add(TextSpan(text: plain, style: baseStyle));
+      }
+
+      if (match.group(1) != null) {
+        // 链接 → URL 型省略，否则保留文字
+        final linkText = match.group(1)!;
+        if (!linkText.startsWith('http')) {
+          spans.add(TextSpan(text: linkText, style: baseStyle));
+        }
+      } else if (match.group(2) != null) {
+        // 加粗
+        spans.addAll(_parseInline(
+          match.group(2)!,
+          baseStyle.copyWith(fontWeight: FontWeight.w600),
+        ));
+      } else if (match.group(3) != null) {
+        // 删除线
+        spans.addAll(_parseInline(
+          match.group(3)!,
+          baseStyle.copyWith(
+            decoration: TextDecoration.lineThrough,
+            color: AmberColors.textDisabled,
+          ),
+        ));
+      } else if (match.group(4) != null) {
+        // 斜体
+        spans.addAll(_parseInline(
+          match.group(4)!,
+          baseStyle.copyWith(fontStyle: FontStyle.italic),
+        ));
+      } else if (match.group(5) != null) {
+        // 行内代码
+        spans.add(TextSpan(
+          text: match.group(5),
+          style: baseStyle.copyWith(
+            fontFamily: 'monospace',
+            backgroundColor: Colors.grey.withValues(alpha: 0.12),
+          ),
+        ));
+      }
+
+      lastEnd = match.end;
+    }
+
+    // 匹配后的剩余文本
+    if (lastEnd < text.length) {
+      final remaining = text.substring(lastEnd);
+      // 清理残留 ~~
+      final cleaned = remaining.replaceAll('~~', '');
+      if (cleaned.isNotEmpty) {
+        spans.add(TextSpan(text: cleaned, style: baseStyle));
+      }
+    }
+
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: text.replaceAll('~~', ''), style: baseStyle));
+    }
+
+    return spans;
+  }
+}

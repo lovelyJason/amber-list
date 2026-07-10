@@ -526,10 +526,16 @@ class _NotesPageState extends ConsumerState<NotesPage> {
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AmberDimens.spacingMd),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AmberDimens.spacingMd,
+          vertical: AmberDimens.spacingSm,
+        ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (pinnedNotes.isNotEmpty)
+            if (pinnedNotes.isNotEmpty) ...[
+              _buildListSectionHeader('置顶', pinnedNotes.length),
+              const SizedBox(height: 6),
               ReorderableListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -556,36 +562,85 @@ class _NotesPageState extends ConsumerState<NotesPage> {
                   );
                 },
               ),
+            ],
             if (pinnedNotes.isNotEmpty && regularNotes.isNotEmpty)
-              const Divider(height: 32, thickness: 1),
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              itemCount: regularNotes.length,
-              onReorder: (oldIndex, newIndex) {
-                ref.read(notesProvider.notifier).reorderRegular(oldIndex, newIndex);
-              },
-              itemBuilder: (context, index) {
-                final note = regularNotes[index];
-                return KeyedSubtree(
-                  key: ValueKey(note.id),
-                  child: NoteListItem(
-                    note: note,
-                    isSelected: _selectedNoteId == note.id,
-                    index: index,
-                    onTap: () => setState(() => _selectedNoteId = note.id),
-                    onLongPress: () => _showContextMenu(
-                      context,
-                      TapDownDetails(globalPosition: Offset.zero),
-                      note,
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Divider(
+                  height: 1,
+                  color: AmberColors.divider.withValues(alpha: 0.4),
+                ),
+              ),
+            if (regularNotes.isNotEmpty) ...[
+              if (pinnedNotes.isNotEmpty) ...[
+                _buildListSectionHeader('其他', regularNotes.length),
+                const SizedBox(height: 6),
+              ],
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: regularNotes.length,
+                onReorder: (oldIndex, newIndex) {
+                  ref.read(notesProvider.notifier).reorderRegular(oldIndex, newIndex);
+                },
+                itemBuilder: (context, index) {
+                  final note = regularNotes[index];
+                  return KeyedSubtree(
+                    key: ValueKey(note.id),
+                    child: NoteListItem(
+                      note: note,
+                      isSelected: _selectedNoteId == note.id,
+                      index: index,
+                      onTap: () => setState(() => _selectedNoteId = note.id),
+                      onLongPress: () => _showContextMenu(
+                        context,
+                        TapDownDetails(globalPosition: Offset.zero),
+                        note,
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// 列表视图分组标题（标签 + 数量徽章）
+  Widget _buildListSectionHeader(String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 4),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AmberColors.textDisabled,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: AmberColors.sidebarBackground,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                fontSize: 11,
+                color: AmberColors.textDisabled,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

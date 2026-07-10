@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import '../../env/env.dart';
 import '../models/activation_code.dart';
@@ -43,8 +44,18 @@ class ActivationRepository {
   final String _baseUrl;
 
   ActivationRepository({http.Client? client})
-      : _client = client ?? http.Client(),
+      : _client = client ?? _createTrustAllClient(),
         _baseUrl = Env.activationApiUrl;
+
+  /// 创建一个信任所有证书的 HTTP 客户端（应对 mall.qdovo.com 证书过期）
+  static http.Client _createTrustAllClient() {
+    final httpClient = HttpClient()
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        // 仅对激活 API 域名放行
+        return host == 'mall.qdovo.com';
+      };
+    return IOClient(httpClient);
+  }
 
   /// 校验激活码
   ///

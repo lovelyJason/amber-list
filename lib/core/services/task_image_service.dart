@@ -199,14 +199,22 @@ class TaskImageService {
   /// 返回移除后的描述文本
   static String removeImageFromDescription(
       String description, String imagePath) {
-    // 转义路径中的特殊正则字符
-    final escapedPath = imagePath.replaceAllMapped(
-      RegExp(r'[.*+?^${}()|[\]\\]'),
-      (match) => '\\${match.group(0)}',
-    );
+    final escapedPath = RegExp.escape(imagePath);
 
-    // 匹配包含该路径的 Markdown 图片语法，包括可能的换行
-    final regex = RegExp('\\n?!\\[.*?\\]\\($escapedPath\\)\\n?');
-    return description.replaceAll(regex, '\n').trim();
+    // 优先移除“独占一行”的图片语法（最常见：粘贴/插入图片块后编码成一行 markdown）
+    final lineRegex = RegExp(
+      r'^[ \t]*!\[[^\]]*\]\(' + escapedPath + r'\)[ \t]*(\r?\n)?',
+      multiLine: true,
+    );
+    var result = description.replaceAll(lineRegex, '');
+
+    // 兜底：移除行内图片语法（如果图片被插在文本中间）
+    final inlineRegex =
+        RegExp(r'!\[[^\]]*\]\(' + escapedPath + r'\)', multiLine: true);
+    result = result.replaceAll(inlineRegex, '');
+
+    // 清理多余空行
+    result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    return result.trim();
   }
 }

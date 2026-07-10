@@ -8,6 +8,7 @@ import '../../core/utils/date_utils.dart';
 import '../../data/models/models.dart';
 import '../providers/providers.dart';
 import '../pages/notes/widgets/markdown_editor/link_picker_dialog.dart';
+import 'common/toast/toast_manager.dart';
 import 'embedded_note_card.dart';
 import 'task_image_preview.dart';
 
@@ -113,6 +114,15 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
     }
   }
 
+  /// Ctrl+S / Cmd+S 手动保存标题和描述，并弹出成功 toast
+  void _handleSaveShortcut() {
+    _saveTitleIfChanged();
+    _saveDescIfChanged();
+    if (mounted) {
+      ToastManager().show(context, '保存成功', type: ToastType.success);
+    }
+  }
+
   /// 处理粘贴快捷键（Cmd+V / Ctrl+V）
   ///
   /// 逻辑：
@@ -127,53 +137,44 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
       // 粘贴图片
       final imagePath = await TaskImageService.pasteImageFromClipboard();
       if (imagePath != null) {
-        // 在光标位置插入 Markdown 图片语法
-        final cursorPos = _descController.selection.baseOffset;
-        final currentText = _descController.text;
-
-        // 智能换行：根据当前文本内容决定是否需要前置换行
-        // - 如果文本为空，不加前置换行
-        // - 如果光标在开头（cursorPos == 0），不加前置换行
-        // - 如果光标前一个字符已经是换行符，不加前置换行
-        // - 其他情况，加前置换行以分隔
-        final bool needLeadingNewline = cursorPos > 0 &&
-            cursorPos <= currentText.length &&
-            currentText[cursorPos - 1] != '\n';
-
-        final imageMarkdown =
-            '${needLeadingNewline ? '\n' : ''}![image]($imagePath)\n';
-
-        String newText;
-        int insertedLength = imageMarkdown.length;
-
-        if (cursorPos < 0 || cursorPos > currentText.length) {
-          // 光标位置无效，追加到末尾
-          final needNewlineAtEnd =
-              currentText.isNotEmpty && !currentText.endsWith('\n');
-          newText = currentText.isEmpty
-              ? '![image]($imagePath)\n'
-              : '$currentText${needNewlineAtEnd ? '\n' : ''}![image]($imagePath)\n';
-          insertedLength = newText.length - currentText.length;
-        } else {
-          // 在光标位置插入
-          newText = currentText.substring(0, cursorPos) +
-              imageMarkdown +
-              currentText.substring(cursorPos);
-        }
-
-        setState(() {
-          _descController.text = newText;
-          // 将光标移到插入内容之后
-          _descController.selection = TextSelection.collapsed(
-            offset: cursorPos < 0 ? newText.length : cursorPos + insertedLength,
-          );
-        });
-
-        // 保存描述
+        _insertTextAtCursor('![image]($imagePath)', asBlock: true);
         _saveDescIfChanged();
       }
+    } else {
+      // CallbackShortcuts 已消费键盘事件，TextField 收不到粘贴命令，需手动处理
+      final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+      if (clipboardData?.text != null && clipboardData!.text!.isNotEmpty) {
+        _insertTextAtCursor(clipboardData.text!);
+      }
     }
-    // 如果没有图片，不做任何处理，让系统处理默认的文本粘贴
+  }
+
+  /// 在光标位置（或选区）插入文本
+  ///
+  /// [asBlock] 为 true 时以独立行插入（用于图片等块级内容），自动处理前后换行
+  void _insertTextAtCursor(String text, {bool asBlock = false}) {
+    final selection = _descController.selection;
+    final currentText = _descController.text;
+    final start = selection.start.clamp(0, currentText.length);
+    final end = selection.end.clamp(0, currentText.length);
+
+    String insertText = text;
+    if (asBlock) {
+      final needLeading =
+          start > 0 && currentText[start - 1] != '\n';
+      insertText = '${needLeading ? '\n' : ''}$text\n';
+    }
+
+    final newText = currentText.substring(0, start) +
+        insertText +
+        currentText.substring(end);
+
+    setState(() {
+      _descController.text = newText;
+      _descController.selection = TextSelection.collapsed(
+        offset: start + insertText.length,
+      );
+    });
   }
 
   /// 是否为只读模式（已完成或已删除的任务）
@@ -184,24 +185,38 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
     final taskLists = ref.watch(taskListProvider);
     final currentList = taskLists.where((l) => l.id == widget.task.listId).firstOrNull;
 
-    return Container(
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS):
+            const _SaveTaskIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS):
+            const _SaveTaskIntent(),
+      },
+      child: Actions(
+        actions: {
+          _SaveTaskIntent: CallbackAction<_SaveTaskIntent>(
+            onInvoke: (_) {
+              if (!_isReadOnly) _handleSaveShortcut();
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Container(
       width: AmberDimens.detailPanelWidth,
       color: AmberColors.cardBackground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 头部
           _buildHeader(),
           const Divider(height: 1),
-          // 内容
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(AmberDimens.spacingMd),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题输入框：失焦或回车时保存，关闭时丢弃修改
-                  // 已完成/已删除任务为只读模式
                   TextField(
                     controller: _titleController,
                     focusNode: _titleFocusNode,
@@ -337,9 +352,11 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
               ),
             ),
           ),
-          // 底部操作栏
           _buildFooter(),
         ],
+      ),
+          ),
+        ),
       ),
     );
   }
@@ -874,6 +891,7 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
         return AmberColors.priorityNone;
     }
   }
+  /// 显示标签管理对话框
   void _showTagsDialog(BuildContext context) {
     final allTags = ref.read(tagsProvider);
     final selectedTags = List<String>.from(widget.task.tags);
@@ -961,4 +979,8 @@ class _TaskDetailPanelState extends ConsumerState<TaskDetailPanel> {
       ),
     );
   }
+}
+
+class _SaveTaskIntent extends Intent {
+  const _SaveTaskIntent();
 }

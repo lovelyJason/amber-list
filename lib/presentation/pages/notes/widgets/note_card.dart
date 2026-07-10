@@ -200,10 +200,8 @@ class CreateNoteCard extends StatelessWidget {
 
 /// 笔记列表项
 ///
-/// 设计哲学：
-/// - 用于列表视图，支持拖拽排序
-/// - 显示图标、标题、摘要和日期
-class NoteListItem extends StatelessWidget {
+/// 自定义卡片风格，带 hover 交互和选中态高亮
+class NoteListItem extends StatefulWidget {
   final Note note;
   final bool isSelected;
   final int index;
@@ -220,57 +218,151 @@ class NoteListItem extends StatelessWidget {
   });
 
   @override
+  State<NoteListItem> createState() => _NoteListItemState();
+}
+
+class _NoteListItemState extends State<NoteListItem> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return ListTile(
-      selected: isSelected,
-      selectedTileColor: AmberColors.primaryLight,
-      leading: note.isPinned
-          ? const Icon(Icons.push_pin, size: 18, color: AmberColors.primary)
-          : const Icon(Icons.note_outlined, size: 18),
-      title: Text(note.title),
-      subtitle: Text(
-        note.summary,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            _formatDate(note.updatedAt),
-            style: const TextStyle(
-              fontSize: 12,
-              color: AmberColors.textDisabled,
+    final note = widget.note;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: widget.isSelected
+                ? AmberColors.primaryLight
+                : _isHovered
+                    ? Colors.black.withValues(alpha: 0.02)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(AmberDimens.radiusMd),
+            border: Border.all(
+              color: widget.isSelected
+                  ? AmberColors.primary.withValues(alpha: 0.3)
+                  : Colors.transparent,
             ),
           ),
-          const SizedBox(width: 8),
-          ReorderableDragStartListener(
-            index: index,
-            child: const Icon(
-              Icons.drag_handle,
-              color: AmberColors.textDisabled,
-            ),
+          child: Row(
+            children: [
+              _buildIcon(note),
+              const SizedBox(width: 14),
+              Expanded(child: _buildContent(note)),
+              const SizedBox(width: 12),
+              _buildTrailing(note),
+            ],
           ),
-        ],
+        ),
       ),
-      onTap: onTap,
-      onLongPress: onLongPress,
     );
   }
 
-  /// 格式化日期显示
+  Widget _buildIcon(Note note) {
+    final isPinned = note.isPinned;
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: isPinned
+            ? AmberColors.primary.withValues(alpha: 0.12)
+            : AmberColors.sidebarBackground,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(
+        isPinned ? Icons.push_pin_rounded : Icons.description_outlined,
+        size: 16,
+        color: isPinned ? AmberColors.primary : AmberColors.textDisabled,
+      ),
+    );
+  }
+
+  Widget _buildContent(Note note) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          note.title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: AmberColors.textPrimary,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (note.previewMarkdown.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          NoteMarkdownPreview(
+            markdown: note.previewMarkdown,
+            maxLines: 1,
+            fontSize: 12.5,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTrailing(Note note) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (note.tags.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: AmberColors.primaryTransparent,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              note.tags.first,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AmberColors.primaryDark,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Text(
+          _formatDate(note.updatedAt),
+          style: const TextStyle(
+            fontSize: 12,
+            color: AmberColors.textDisabled,
+          ),
+        ),
+        AnimatedOpacity(
+          opacity: _isHovered ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 150),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: ReorderableDragStartListener(
+              index: widget.index,
+              child: const Icon(
+                Icons.drag_indicator_rounded,
+                size: 18,
+                color: AmberColors.textDisabled,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final diff = now.difference(date);
-
-    if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}分钟前';
-    } else if (diff.inHours < 24) {
-      return '${diff.inHours}小时前';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays}天前';
-    } else {
-      return DateFormat('M月d日').format(date);
-    }
+    if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
+    if (diff.inHours < 24) return '${diff.inHours}小时前';
+    if (diff.inDays < 7) return '${diff.inDays}天前';
+    return DateFormat('M月d日').format(date);
   }
 }
